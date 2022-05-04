@@ -142,6 +142,7 @@ int ipv4_input(FAR struct net_driver_s *dev)
 {
   FAR struct ipv4_hdr_s *ipv4 = BUF;
   in_addr_t destipaddr;
+  // in_addr_t srcipaddr;
   uint16_t llhdrlen;
   uint16_t totlen;
 
@@ -214,9 +215,37 @@ int ipv4_input(FAR struct net_driver_s *dev)
       goto drop;
     }
 
-  /* Get the destination IP address in a friendlier form */
+  /* Get the source and destination IP address in a friendlier form */
 
   destipaddr = net_ip4addr_conv32(ipv4->destipaddr);
+  /*
+    Payloads validos: udp, tcp e ip protocols
+    - Fazer verificacoes previas de sanity para cada protocolo (e.g.: checksum, fields, etc)
+
+    PENSAR: 
+      - como fazer as verificacoes de egresso
+    
+    Trafico de ingresso - nivel mais baixo
+    Trafico de egresso - nivel mais alto
+
+    Como salvar as regras -> app envia regras para o iplite no kernel space que vai salvar
+    as regras na memoria do device
+
+    Criar syscall para envio de regras do app p/ nosso modulo kernel
+
+    - Ver overleaf: salao_ferramenta  e  main_publicado
+    https://www.overleaf.com/read/tchtswrkgwzr
+  */
+  // isValidPacket = iplite_verify(ipv4);
+  // if (!isValidPacket)
+  //   goto drop;
+  // srcipaddr = net_ip4addr_conv32(ipv4->srcipaddr);
+
+  // /* Drop packets coming from this specific ip (10.0.2.4)*/
+
+  // if (srcipaddr == 67239946) {
+  //   goto drop;
+  // }
 
 #if defined(CONFIG_NET_BROADCAST) && defined(NET_UDP_HAVE_STACK)
   /* If IP broadcast support is configured, we check for a broadcast

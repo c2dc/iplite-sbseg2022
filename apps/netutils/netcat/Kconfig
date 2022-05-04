@@ -26,7 +26,7 @@
 
 config NETUTILS_NETCAT
 	tristate "NetCat tool"
-	default n
+	default y
 	depends on NET_TCP
 	---help---
 		Enable the NetCat TCP/IP swiss army tool

@@ -1,0 +1,1 @@
+{ "ntpcstop", 100, 65536, ntpcstop_main },

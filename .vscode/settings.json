@@ -1,0 +1,13 @@
+{
+    "files.associations": {
+        "chat.h": "c",
+        "poll.h": "c",
+        "stdio.h": "c",
+        "stdlib.h": "c",
+        "types.h": "c",
+        "config.h": "c",
+        "errno.h": "c",
+        "stat.h": "c",
+        "unistd.h": "c"
+    }
+}
