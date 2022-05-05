@@ -5732,6 +5732,29 @@ ipv4_input.o: devif/ipv4_input.c /usr/include/stdc-predef.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/net/devif/devif.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/arch/irq.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/arch/setjmp.h
+netfilterlite.o: devif/netfilterlite.c /usr/include/stdc-predef.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/netinet/in.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/config.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/sys/types.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/compiler.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/stdint.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/arch/types.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/arch/inttypes.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/limits.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/arch/limits.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/sys/socket.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/sys/uio.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/net/ip.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/stdbool.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/arpa/inet.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/net/netconfig.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/net/ethernet.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/net/ethernet.h \
+ devif/devif.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/errno.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/arch/irq.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/arch/setjmp.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/stdlib.h
 ipv6_input.o: devif/ipv6_input.c /usr/include/stdc-predef.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/config.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/sys/ioctl.h \

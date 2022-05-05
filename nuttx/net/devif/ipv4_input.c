@@ -236,9 +236,9 @@ int ipv4_input(FAR struct net_driver_s *dev)
     - Ver overleaf: salao_ferramenta  e  main_publicado
     https://www.overleaf.com/read/tchtswrkgwzr
   */
-  // isValidPacket = iplite_verify(ipv4);
-  // if (!isValidPacket)
-  //   goto drop;
+  bool isValidPacket = netfilterlite_verify_ipv4(ipv4);
+  if (!isValidPacket)
+    goto drop;
   // srcipaddr = net_ip4addr_conv32(ipv4->srcipaddr);
 
   // /* Drop packets coming from this specific ip (10.0.2.4)*/
