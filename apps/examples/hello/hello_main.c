@@ -22,8 +22,10 @@
  * Included Files
  ****************************************************************************/
 
+#include "devif/devif.h"
 #include <nuttx/config.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 /****************************************************************************
  * Public Functions
@@ -35,6 +37,7 @@
 
 int main(int argc, FAR char *argv[])
 {
-  printf("Hello, World!!\n");
+  bool packet_dropped = netfilterlite_addrule(0, 67239946, 666, 666, 666);
+  printf("was packet dropped? %d\n", packet_dropped);
   return 0;
 }

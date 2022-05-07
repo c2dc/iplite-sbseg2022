@@ -8,6 +8,14 @@
         "config.h": "c",
         "errno.h": "c",
         "stat.h": "c",
-        "unistd.h": "c"
+        "unistd.h": "c",
+        "string.h": "c",
+        "inet.h": "c",
+        "ipforward.h": "c",
+        "pm.h": "c",
+        "loopback.h": "c",
+        "devif.h": "c",
+        "icmp.h": "c",
+        "netconfig.h": "c"
     }
 }

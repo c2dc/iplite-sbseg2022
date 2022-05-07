@@ -26,6 +26,29 @@ icmp_ping.home.rtsouza.Documents.TG.nuttxspace.apps.netutils.ping.o: \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/string.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/stddef.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/b2c.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/stdio.h \
+ /usr/lib/gcc/x86_64-linux-gnu/9/include/stdarg.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/sched.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/strings.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/queue.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/sched.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/queue.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/irq.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/assert.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/arch/irq.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/arch/setjmp.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/wdog.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/lib/libvars.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/lib/getopt.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/mm/shm.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/debug.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/syslog.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/mm/gran.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/fs/fs.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/net/net.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/mm/iob.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/wqueue.h \
+ /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/arch/arch.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/netdb.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/inttypes.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/netinet/in.h \
@@ -35,7 +58,8 @@ icmp_ping.home.rtsouza.Documents.TG.nuttxspace.apps.netutils.ping.o: \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/net/ethernet.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/net/ethernet.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/net/ip.h \
- /home/rtsouza/Documents/TG/nuttxspace/apps/include/netutils/icmp_ping.h
+ /home/rtsouza/Documents/TG/nuttxspace/apps/include/netutils/icmp_ping.h \
+ ../../../nuttx/net/devif/devif.h
 icmpv6_ping.home.rtsouza.Documents.TG.nuttxspace.apps.netutils.ping.o: \
  icmpv6_ping.c /usr/include/stdc-predef.h \
  /home/rtsouza/Documents/TG/nuttxspace/nuttx/include/nuttx/config.h \
