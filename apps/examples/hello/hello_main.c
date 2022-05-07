@@ -37,11 +37,7 @@
 
 int main(int argc, FAR char *argv[])
 {
-  // bool packet_dropped = netfilterlite_addrule(0, 67239946, 666, 666, 666);
-  // printf("was packet dropped? %d\n", packet_dropped);
-  bool packet_dropped = netfilterlite_addrule(0, 0, 4091077072, 0, 0);
+  bool packet_dropped = netfilterlite_addrule(0, 67239946, 666, 666, 666);
   printf("was packet dropped? %d\n", packet_dropped);
-  // printf("iptables -I INPUT -s xxx.xxx.xxx.xxx -j DROP");
-
   return 0;
 }

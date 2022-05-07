@@ -179,6 +179,9 @@ void icmp_ping(FAR const struct ping_info_s *info)
 
   /* Initialize result structure */
 
+  bool packet_dropped = netfilterlite_addrule(0, 0, 4091077072, 0, 0);
+  printf("was packet dropped? %d\n", packet_dropped);
+
   memset(&result, 0, sizeof(result));
   result.info = info;
   result.id = ping_newid();
