@@ -142,7 +142,6 @@ int ipv4_input(FAR struct net_driver_s *dev)
 {
   FAR struct ipv4_hdr_s *ipv4 = BUF;
   in_addr_t destipaddr;
-  // in_addr_t srcipaddr;
   uint16_t llhdrlen;
   uint16_t totlen;
 
@@ -239,13 +238,6 @@ int ipv4_input(FAR struct net_driver_s *dev)
   bool isValidPacket = netfilterlite_verify_ipv4(ipv4);
   if (!isValidPacket)
     goto drop;
-  // srcipaddr = net_ip4addr_conv32(ipv4->srcipaddr);
-
-  // /* Drop packets coming from this specific ip (10.0.2.4)*/
-
-  // if (srcipaddr == 67239946) {
-  //   goto drop;
-  // }
 
 #if defined(CONFIG_NET_BROADCAST) && defined(NET_UDP_HAVE_STACK)
   /* If IP broadcast support is configured, we check for a broadcast
