@@ -62,13 +62,17 @@ bool netfilterlite_verify_ipv4(FAR struct ipv4_hdr_s *buf) {
 
     destipaddr = net_ip4addr_conv32(ipv4->destipaddr);
     srcipaddr = net_ip4addr_conv32(ipv4->srcipaddr);
-    srcport = 
-    destport = 
+    srcport = tcp->srcport;
+    destport = tcp->destport;
 
 
     chain *current_rule = chain_head->next;
     while(current_rule) {
+        /* Verify incoming packet source and destination IP addresses */
         if (current_rule->destipaddr == destipaddr || current_rule->srcipaddr == srcipaddr)
+            return true;
+        /* Verify incoming packet source and destination ports */
+        if (current_rule->destport == destport || current_rule->srcport == srcport)
             return true;
         current_rule = current_rule->next;
     }
