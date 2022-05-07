@@ -11,7 +11,7 @@ typedef enum rules {
 typedef struct chain chain;
 
 struct chain {
-    rules    rule;
+    rules     rule;
     in_addr_t srcipaddr;
     in_addr_t destipaddr;
     in_port_t srcport;
