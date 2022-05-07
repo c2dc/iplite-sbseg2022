@@ -5,7 +5,7 @@
 
 config EXAMPLES_HELLO
 	tristate "\"Hello, World!\" example"
-	default n
+	default y
 	---help---
 		Enable the \"Hello, World!\" example
 
