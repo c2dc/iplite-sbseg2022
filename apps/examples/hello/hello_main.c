@@ -22,7 +22,7 @@
  * Included Files
  ****************************************************************************/
 
-#include "devif/devif.h"
+#include "../../../nuttx/net/devif/devif.h"
 #include <nuttx/config.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -37,7 +37,22 @@
 
 int main(int argc, FAR char *argv[])
 {
-  bool packet_dropped = netfilterlite_addrule(0, 67239946, 666, 666, 666);
-  printf("was packet dropped? %d\n", packet_dropped);
+  switch (argv[1][0])
+  {
+  case '1':
+    bool packet_dropped = netfilterlite_addrule(0, 67239946, 666, 666, 666);
+    packet_dropped == 1 ? printf("Drop packets from origin IP: 67239946"); : printf("ERROR 1");
+    break;
+
+  case '2':
+    bool packet_dropped = netfilterlite_addrule(0, 67239946, 666, 666, 666);
+    packet_dropped == 1 ? printf("Drop packets from origin port: 31337"); : printf("ERROR 2");
+    break;
+
+  default:
+    printf("ERROR 3")
+    break;
+  }
+    
   return 0;
 }
