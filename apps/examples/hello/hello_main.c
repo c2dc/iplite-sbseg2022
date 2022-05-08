@@ -37,15 +37,16 @@
 
 int main(int argc, FAR char *argv[])
 {
+  bool packet_dropped;
   switch (argv[1][0])
   {
   case '1':
-    bool packet_dropped = netfilterlite_addrule(0, 0, 0, 31337, 0);
+    packet_dropped = netfilterlite_addrule(0, 0, 0, 31337, 0);
     packet_dropped == 1 ? printf("Drop packets from origin port: 31337") : printf("ERROR 1");
     break;
 
   case '2':
-    bool packet_dropped = netfilterlite_addrule(0, 0, 0, 0, 31337);
+    packet_dropped = netfilterlite_addrule(0, 0, 0, 0, 31337);
     packet_dropped == 1 ? printf("Drop packets from destination port: 31337") : printf("ERROR 2");
     break;
 
