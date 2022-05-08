@@ -92,12 +92,12 @@ bool netfilterlite_verify_ipv4(FAR struct ipv4_hdr_s *buf) {
     while(current_rule) {
         /* Verify incoming packet source and destination IP addresses */
         if (current_rule->destipaddr == destipaddr || current_rule->srcipaddr == srcipaddr)
-            return true;
+            return false;
         /* Verify incoming packet source and destination ports */
         if (current_rule->destport == destport || current_rule->srcport == srcport)
-            return true;
+            return false;
         current_rule = current_rule->next;
     }
 
-    return false;
+    return true;
 }
