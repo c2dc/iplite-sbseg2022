@@ -235,7 +235,8 @@ int ipv4_input(FAR struct net_driver_s *dev)
     - Ver overleaf: salao_ferramenta  e  main_publicado
     https://www.overleaf.com/read/tchtswrkgwzr
   */
-  bool isValidPacket = netfilterlite_verify_ipv4(ipv4);
+  // TODO: tech debt -> pass packet (or buffer) instead of device
+  bool isValidPacket = netfilterlite_verify_ipv4(dev);
   if (!isValidPacket)
     goto drop;
 

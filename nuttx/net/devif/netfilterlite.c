@@ -1,6 +1,8 @@
 #include <netinet/in.h>
 #include <nuttx/net/ip.h>
 #include <nuttx/net/tcp.h>
+#include <nuttx/net/netconfig.h>
+#include <nuttx/net/netdev.h>
 #include "devif.h"
 #include <stdlib.h>
 
@@ -52,35 +54,38 @@ bool netfilterlite_addrule(int rule, in_addr_t srcipaddr, in_addr_t destipaddr, 
 /* Get a pointer to the TCP header.  The TCP header lies just after the
  * the link layer header and the IP header.
 */
-FAR struct tcp_hdr_s* get_tcp_hdr_from_ipv4(FAR struct ipv4_hdr_s *buf) {
-    uint16_t iphdrlen;
-    FAR struct tcp_hdr_s *tcp;
-    FAR struct ipv4_hdr_s *ptr; // auxiliar pointer
+// FAR struct tcp_hdr_s* get_tcp_hdr_from_ipv4(FAR struct net_driver_s *dev) {
+//     uint16_t iphdrlen;
+//     FAR struct tcp_hdr_s *tcp;
+//     FAR struct ipv4_hdr_s *ptr; // auxiliar pointer
 
-    /* Get the IP header length  */
-    iphdrlen = (buf->vhl & IPv4_HLMASK) << 2;
+//     /* Get the IP header length  */
+//     iphdrlen = (buf->vhl & IPv4_HLMASK) << 2;
 
-    /* Go with ptr from ipv4 to tcp offset */
-    ptr = buf;
-    ptr += iphdrlen;
+//     /* Go with ptr from ipv4 to tcp offset */
+//     ptr = buf;
+//     ptr += iphdrlen;
 
-    /* Cast ptr to tcp header */
-    tcp = (FAR struct tcp_hdr_s *) ptr;
+//     /* Cast ptr to tcp header */
+//     tcp = (FAR struct tcp_hdr_s *) ptr;
     
-    return tcp;
-}
+//     return tcp;
+// }
 
 // TODO: code all missing verifications
-bool netfilterlite_verify_ipv4(FAR struct ipv4_hdr_s *buf) {
+bool netfilterlite_verify_ipv4(FAR struct net_driver_s *dev) {
     FAR struct ipv4_hdr_s *ipv4;
     FAR struct tcp_hdr_s *tcp;
     in_addr_t destipaddr;
     in_addr_t srcipaddr;
     in_port_t srcport;
     in_port_t destport;
+    uint16_t iphdrlen;
 
-    ipv4 = buf;
-    tcp = get_tcp_hdr_from_ipv4(buf);
+
+    ipv4 = ((FAR struct ipv4_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)]);
+    iphdrlen = (ipv4->vhl & IPv4_HLMASK) << 2;
+    tcp = (FAR struct tcp_hdr_s *)&dev->d_buf[iphdrlen + NET_LL_HDRLEN(dev)];
 
     destipaddr = net_ip4addr_conv32(ipv4->destipaddr);
     srcipaddr = net_ip4addr_conv32(ipv4->srcipaddr);
