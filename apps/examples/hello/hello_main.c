@@ -24,6 +24,7 @@
 
 #include "../../../nuttx/net/devif/devif.h"
 #include <nuttx/config.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
 
@@ -37,45 +38,32 @@
 
 int main(int argc, FAR char *argv[])
 {
+  int rule;
+  in_addr_t srcipaddr, destipaddr;
+  in_port_t srcport, destport;
   bool packet_dropped;
-  switch (argv[1][0])
-  {
-  case '1':
-    packet_dropped = netfilterlite_addrule(0, 0, 0, 40046, 0);
-    if (packet_dropped == 1)
-      printf("Drop packets from origin port: 40046\n");
-    else
-      printf("ERROR 1\n");
-    break;
-
-  case '2':
-    packet_dropped = netfilterlite_addrule(0, 0, 0, 0, 40046);
-    if (packet_dropped == 1)
-      printf("Drop packets from destination port: 40046\n");
-    else
-      printf("ERROR 2\n");
-    break;
-    
-  case '3':
-    packet_dropped = netfilterlite_addrule(0, 0, 0, 27002, 0);
-    if (packet_dropped == 1)
-      printf("Drop packets from origin port: 27002\n");
-    else
-      printf("ERROR 3\n");
-    break;
-
-  case '4':
-    packet_dropped = netfilterlite_addrule(0, 0, 0, 0, 27002);
-    if (packet_dropped == 1)
-      printf("Drop packets from destination port: 27002\n");
-    else
-      printf("ERROR 4\n");
-    break;
-
-  default:
-    printf("ERROR 5\n");
-    break;
+  
+  if (argc != 6) {
+    printf("Not enough arguments!\n");
+    return -1;
   }
+
+  if (strcmp(argv[1], "DROP") == 0)
+    rule = 0;
+  else if (strcmp(argv[1], "ACCEPT") == 0)
+    rule = 1;
+  else {
+    printf("Invalid rule!\n");
+    return -1;
+  }
+
+  inet_pton(AF_INET, argv[2], &srcipaddr);
+  inet_pton(AF_INET, argv[3], &destipaddr);
+  srcport = htons(strtoul(argv[4], NULL, 10));
+  destport = htons(strtoul(argv[5], NULL, 10));
+  
+  packet_dropped = netfilterlite_addrule(rule, srcipaddr, destipaddr, srcport, destport);
+  printf("packet_dropped? %s\n", packet_dropped ? "true" : "false");
     
   return 0;
 }
