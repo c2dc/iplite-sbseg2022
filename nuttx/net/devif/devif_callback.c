@@ -215,8 +215,6 @@ void devif_callback_init(void)
       g_cbprealloc[i].nxtconn = g_cbfreelist;
       g_cbfreelist = &g_cbprealloc[i];
     }
-
-   netfilterlite_initialize();
 }
 
 /****************************************************************************

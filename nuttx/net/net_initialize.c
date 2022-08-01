@@ -191,6 +191,12 @@ void net_initialize(void)
 
   usrsock_initialize();
 #endif
+
+//#ifdef CONFIG_NET_PKTFILTER
+/* Initialize the netfilterlite packet filter */
+
+netfilterlite_initialize();
+//#endif
 }
 
 #endif /* CONFIG_NET */

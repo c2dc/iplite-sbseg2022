@@ -214,7 +214,7 @@ int ipv4_input(FAR struct net_driver_s *dev)
       goto drop;
     }
 
-  /* Get the source and destination IP address in a friendlier form */
+  /* Get the destination IP address in a friendlier form */
 
   destipaddr = net_ip4addr_conv32(ipv4->destipaddr);
   /*

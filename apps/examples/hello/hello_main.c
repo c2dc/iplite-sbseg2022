@@ -29,11 +29,7 @@
 #include <stdbool.h>
 
 /****************************************************************************
- * Public Functions
- ****************************************************************************/
-
-/****************************************************************************
- * hello_main
+ * iplite
  ****************************************************************************/
 
 int main(int argc, FAR char *argv[])
@@ -62,7 +58,9 @@ int main(int argc, FAR char *argv[])
   srcport = htons(strtoul(argv[4], NULL, 10));
   destport = htons(strtoul(argv[5], NULL, 10));
   
-  packet_dropped = netfilterlite_addrule(rule, srcipaddr, destipaddr, srcport, destport);
+  packet_dropped = netfilterlite_addrule(
+    rule, srcipaddr, destipaddr, srcport, destport);
+  
   printf("packet_dropped? %s\n", packet_dropped ? "true" : "false");
     
   return 0;

@@ -32,7 +32,8 @@ void netfilterlite_initialize(void) {
     last_rule = chain_head;
 }
 
-bool netfilterlite_addrule(int rule, in_addr_t srcipaddr, in_addr_t destipaddr, in_port_t srcport, in_port_t destport) {
+bool netfilterlite_addrule(int rule, in_addr_t srcipaddr, in_addr_t destipaddr,
+                            in_port_t srcport, in_port_t destport) {
     chain *new_chainrule = (chain*) malloc(sizeof(chain));
     if (new_chainrule == NULL)
         return false;
