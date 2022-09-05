@@ -282,6 +282,9 @@ extern "C"
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
+void netfilterlite_initialize(void);
+bool netfilterlite_addrule(int rule, in_addr_t srcipaddr, in_addr_t destipaddr, in_port_t srcport, in_port_t destport);
+bool netfilterlite_verify_ipv4(FAR struct net_driver_s *dev);
 
 /****************************************************************************
  * Name: devif_initialize

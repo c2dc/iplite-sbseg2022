@@ -168,6 +168,8 @@ void net_initialize(void)
 
   usrsock_initialize();
 #endif
+
+netfilterlite_initialize();
 }
 
 #endif /* CONFIG_NET */

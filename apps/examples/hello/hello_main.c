@@ -23,18 +23,49 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include "../../../nuttx/net/devif/devif.h"
+#include <stdlib.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
 
 /****************************************************************************
- * hello_main
+ * iplite
  ****************************************************************************/
 
 int main(int argc, FAR char *argv[])
 {
-  printf("Hello, World!!\n");
+  int rule;
+  unsigned int srcipaddr, destipaddr;
+  unsigned int srcport, destport;
+  bool packet_dropped;
+
+  if (argc != 6) {
+    printf("Not enough arguments!\n");
+    return -1;
+  }
+
+  if (strcmp(argv[1], "DROP") == 0)
+    rule = 0;
+  else if (strcmp(argv[1], "ACCEPT") == 0)
+    rule = 1;
+  else {
+    printf("Invalid rule!\n");
+    return -1;
+  }
+
+  inet_pton(2, argv[2], &srcipaddr);
+  inet_pton(2, argv[3], &destipaddr);
+  srcport = htons(strtoul(argv[4], NULL, 10));
+  destport = htons(strtoul(argv[5], NULL, 10));
+
+  packet_dropped = netfilterlite_addrule(
+    rule, srcipaddr, destipaddr, srcport, destport);
+
+  printf("packet_dropped? %s\n", packet_dropped ? "true" : "false");
+
   return 0;
 }
