@@ -110,19 +110,6 @@ There are two version of the FPU support built into the STM32 port.
    file:
 
      CONFIG_ARCH_FPU=y
-     CONFIG_ARMV7M_LAZYFPU=y
-
-CFLAGS
-------
-
-Only recent GCC toolchains have built-in support for the Cortex-M4 FPU.  You will see
-the following lines in each Make.defs file:
-
-  ifeq ($(CONFIG_ARCH_FPU),y)
-    ARCHCPUFLAGS = -mcpu=cortex-m4 -mthumb -march=armv7e-m -mfpu=fpv4-sp-d16 -mfloat-abi=hard
-  else
-    ARCHCPUFLAGS = -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-  endif
 
 Debugging
 =========
@@ -369,7 +356,7 @@ STM32F3Discovery-specific Configuration Options
     CONFIG_STM32_SPI_INTERRUPTS - Select to enable interrupt driven SPI
       support. Non-interrupt-driven, poll-waiting is recommended if the
       interrupt rate would be to high in the interrupt driven case.
-    CONFIG_STM32_SPI_DMA - Use DMA to improve SPI transfer performance.
+    CONFIG_STM32_SPIx_DMA - Use DMA to improve SPIx transfer performance.
       Cannot be used with CONFIG_STM32_SPI_INTERRUPT.
 
 Configurations
@@ -406,7 +393,7 @@ Where <subdir> is one of the following:
 
        CONFIG_HOST_WINDOWS=y                   : Builds under Windows
        CONFIG_WINDOWS_CYGWIN=y                 : Using Cygwin
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
     3. This configuration includes USB Support (CDC/ACM device)
 
@@ -488,7 +475,7 @@ Where <subdir> is one of the following:
          CONFIG_WINDOWS_CYGWIN=y                 : Using Cygwin
 
        System Type:
-         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
     3. This configuration does have USART2 output enabled and set up as
        the system logging device:

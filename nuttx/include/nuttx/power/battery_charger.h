@@ -29,6 +29,7 @@
 #include <nuttx/config.h>
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/list.h>
 
 #include <stdbool.h>
 
@@ -61,10 +62,10 @@
  * lower half as summarized below:
  *
  * BATIOC_STATE - Return the current state of the battery (see
- *   enum battery_charger_status_e).
+ *   enum battery_status_e).
  *   Input value:  A pointer to type int.
  * BATIOC_HEALTH - Return the current health of the battery (see
- *   enum battery_charger_health_e).
+ *   enum battery_health_e).
  *   Input value:  A pointer to type int.
  * BATIOC_ONLINE - Return 1 if the battery is online; 0 if offline.
  *   Input value:  A pointer to type bool.
@@ -77,56 +78,24 @@
  * BATIOC_OPERATE - Perform miscellaneous, device-specific charger operation.
  *   Input value:  An uintptr_t that can hold a pointer to struct
  *                 batio_operate_msg_s.
+ * BATIOC_CHIPID -Get the charger chip id.
+ *   Input value:  A pointer to type unsigned int.
  */
-
-/* Special input values for BATIOC_INPUT_CURRENT that may optionally
- * be supported by lower-half driver:
- */
-
-#define BATTERY_INPUT_CURRENT_EXT_LIM   (-1) /* External input current limit */
 
 /****************************************************************************
  * Public Types
  ****************************************************************************/
 
-/* Battery status */
-
-enum battery_charger_status_e
-{
-  BATTERY_UNKNOWN = 0, /* Battery state is not known */
-  BATTERY_FAULT,       /* Charger reported a fault, get health for more info */
-  BATTERY_IDLE,        /* Not full, not charging, not discharging */
-  BATTERY_FULL,        /* Full, not discharging */
-  BATTERY_CHARGING,    /* Not full, charging */
-  BATTERY_DISCHARGING  /* Probably not full, discharging */
-};
-
-/* Battery Health status */
-
-enum battery_charger_health_e
-{
-  BATTERY_HEALTH_UNKNOWN = 0,  /* Battery health state is not known */
-  BATTERY_HEALTH_GOOD,         /* Battery is in good condiction */
-  BATTERY_HEALTH_DEAD,         /* Battery is dead, nothing we can do */
-  BATTERY_HEALTH_OVERHEAT,     /* Battery is over recommended temperature */
-  BATTERY_HEALTH_OVERVOLTAGE,  /* Battery voltage is over recommended level */
-  BATTERY_HEALTH_UNSPEC_FAIL,  /* Battery charger reported an unspected failure */
-  BATTERY_HEALTH_COLD,         /* Battery is under recommended temperature */
-  BATTERY_HEALTH_WD_TMR_EXP,   /* Battery WatchDog Timer Expired */
-  BATTERY_HEALTH_SAFE_TMR_EXP, /* Battery Safety Timer Expired */
-  BATTERY_HEALTH_DISCONNECTED  /* Battery is not connected */
-};
-
-  /* This structure defines the lower half battery interface */
+/* This structure defines the lower half battery interface */
 
 struct battery_charger_dev_s;
 struct battery_charger_operations_s
 {
-  /* Return the current battery state (see enum battery_charger_status_e) */
+  /* Return the current battery state (see enum battery_status_e) */
 
   int (*state)(struct battery_charger_dev_s *dev, int *status);
 
-  /* Return the current battery health (see enum battery_charger_health_e) */
+  /* Return the current battery health (see enum battery_health_e) */
 
   int (*health)(struct battery_charger_dev_s *dev, int *health);
 
@@ -149,6 +118,18 @@ struct battery_charger_operations_s
   /* Do device specific operation */
 
   int (*operate)(struct battery_charger_dev_s *dev, uintptr_t param);
+
+  /* Get chip id */
+
+  int (*chipid)(struct battery_charger_dev_s *dev, unsigned int *value);
+
+  /* Get the actual output voltage for charging */
+
+  int (*get_voltage)(struct battery_charger_dev_s *dev, FAR int *value);
+
+  /* Get charge protocol */
+
+  int (*get_protocol)(struct battery_charger_dev_s *dev, FAR int *value);
 };
 
 /* This structure defines the battery driver state structure */
@@ -160,6 +141,10 @@ struct battery_charger_dev_s
   FAR const struct battery_charger_operations_s *ops; /* Battery operations */
 
   sem_t batsem;  /* Enforce mutually exclusive access */
+
+  struct list_node flist;
+
+  uint32_t mask;  /* record drive support features */
 
   /* Data fields specific to the lower-half driver may follow */
 };
@@ -181,6 +166,13 @@ extern "C"
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: battery_charger_changed
+ ****************************************************************************/
+
+int battery_charger_changed(FAR struct battery_charger_dev_s *dev,
+                            uint32_t mask);
 
 /****************************************************************************
  * Name: battery_charger_register

@@ -34,7 +34,7 @@
 #include <nuttx/irq.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam_gpio.h"
 #include "hardware/sam_matrix.h"
 #include "samv71-xult.h"
@@ -177,7 +177,7 @@ uint32_t board_buttons(void)
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_IRQBUTTONS
-int board_button_irq(int id, xcpt_t irqhandler, FAR void *arg)
+int board_button_irq(int id, xcpt_t irqhandler, void *arg)
 {
 #ifdef HAVE_IRQBUTTONS
 

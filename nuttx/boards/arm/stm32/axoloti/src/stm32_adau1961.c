@@ -1,35 +1,20 @@
 /****************************************************************************
  * boards/arm/stm32/axoloti/src/stm32_adau1961.c
  *
- *   Copyright (C) 2019 Gregory Nutt. All rights reserved.
- *   Author: Jason T. Harris <sirmanlypowers@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -72,21 +57,21 @@ struct stm32_mwinfo_s
  * Private Functions
  ****************************************************************************/
 
-static int adau1961_attach(FAR const struct adau1961_lower_s *lower,
-                           adau1961_handler_t isr, FAR void *arg)
+static int adau1961_attach(const struct adau1961_lower_s *lower,
+                           adau1961_handler_t isr, void *arg)
 {
   audinfo("TODO\n");
   return 0;
 }
 
-static bool adau1961_enable(FAR const struct adau1961_lower_s *lower,
+static bool adau1961_enable(const struct adau1961_lower_s *lower,
                             bool enable)
 {
   audinfo("TODO\n");
   return 0;
 }
 
-static void adau1961_hw_reset(FAR const struct adau1961_lower_s *lower)
+static void adau1961_hw_reset(const struct adau1961_lower_s *lower)
 {
   audinfo("TODO\n");
 }
@@ -140,9 +125,9 @@ static struct stm32_mwinfo_s g_adau1961info =
 
 int stm32_adau1961_initialize(int minor)
 {
-  FAR struct audio_lowerhalf_s *adau1961;
-  FAR struct i2c_master_s *i2c;
-  FAR struct i2s_dev_s *i2s;
+  struct audio_lowerhalf_s *adau1961;
+  struct i2c_master_s *i2c;
+  struct i2s_dev_s *i2s;
   static bool initialized = false;
   char devname[12];
   int ret;

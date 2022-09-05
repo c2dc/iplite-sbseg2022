@@ -26,11 +26,11 @@ ifeq ($(CONFIG_ARCH_LEDS),y)
 CSRCS += stm32_autoleds.c
 endif
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += stm32_appinit.c
 endif
 
-ifeq ($(CONFIG_CAN),y)
+ifeq ($(CONFIG_STM32_CAN_CHARDRIVER),y)
 CSRCS += stm32_can.c
 endif
 

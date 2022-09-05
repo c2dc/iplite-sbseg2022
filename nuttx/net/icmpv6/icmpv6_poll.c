@@ -53,12 +53,18 @@
  *
  * Assumptions:
  *   The network is locked.
+ *   dev is not NULL.
+ *   conn may be NULL.
+ *   The connection (conn), if not NULL, is bound to
+ *   the polling device (dev).
  *
  ****************************************************************************/
 
 void icmpv6_poll(FAR struct net_driver_s *dev,
                  FAR struct icmpv6_conn_s *conn)
 {
+  DEBUGASSERT(dev != NULL && (conn == NULL || dev == conn->dev));
+
   /* Setup for the application callback */
 
   dev->d_appdata = &dev->d_buf[NET_LL_HDRLEN(dev) + IPICMPv6_HDRLEN];
@@ -67,8 +73,8 @@ void icmpv6_poll(FAR struct net_driver_s *dev,
 
   /* Perform the application callback */
 
-  devif_conn_event(dev, conn, ICMPv6_POLL,
-                   conn ? conn->list : dev->d_conncb);
+  devif_conn_event(dev, ICMPv6_POLL,
+                   conn ? conn->sconn.list : dev->d_conncb);
 }
 
 #endif /* CONFIG_NET_ICMPv6_SOCKET || CONFIG_NET_ICMPv6_NEIGHBOR */

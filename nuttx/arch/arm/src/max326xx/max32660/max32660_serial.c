@@ -29,18 +29,18 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/serial/serial.h>
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "max326_config.h"
 #include "hardware/max326_uart.h"

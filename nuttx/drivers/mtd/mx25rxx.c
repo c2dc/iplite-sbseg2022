@@ -1,38 +1,20 @@
 /****************************************************************************
  * drivers/mtd/mx25rxx.c
  *
- *   Copyright (C) 201, 2019 Gregory Nutt. All rights reserved.
- *   Author: Simon Piriou <spiriou31@gmail.com>
-
- *   Derived from QuadSPI-based N25QxxxA driver (drivers/mtd/n25qxxx.c)
- *   Author: dev@ziggurat29.com
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -41,6 +23,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <inttypes.h>
@@ -117,7 +100,11 @@
 /* JEDEC Read ID register values */
 
 #define MX25R_JEDEC_MANUFACTURER         0xc2  /* Macronix manufacturer ID */
-#define MX25R_JEDEC_MEMORY_TYPE          0x28  /* MX25Rx memory type */
+#ifdef CONFIG_MX25RXX_LXX
+#  define MX25R_JEDEC_MEMORY_TYPE          0x20  /* MX25Lx memory type */
+#else
+#  define MX25R_JEDEC_MEMORY_TYPE          0x28  /* MX25Rx memory type */
+#endif
 #define MX25R_JEDEC_MX25R6435F_CAPACITY  0x17  /* MX25R6435F memory capacity */
 #define MX25R_JEDEC_MX25R8035F_CAPACITY  0x14  /* MX25R8035F memory capacity */
 
@@ -129,7 +116,12 @@
 #define MX25R6435F_SECTOR_SHIFT     (12)
 #define MX25R6435F_SECTOR_COUNT     (2048)
 #define MX25R6435F_PAGE_SIZE        (256)
-#define MX25R6435F_PAGE_SHIFT       (8)
+
+#ifdef CONFIG_MX25RXX_PAGE128
+#  define MX25R6435F_PAGE_SHIFT       (7)
+#else
+#  define MX25R6435F_PAGE_SHIFT       (8)
+#endif
 
 /* Status register bit definitions */
 
@@ -556,7 +548,11 @@ void mx25rxx_write_status_config(FAR struct mx25rxx_dev_s *dev,
   dev->cmdbuf[1] = config & 0xff;
   dev->cmdbuf[2] = config >> 8;
 
+#ifdef CONFIG_MX25RXX_LXX
+  mx25rxx_command_write(dev->qspi, MX25R_WRSR, dev->cmdbuf, 2);
+#else
   mx25rxx_command_write(dev->qspi, MX25R_WRSR, dev->cmdbuf, 3);
+#endif
   mx25rxx_write_enable(dev, false);
 }
 
@@ -622,8 +618,8 @@ int mx25rxx_erase(FAR struct mtd_dev_s *dev,
           /* Erase each sector */
 
           mx25rxx_erase_sector(priv, startblock);
-          startblock ++;
-          blocksleft --;
+          startblock++;
+          blocksleft--;
         }
     }
 #endif
@@ -728,7 +724,7 @@ int mx25rxx_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
   FAR struct mx25rxx_dev_s *priv = (FAR struct mx25rxx_dev_s *)dev;
   int ret = -EINVAL; /* Assume good command with bad parameters */
 
-  finfo("cmd: %d \n", cmd);
+  finfo("cmd: %d\n", cmd);
 
   switch (cmd)
     {
@@ -770,6 +766,28 @@ int mx25rxx_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
         }
         break;
 
+      case BIOC_PARTINFO:
+        {
+          FAR struct partition_info_s *info =
+            (FAR struct partition_info_s *)arg;
+          if (info != NULL)
+            {
+#ifdef CONFIG_MX25RXX_SECTOR512
+              info->numsectors  = priv->nsectors <<
+                               (priv->sectorshift - MX25RXX_SECTOR512_SHIFT);
+              info->sectorsize  = 1 << MX25RXX_SECTOR512_SHIFT;
+#else
+              info->numsectors  = priv->nsectors <<
+                                  (priv->sectorshift - priv->pageshift);
+              info->sectorsize  = 1 << priv->pageshift;
+#endif
+              info->startsector = 0;
+              info->parent[0]   = '\0';
+              ret               = OK;
+            }
+        }
+        break;
+
       case MTDIOC_BULKERASE:
         {
           /* Erase the entire device */
@@ -777,6 +795,15 @@ int mx25rxx_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
           mx25rxx_lock(priv->qspi, false);
           ret = mx25rxx_erase_chip(priv);
           mx25rxx_unlock(priv->qspi);
+        }
+        break;
+
+      case MTDIOC_ERASESTATE:
+        {
+          FAR uint8_t *result = (FAR uint8_t *)arg;
+          *result = MX25RXX_ERASED_STATE;
+
+          ret = OK;
         }
         break;
 

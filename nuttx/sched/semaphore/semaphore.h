@@ -28,10 +28,10 @@
 #include <nuttx/config.h>
 #include <nuttx/compiler.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/sched.h>
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <sched.h>
 #include <queue.h>
 
 /****************************************************************************
@@ -79,6 +79,7 @@ void nxsem_boost_priority(FAR sem_t *sem);
 void nxsem_release_holder(FAR sem_t *sem);
 void nxsem_restore_baseprio(FAR struct tcb_s *stcb, FAR sem_t *sem);
 void nxsem_canceled(FAR struct tcb_s *stcb, FAR sem_t *sem);
+void nxsem_release_all(FAR struct tcb_s *stcb);
 #else
 #  define nxsem_initialize_holders()
 #  define nxsem_destroyholder(sem)
@@ -88,6 +89,7 @@ void nxsem_canceled(FAR struct tcb_s *stcb, FAR sem_t *sem);
 #  define nxsem_release_holder(sem)
 #  define nxsem_restore_baseprio(stcb,sem)
 #  define nxsem_canceled(stcb,sem)
+#  define nxsem_release_all(stcb)
 #endif
 
 #undef EXTERN

@@ -27,7 +27,6 @@ NET_CSRCS += devif_loopback.c
 
 ifeq ($(CONFIG_NET_IPv4),y)
 NET_CSRCS += ipv4_input.c
-NET_CSRCS += netfilterlite.c
 endif
 
 ifeq ($(CONFIG_NET_IPv6),y)

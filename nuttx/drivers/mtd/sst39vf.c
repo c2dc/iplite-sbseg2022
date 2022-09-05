@@ -320,12 +320,12 @@ static void sst39vf_writeseq(FAR const struct sst39vf_wrinfo_s *wrinfo,
  *
  *   "Toggle Bits (DQ6 and DQ2). During the internal Program or Erase
  *    operation, any consecutive attempts to read DQ6 will produce
- *    alternating “1”s and “0”s, i.e., toggling between 1 and 0. When
+ *    alternating 1s and 0s, i.e., toggling between 1 and 0. When
  *    the internal Program or Erase operation is completed, the DQ6 bit
  *    will stop toggling. The device is then ready for the next operation.
  *    For Sector-, Block-, or Chip-Erase, the toggle bit (DQ6) is valid
  *    after the rising edge of sixth WE# (or CE#) pulse.  DQ6 will be set to
- *    “1” if a Read operation is attempted on an Erase-Suspended
+ *    1 if a Read operation is attempted on an Erase-Suspended
  *    Sector/Block. If Program operation is initiated in a sector/block not
  *    selected in Erase-Suspend mode, DQ6 will toggle.
  *
@@ -377,7 +377,7 @@ static int sst39vf_waittoggle(FAR const struct sst39vf_wrinfo_s *wrinfo,
  *   Erase the entire chip
  *
  *   "The SST39VF160x/320x provide a Chip-Erase operation, which allows the
- *    user to erase the entire memory array to the “1” state. This is
+ *    user to erase the entire memory array to the 1 state. This is
  *    useful when the entire device must be quickly erased.  The Chip-Erase
  *    operation is initiated by executing a six-byte command sequence with
  *    Chip-Erase command (10H) at address 5555H in the last byte sequence.
@@ -534,7 +534,7 @@ static int sst39vf_sectorerase(FAR struct sst39vf_dev_s *priv,
  *   CE# or WE#, whichever occurs first. The third step is the internal
  *   Program operation which is initiated after the rising edge of the
  *   fourth WE# or CE#, whichever occurs first. The Program operation, once
- *   initiated, will be completed within 10 µs. .... During the Program
+ *   initiated, will be completed within 10s. .... During the Program
  *   operation, the only valid reads are Data# Polling and Toggle Bit.
  *   During the internal Program operation, the host is free to perform
  *   additional tasks. Any commands issued during the internal Program
@@ -581,7 +581,7 @@ static int sst39vf_erase(FAR struct mtd_dev_s *dev, off_t startblock,
     {
       /* Clear the sector */
 
-      ret = sst39vf_sectorerase(priv, address);
+      ret = sst39vf_sectorerase(priv, address >> 1);
       if (ret < 0)
         {
           return ret;
@@ -611,7 +611,7 @@ static ssize_t sst39vf_bread(FAR struct mtd_dev_s *dev, off_t startblock,
   /* Get the source address and the size of the transfer */
 
   source = (FAR const uint8_t *)
-           SST39VF_ADDR(startblock * priv->chip->sectorsize);
+           SST39VF_ADDR(startblock * priv->chip->sectorsize >> 1);
   nbytes = nblocks * priv->chip->sectorsize;
 
   /* Copy the data to the user buffer */
@@ -642,8 +642,7 @@ static ssize_t sst39vf_bwrite(FAR struct mtd_dev_s *dev, off_t startblock,
 
   /* Get the destination address and the size of the transfer */
 
-  wrinfo.address =
-    (uintptr_t)SST39VF_ADDR((startblock * priv->chip->sectorsize));
+  wrinfo.address = (uintptr_t)(startblock * priv->chip->sectorsize >> 1);
   nwords = nblocks * (priv->chip->sectorsize >> 1);
 
   /* Copy the data to the user buffer */
@@ -657,7 +656,7 @@ static ssize_t sst39vf_bwrite(FAR struct mtd_dev_s *dev, off_t startblock,
           return ret;
         }
 
-      wrinfo.address += sizeof(uint16_t);
+      wrinfo.address += sizeof(uint8_t);
     }
 
   return nblocks;
@@ -684,7 +683,7 @@ static ssize_t sst39vf_read(FAR struct mtd_dev_s *dev, off_t offset,
 
   /* Get the source address and the size of the transfer */
 
-  source = (FAR const uint8_t *)SST39VF_ADDR(offset);
+  source = (FAR const uint8_t *)SST39VF_ADDR(offset >> 1);
 
   /* Copy the data to the user buffer */
 
@@ -723,7 +722,7 @@ static int sst39vf_ioctl(FAR struct mtd_dev_s *dev,
         }
         break;
 
-      case MTDIOC_XIPBASE:
+      case BIOC_XIPBASE:
         {
           FAR void **ppv = (FAR void **)arg;
           if (ppv)
@@ -732,6 +731,21 @@ static int sst39vf_ioctl(FAR struct mtd_dev_s *dev,
 
               *ppv = (FAR void *)CONFIG_SST39VF_BASE_ADDRESS;
               ret  = OK;
+            }
+        }
+        break;
+
+      case BIOC_PARTINFO:
+        {
+          FAR struct partition_info_s *info =
+            (FAR struct partition_info_s *)arg;
+          if (info != NULL)
+            {
+              info->numsectors  = priv->chip->nsectors;
+              info->sectorsize  = priv->chip->sectorsize;
+              info->startsector = 0;
+              info->parent[0]   = '\0';
+              ret               = OK;
             }
         }
         break;

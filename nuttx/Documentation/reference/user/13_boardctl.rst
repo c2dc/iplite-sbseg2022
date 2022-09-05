@@ -171,8 +171,7 @@ Symbol Handling
    
    :configuration: This command is always available when
      CONFIG_BUILTIN is enabled, but does nothing unless
-     CONFIG_BUILD_PROTECTED and CONFIG_FS_BINFS are also
-     selected.
+     CONFIG_BUILD_PROTECTED is also selected.
      
 USB
 ---
@@ -183,9 +182,9 @@ USB
    
    :Argument: A pointer to an instance of :c:struct:`boardioc_usbdev_ctrl_s`.
    
-   :configuration: CONFIG_LIB_BOARDCTL && CONFIG_BOARDCTL_USBDEVCTRL
+   :configuration: CONFIG_BOARDCTL && CONFIG_BOARDCTL_USBDEVCTRL
    
-   :dependencies: Board logic must provide ``board_<usbdev>_initialize()`.
+   :dependencies: Board logic must provide `board_<usbdev>_initialize()`.
    
 Graphics
 --------
@@ -208,7 +207,7 @@ Graphics
    
    :configuration: CONFIG_VNCSERVER
    
-   :dependencies: VNC server provides :c:func:`vnc_default_fbinitialize`.
+   :dependencies: VNC server provides :c:func:`nx_vnc_fbinitialize`.
    
 .. c:macro:: BOARDIOC_NXTERM
 

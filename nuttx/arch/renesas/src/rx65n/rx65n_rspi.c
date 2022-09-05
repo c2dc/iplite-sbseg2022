@@ -26,9 +26,9 @@
 
 #include <sys/types.h>
 #include <stdint.h>
-#include <math.h>
 #include <stdbool.h>
 #include <semaphore.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -40,10 +40,7 @@
 #include <arch/board/board.h>
 
 #include "up_internal.h"
-#include "up_arch.h"
-
 #include "chip.h"
-#include "up_arch.h"
 #include "rx65n_definitions.h"
 #include "rx65n_rspi.h"
 #include "rx65n_dtc.h"
@@ -1740,7 +1737,7 @@ static uint32_t rspi_setfrequency(FAR struct spi_dev_s *dev,
   if (frequency != priv->frequency)
     {
       /* Below formula used to calculate bit rate
-       * Bit rate f(PCLK)/(2 × (n + 1) × 2^N) .
+       * Bit rate f(PCLK)/(2 * (n + 1) * 2^N) .
        * n denotes SPBR setting (0,1,2..255) .
        * N denotes a BRDV[1:0] bit setting (0, 1, 2, 3) .
        */
@@ -1842,19 +1839,19 @@ static void rspi_setmode(FAR struct spi_dev_s *dev, enum spi_mode_e mode)
 
       switch (mode)
         {
-          case SPIDEV_MODE0: /* CPOL=0 CHPHA=0 */
+          case SPIDEV_MODE0: /* CPOL=0 CPHA=0 */
             modebits = 0;
             break;
 
-          case SPIDEV_MODE1: /* CPOL=0 CHPHA=1 */
+          case SPIDEV_MODE1: /* CPOL=0 CPHA=1 */
             modebits = RSPI_SPCMD_PHA;
             break;
 
-          case SPIDEV_MODE2: /* CPOL=1 CHPHA=0 */
+          case SPIDEV_MODE2: /* CPOL=1 CPHA=0 */
             modebits = RSPI_SPCMD_POL;
             break;
 
-          case SPIDEV_MODE3: /* CPOL=1 CHPHA=1 */
+          case SPIDEV_MODE3: /* CPOL=1 CPHA=1 */
             modebits = RSPI_SPCMD_PHA | RSPI_SPCMD_POL;
             break;
 
@@ -2547,7 +2544,6 @@ FAR struct spi_dev_s *rx65n_rspibus_initialize(int bus)
 #endif
     {
       spierr("ERROR: Unsupported RSPI bus: %d\n", bus);
-      return NULL;
     }
 
   leave_critical_section(flags);

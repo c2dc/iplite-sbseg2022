@@ -29,7 +29,7 @@
 
 #include <arch/irq.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam_gclk.h"
 
 #if defined(CONFIG_ARCH_FAMILY_SAMD20) || defined(CONFIG_ARCH_FAMILY_SAMD21)
@@ -87,7 +87,7 @@ static void sam_gclck_waitsyncbusy(void)
  *
  ****************************************************************************/
 
-void sam_gclk_config(FAR const struct sam_gclkconfig_s *config)
+void sam_gclk_config(const struct sam_gclkconfig_s *config)
 {
   uint32_t genctrl;
   uint32_t gendiv;

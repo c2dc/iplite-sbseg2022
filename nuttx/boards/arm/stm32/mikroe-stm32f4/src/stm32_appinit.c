@@ -176,8 +176,8 @@
 int board_app_initialize(uintptr_t arg)
 {
 #ifdef CONFIG_STM32_SPI3
-  FAR struct spi_dev_s *spi;
-  FAR struct mtd_dev_s *mtd;
+  struct spi_dev_s *spi;
+  struct mtd_dev_s *mtd;
 #endif
   int ret = OK;
 
@@ -219,8 +219,8 @@ int board_app_initialize(uintptr_t arg)
           int partoffset;
           const char *partstring = CONFIG_MIKROE_FLASH_PART_LIST;
           const char *ptr;
-          FAR struct mtd_dev_s *mtd_part;
-          char  partname[4];
+          struct mtd_dev_s *mtd_part;
+          char  partname[16];
 
           /* Now create a partition on the FLASH device */
 
@@ -254,7 +254,7 @@ int board_app_initialize(uintptr_t arg)
                    */
 
   #if defined(CONFIG_MTD_SMART) && defined(CONFIG_FS_SMARTFS)
-                  sprintf(partname, "p%d", partno);
+                  snprintf(partname, sizeof(partname), "p%d", partno);
                   smart_initialize(CONFIG_MIKROE_FLASH_MINOR, mtd_part,
                                    partname);
 #endif

@@ -18,8 +18,8 @@
  *
  ************************************************************************************/
 
-#ifndef __ARCH_X86_SRC_QEMU_QEMU_CHIP_H
-#define __ARCH_X86_SRC_QEMU_QEMU_CHIP_H
+#ifndef __ARCH_X86_SRC_QEMU_CHIP_H
+#define __ARCH_X86_SRC_QEMU_CHIP_H
 
 /************************************************************************************
  * Included Files
@@ -29,9 +29,9 @@
 
 /* Get customizations for each supported QEMU emulation */
 
-#ifdef CONFIG_ARCH_CHIP_QEMU
+#ifdef CONFIG_ARCH_CHIP_QEMU_I486
 #else
-#  error "Unsupported STM32 chip"
+#  error "Unsupported I486 chip"
 #endif
 
 /* Include only the memory map.  Other chip hardware files should then include this
@@ -56,4 +56,4 @@
  * Public Functions Prototypes
  ************************************************************************************/
 
-#endif /* __ARCH_X86_SRC_QEMU_QEMU_CHIP_H */
+#endif /* __ARCH_X86_SRC_QEMU_CHIP_H */

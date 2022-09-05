@@ -43,10 +43,10 @@
 
 struct noteram_info_s
 {
+  unsigned int ni_overwrite;
   volatile unsigned int ni_head;
   volatile unsigned int ni_tail;
   volatile unsigned int ni_read;
-  unsigned int ni_overwrite;
   uint8_t ni_buffer[CONFIG_DRIVER_NOTERAM_BUFSIZE];
 };
 
@@ -88,16 +88,16 @@ static const struct file_operations g_noteram_fops =
   noteram_ioctl, /* ioctl */
   NULL           /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  , 0            /* unlink */
+  , NULL         /* unlink */
 #endif
 };
 
 static struct noteram_info_s g_noteram_info =
 {
 #ifdef CONFIG_DRIVER_NOTERAM_DEFAULT_NOOVERWRITE
-  .ni_overwrite = NOTERAM_MODE_OVERWRITE_DISABLE
+  NOTERAM_MODE_OVERWRITE_DISABLE
 #else
-  .ni_overwrite = NOTERAM_MODE_OVERWRITE_ENABLE
+  NOTERAM_MODE_OVERWRITE_ENABLE
 #endif
 };
 
@@ -190,7 +190,7 @@ static void noteram_record_taskname(pid_t pid, const char *name)
   ti->size = tilen;
   ti->pid[0] = pid & 0xff;
   ti->pid[1] = (pid >> 8) & 0xff;
-  strncpy(ti->name, name, namelen + 1);
+  strlcpy(ti->name, name, namelen + 1);
   g_noteram_taskname.buffer_used += tilen;
 }
 #endif
@@ -412,7 +412,6 @@ static unsigned int noteram_unread_length(void)
 
 static void noteram_remove(void)
 {
-  FAR struct note_common_s *note;
   unsigned int tail;
   unsigned int length;
 
@@ -423,18 +422,27 @@ static void noteram_remove(void)
 
   /* Get the length of the note at the tail index */
 
-  note   = (FAR struct note_common_s *)&g_noteram_info.ni_buffer[tail];
-  length = note->nc_length;
+  length = g_noteram_info.ni_buffer[tail];
   DEBUGASSERT(length <= noteram_length());
 
 #if CONFIG_DRIVER_NOTERAM_TASKNAME_BUFSIZE > 0
-  if (note->nc_type == NOTE_STOP)
+  if (g_noteram_info.ni_buffer[noteram_next(tail, 1)] == NOTE_STOP)
     {
+      uint8_t nc_pid[2];
+
       /* The name of the task is no longer needed because the task is deleted
        * and the corresponding notes are lost.
        */
 
-      noteram_remove_taskname(note->nc_pid[0] + (note->nc_pid[1] << 8));
+#ifdef CONFIG_SMP
+      nc_pid[0] = g_noteram_info.ni_buffer[noteram_next(tail, 4)];
+      nc_pid[1] = g_noteram_info.ni_buffer[noteram_next(tail, 5)];
+#else
+      nc_pid[0] = g_noteram_info.ni_buffer[noteram_next(tail, 3)];
+      nc_pid[1] = g_noteram_info.ni_buffer[noteram_next(tail, 4)];
+#endif
+
+      noteram_remove_taskname(nc_pid[0] + (nc_pid[1] << 8));
     }
 #endif
 
@@ -740,7 +748,7 @@ static int noteram_ioctl(struct file *filep, int cmd, unsigned long arg)
           taskname = noteram_get_taskname(param->pid);
           if (taskname != NULL)
             {
-              strncpy(param->taskname, taskname, CONFIG_TASK_NAME_SIZE + 1);
+              strlcpy(param->taskname, taskname, CONFIG_TASK_NAME_SIZE + 1);
               param->taskname[CONFIG_TASK_NAME_SIZE] = '\0';
               ret = 0;
             }

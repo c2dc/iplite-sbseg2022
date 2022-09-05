@@ -31,7 +31,6 @@
 #include <nuttx/semaphore.h>
 #include <arch/samv7/chip.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "barriers.h"
 
@@ -136,6 +135,8 @@
 #define SAMV7_PROGMEM_NSECTORS   (CONFIG_SAMV7_PROGMEM_NSECTORS)
 #define SAMV7_PROGMEM_ENDSEC     (SAMV7_TOTAL_NSECTORS)
 #define SAMV7_PROGMEM_STARTSEC   (SAMV7_PROGMEM_ENDSEC - CONFIG_SAMV7_PROGMEM_NSECTORS)
+
+#define SAMV7_PROGMEM_ERASEDVAL  (0xffu)
 
 /* Misc stuff */
 
@@ -445,13 +446,13 @@ ssize_t up_progmem_ispageerased(size_t cluster)
   address = (cluster << SAMV7_CLUSTER_SHIFT) + SAMV7_PROGMEM_START;
   up_flush_dcache(address, address + SAMV7_CLUSTER_SIZE);
 
-  /* Verify that the cluster is erased (i.e., all 0xff) */
+  /* Verify that the cluster is erased (i.e., all SAMV7_PROGMEM_ERASEDVAL) */
 
   for (nleft = SAMV7_CLUSTER_SIZE, nwritten = 0;
        nleft > 0;
        nleft--, address++)
     {
-      if (getreg8(address) != 0xff)
+      if (getreg8(address) != SAMV7_PROGMEM_ERASEDVAL)
         {
           nwritten++;
         }
@@ -469,7 +470,7 @@ ssize_t up_progmem_ispageerased(size_t cluster)
  * Input Parameters:
  *   address - Address with or without flash offset
  *   buffer  - Pointer to buffer
- *   buflen   - Number of bytes to write
+ *   buflen  - Number of bytes to write
  *
  * Returned Value:
  *   Bytes written or negative value on error.  The following errors are
@@ -488,8 +489,8 @@ ssize_t up_progmem_ispageerased(size_t cluster)
 
 ssize_t up_progmem_write(size_t address, const void *buffer, size_t buflen)
 {
-  FAR uint32_t *dest;
-  FAR const uint32_t *src;
+  uint32_t *dest;
+  const uint32_t *src;
   size_t written;
   size_t xfrsize;
   size_t offset;
@@ -537,14 +538,14 @@ ssize_t up_progmem_write(size_t address, const void *buffer, size_t buflen)
 
   /* Loop until all of the data has been written */
 
-  dest    = (FAR uint32_t *)address;
+  dest    = (uint32_t *)(address & ~SAMV7_PAGE_MASK);
   written = 0;
 
   while (buflen > 0)
     {
       /* How much can we write into this page? */
 
-      xfrsize = MIN((size_t)SAMV7_PAGE_SIZE - offset, buflen) ;
+      xfrsize = MIN((size_t)SAMV7_PAGE_SIZE - offset, buflen);
 
       /* Do we need to use the intermediate buffer? */
 
@@ -552,7 +553,7 @@ ssize_t up_progmem_write(size_t address, const void *buffer, size_t buflen)
         {
           /* No, we can take the data directly from the user buffer */
 
-          src = (FAR const uint32_t *)buffer;
+          src = (const uint32_t *)buffer;
         }
       else
         {
@@ -577,15 +578,19 @@ ssize_t up_progmem_write(size_t address, const void *buffer, size_t buflen)
 
       /* Write the page */
 
-      for (i = 0; i < (SAMV7_PAGE_SIZE / sizeof(uint32_t)); i++)
+      for (i = 0; i < SAMV7_PAGE_WORDS; i++)
         {
           *dest++ = *src++;
-           ARM_DMB();
+
+#ifdef CONFIG_ARMV7M_DCACHE_WRITETHROUGH
+          ARM_DMB();
+#endif
         }
 
       /* Flush the data cache to memory */
 
-      up_clean_dcache(address, address + SAMV7_PAGE_SIZE);
+      up_clean_dcache(address & ~SAMV7_PAGE_MASK,
+        (address & ~SAMV7_PAGE_MASK) + SAMV7_PAGE_SIZE);
 
       /* Send the write command */
 
@@ -598,12 +603,26 @@ ssize_t up_progmem_write(size_t address, const void *buffer, size_t buflen)
       /* Adjust pointers and counts for the next time through the loop */
 
       address += xfrsize;
-      dest     = (FAR uint32_t *)address;
-      buffer   = (FAR void *)((uintptr_t)buffer + xfrsize);
+      dest     = (uint32_t *)address;
+      buffer   = (void *)((uintptr_t)buffer + xfrsize);
       buflen  -= xfrsize;
+      offset   = 0;
       page++;
     }
 
   page_buffer_unlock();
   return written;
+}
+
+/****************************************************************************
+ * Name: up_progmem_erasestate
+ *
+ * Description:
+ *   Return a byte that represents flash erased value state
+ *
+ ****************************************************************************/
+
+uint8_t up_progmem_erasestate(void)
+{
+  return SAMV7_PROGMEM_ERASEDVAL;
 }

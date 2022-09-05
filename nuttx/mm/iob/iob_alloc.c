@@ -47,7 +47,7 @@
  *
  ****************************************************************************/
 
-static FAR struct iob_s *iob_alloc_committed(enum iob_user_e consumerid)
+static FAR struct iob_s *iob_alloc_committed(void)
 {
   FAR struct iob_s *iob = NULL;
   irqstate_t flags;
@@ -73,11 +73,6 @@ static FAR struct iob_s *iob_alloc_committed(enum iob_user_e consumerid)
       iob->io_len    = 0;    /* Length of the data in the entry */
       iob->io_offset = 0;    /* Offset to the beginning of data */
       iob->io_pktlen = 0;    /* Total length of the packet */
-
-#if !defined(CONFIG_DISABLE_MOUNTPOINT) && defined(CONFIG_FS_PROCFS) && \
-    defined(CONFIG_MM_IOB) && !defined(CONFIG_FS_PROCFS_EXCLUDE_IOBINFO)
-      iob_stats_onalloc(consumerid);
-#endif
     }
 
   leave_critical_section(flags);
@@ -93,8 +88,7 @@ static FAR struct iob_s *iob_alloc_committed(enum iob_user_e consumerid)
  *
  ****************************************************************************/
 
-static FAR struct iob_s *iob_allocwait(bool throttled,
-                                       enum iob_user_e consumerid)
+static FAR struct iob_s *iob_allocwait(bool throttled, unsigned int timeout)
 {
   FAR struct iob_s *iob;
   irqstate_t flags;
@@ -121,7 +115,7 @@ static FAR struct iob_s *iob_allocwait(bool throttled,
    * decremented atomically.
    */
 
-  iob = iob_tryalloc(throttled, consumerid);
+  iob = iob_tryalloc(throttled);
   while (ret == OK && iob == NULL)
     {
       /* If not successful, then the semaphore count was less than or equal
@@ -130,14 +124,22 @@ static FAR struct iob_s *iob_allocwait(bool throttled,
        * list.
        */
 
-      ret = nxsem_wait_uninterruptible(sem);
+      if (timeout == UINT_MAX)
+        {
+          ret = nxsem_wait_uninterruptible(sem);
+        }
+      else
+        {
+          ret = nxsem_tickwait_uninterruptible(sem, MSEC2TICK(timeout));
+        }
+
       if (ret >= 0)
         {
           /* When we wake up from wait successfully, an I/O buffer was
            * freed and we hold a count for one IOB.
            */
 
-          iob = iob_alloc_committed(consumerid);
+          iob = iob_alloc_committed();
           if (iob == NULL)
             {
               /* We need release our count so that it is available to
@@ -147,7 +149,7 @@ static FAR struct iob_s *iob_allocwait(bool throttled,
                */
 
               nxsem_post(sem);
-              iob = iob_tryalloc(throttled, consumerid);
+              iob = iob_tryalloc(throttled);
             }
 
           /* REVISIT: I think this logic should be moved inside of
@@ -180,6 +182,37 @@ static FAR struct iob_s *iob_allocwait(bool throttled,
  ****************************************************************************/
 
 /****************************************************************************
+ * Name: iob_timedalloc
+ *
+ * Description:
+ *  Allocate an I/O buffer by taking the buffer at the head of the free list.
+ *  This wait will be terminated when the specified timeout expires.
+ *
+ * Input Parameters:
+ *   throttled  - An indication of the IOB allocation is "throttled"
+ *   timeout    - Timeout value in milliseconds.
+ *
+ ****************************************************************************/
+
+FAR struct iob_s *iob_timedalloc(bool throttled, unsigned int timeout)
+{
+  /* Were we called from the interrupt level? */
+
+  if (up_interrupt_context() || sched_idletask() || timeout == 0)
+    {
+      /* Yes, then try to allocate an I/O buffer without waiting */
+
+      return iob_tryalloc(throttled);
+    }
+  else
+    {
+      /* Then allocate an I/O buffer, waiting as necessary */
+
+      return iob_allocwait(throttled, timeout);
+    }
+}
+
+/****************************************************************************
  * Name: iob_alloc
  *
  * Description:
@@ -187,22 +220,9 @@ static FAR struct iob_s *iob_allocwait(bool throttled,
  *
  ****************************************************************************/
 
-FAR struct iob_s *iob_alloc(bool throttled, enum iob_user_e consumerid)
+FAR struct iob_s *iob_alloc(bool throttled)
 {
-  /* Were we called from the interrupt level? */
-
-  if (up_interrupt_context() || sched_idletask())
-    {
-      /* Yes, then try to allocate an I/O buffer without waiting */
-
-      return iob_tryalloc(throttled, consumerid);
-    }
-  else
-    {
-      /* Then allocate an I/O buffer, waiting as necessary */
-
-      return iob_allocwait(throttled, consumerid);
-    }
+  return iob_timedalloc(throttled, UINT_MAX);
 }
 
 /****************************************************************************
@@ -214,7 +234,7 @@ FAR struct iob_s *iob_alloc(bool throttled, enum iob_user_e consumerid)
  *
  ****************************************************************************/
 
-FAR struct iob_s *iob_tryalloc(bool throttled, enum iob_user_e consumerid)
+FAR struct iob_s *iob_tryalloc(bool throttled)
 {
   FAR struct iob_s *iob;
   irqstate_t flags;
@@ -237,7 +257,8 @@ FAR struct iob_s *iob_tryalloc(bool throttled, enum iob_user_e consumerid)
 #if CONFIG_IOB_THROTTLE > 0
   /* If there are free I/O buffers for this allocation */
 
-  if (sem->semcount > 0)
+  if (sem->semcount > 0 ||
+      (throttled && g_iob_sem.semcount - CONFIG_IOB_THROTTLE > 0))
 #endif
     {
       /* Take the I/O buffer from the head of the free list */
@@ -265,15 +286,12 @@ FAR struct iob_s *iob_tryalloc(bool throttled, enum iob_user_e consumerid)
 #if CONFIG_IOB_THROTTLE > 0
           /* The throttle semaphore is a little more complicated because
            * it can be negative!  Decrementing is still safe, however.
+           *
+           * Note: usually g_throttle_sem.semcount >= -CONFIG_IOB_THROTTLE.
+           * But it can be smaller than that if there are blocking threads.
            */
 
           g_throttle_sem.semcount--;
-          DEBUGASSERT(g_throttle_sem.semcount >= -CONFIG_IOB_THROTTLE);
-#endif
-
-#if !defined(CONFIG_DISABLE_MOUNTPOINT) && defined(CONFIG_FS_PROCFS) && \
-    defined(CONFIG_MM_IOB) && !defined(CONFIG_FS_PROCFS_EXCLUDE_IOBINFO)
-          iob_stats_onalloc(consumerid);
 #endif
 
           leave_critical_section(flags);

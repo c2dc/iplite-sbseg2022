@@ -32,12 +32,14 @@
  ****************************************************************************/
 
 #ifndef CONFIG_ARCH_STRCASECMP
+#undef strcasecmp /* See mm/README.txt */
 int strcasecmp(FAR const char *cs, FAR const char *ct)
 {
-  int result;
+  register int result;
   for (; ; )
     {
-      if ((result = (int)toupper(*cs) - (int)toupper(*ct)) != 0 || !*cs)
+      if ((result = toupper(*cs) - toupper(*ct)) != 0 ||
+          *cs == '\0')
         {
           break;
         }

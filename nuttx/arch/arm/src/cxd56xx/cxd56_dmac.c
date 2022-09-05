@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 #include <nuttx/kmalloc.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -36,6 +37,10 @@
 #include <nuttx/semaphore.h>
 
 #include "cxd56_dmac.h"
+
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
 
 #define PM_APP_ADMAC 51
 #define PM_APP_SKDMAC 52
@@ -230,11 +235,11 @@ typedef struct
 
 static int open_channels = 0;
 
-static int intr_handler_admac0(int irq, FAR void *context, FAR void *arg);
-static int intr_handler_admac1(int irq, FAR void *context, FAR void *arg);
-static int intr_handler_idmac(int irq, FAR void *context, FAR void *arg);
-static int intr_handler_skdmac0(int irq, FAR void *context, FAR void *arg);
-static int intr_handler_skdmac1(int irq, FAR void *context, FAR void *arg);
+static int intr_handler_admac0(int irq, void *context, void *arg);
+static int intr_handler_admac1(int irq, void *context, void *arg);
+static int intr_handler_idmac(int irq, void *context, void *arg);
+static int intr_handler_skdmac0(int irq, void *context, void *arg);
+static int intr_handler_skdmac1(int irq, void *context, void *arg);
 static uint32_t irq_map[] =
 {
   CXD56_IRQ_APP_DMAC0,
@@ -248,7 +253,7 @@ static uint32_t irq_map[] =
   CXD56_IRQ_SKDMAC_1,
 };
 
-static int (*intc_handler[])(int irq, FAR void *context, FAR void *arg) =
+static int (*intc_handler[])(int irq, void *context, void *arg) =
 {
   intr_handler_admac0,
   intr_handler_admac1,
@@ -415,19 +420,19 @@ static void _dmac_intc_handler(int ch)
     }
 }
 
-static int intr_handler_admac0(int irq, FAR void *context, FAR void *arg)
+static int intr_handler_admac0(int irq, void *context, void *arg)
 {
   _dmac_intc_handler(0);
   return OK;
 }
 
-static int intr_handler_admac1(int irq, FAR void *context, FAR void *arg)
+static int intr_handler_admac1(int irq, void *context, void *arg)
 {
   _dmac_intc_handler(1);
   return OK;
 }
 
-static int intr_handler_idmac(int irq, FAR void *context, FAR void *arg)
+static int intr_handler_idmac(int irq, void *context, void *arg)
 {
   struct dmac_register_map *dev = get_device(2); /* XXX */
   uint32_t stat = dev->intstatus & 0x1f;
@@ -444,13 +449,13 @@ static int intr_handler_idmac(int irq, FAR void *context, FAR void *arg)
   return OK;
 }
 
-static int intr_handler_skdmac0(int irq, FAR void *context, FAR void *arg)
+static int intr_handler_skdmac0(int irq, void *context, void *arg)
 {
   _dmac_intc_handler(7);
   return OK;
 }
 
-static int intr_handler_skdmac1(int irq, FAR void *context, FAR void *arg)
+static int intr_handler_skdmac1(int irq, void *context, void *arg)
 {
   _dmac_intc_handler(8);
   return OK;
@@ -900,6 +905,7 @@ void cxd56_rxdmasetup(DMA_HANDLE handle, uintptr_t paddr, uintptr_t maddr,
       di = 0;
     }
 
+  dst  = CXD56_PHYSADDR(dst);
   rest = nbytes;
 
   list_num = (nbytes + CXD56_DMAC_MAX_SIZE - 1) / CXD56_DMAC_MAX_SIZE;
@@ -907,7 +913,7 @@ void cxd56_rxdmasetup(DMA_HANDLE handle, uintptr_t paddr, uintptr_t maddr,
     {
       dmach->list[i].src_addr = paddr;
       dmach->list[i].dest_addr = dst;
-      dmach->list[i].nextlli = (uint32_t)&dmach->list[i + 1];
+      dmach->list[i].nextlli = CXD56_PHYSADDR(&dmach->list[i + 1]);
       dmach->list[i].control = DMAC_EX_CTRL_HELPER(0, di, 0,           /* interrupt / Dest inc / Src inc */
                                CXD56_DMAC_MASTER1, CXD56_DMAC_MASTER2, /* AHB dst master / AHB src master (fixed) */
                                config.dest_width, config.src_width,    /* Dest / Src transfer width */
@@ -970,6 +976,7 @@ void cxd56_txdmasetup(DMA_HANDLE handle, uintptr_t paddr, uintptr_t maddr,
       si = 0;
     }
 
+  src  = CXD56_PHYSADDR(src);
   rest = nbytes;
 
   list_num = (nbytes + CXD56_DMAC_MAX_SIZE - 1) / CXD56_DMAC_MAX_SIZE;
@@ -977,7 +984,7 @@ void cxd56_txdmasetup(DMA_HANDLE handle, uintptr_t paddr, uintptr_t maddr,
     {
       dmach->list[i].src_addr = src;
       dmach->list[i].dest_addr = paddr;
-      dmach->list[i].nextlli = (uint32_t)&dmach->list[i + 1];
+      dmach->list[i].nextlli = CXD56_PHYSADDR(&dmach->list[i + 1]);
       dmach->list[i].control = DMAC_EX_CTRL_HELPER(0, 0, si,               /* interrupt / Dest inc / Src inc */
                                    CXD56_DMAC_MASTER2, CXD56_DMAC_MASTER1, /* AHB dst master / AHB src master (fixed) */
                                    config.dest_width, config.src_width,    /* Dest / Src transfer width (fixed) */

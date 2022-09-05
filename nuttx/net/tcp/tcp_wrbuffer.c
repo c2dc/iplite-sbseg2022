@@ -1,37 +1,20 @@
 /****************************************************************************
  * net/tcp/tcp_wrbuffer.c
  *
- *   Copyright (C) 2007-2009, 2013-2014, 2018 Gregory Nutt. All rights
- *     reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *           Jason Jiang  <jasonj@live.cn>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -111,8 +94,6 @@ void tcp_wrbuffer_initialize(void)
 {
   int i;
 
-  sq_init(&g_wrbuffer.freebuffers);
-
   for (i = 0; i < CONFIG_NET_TCP_NWRBCHAINS; i++)
     {
       sq_addfirst(&g_wrbuffer.buffers[i].wb_node, &g_wrbuffer.freebuffers);
@@ -120,6 +101,69 @@ void tcp_wrbuffer_initialize(void)
 
   nxsem_init(&g_wrbuffer.sem, 0, CONFIG_NET_TCP_NWRBCHAINS);
   nxsem_set_protocol(&g_wrbuffer.sem, SEM_PRIO_NONE);
+}
+
+/****************************************************************************
+ * Name: tcp_wrbuffer_timedalloc
+ *
+ * Description:
+ *   Allocate a TCP write buffer by taking a pre-allocated buffer from
+ *   the free list.  This function is called from TCP logic when a buffer
+ *   of TCP data is about to sent
+ *   This function is wrapped version of tcp_wrbuffer_alloc(),
+ *   this wait will be terminated when the specified timeout expires.
+ *
+ * Input Parameters:
+ *   timeout   - The relative time to wait until a timeout is declared.
+ *
+ * Assumptions:
+ *   Called from user logic with the network locked.
+ *
+ ****************************************************************************/
+
+FAR struct tcp_wrbuffer_s *tcp_wrbuffer_timedalloc(unsigned int timeout)
+{
+  FAR struct tcp_wrbuffer_s *wrb;
+  int ret;
+
+  /* We need to allocate two things:  (1) A write buffer structure and (2)
+   * at least one I/O buffer to start the chain.
+   *
+   * Allocate the write buffer structure first then the IOB.  In order to
+   * avoid deadlocks, we will need to free the IOB first, then the write
+   * buffer
+   */
+
+  ret = net_timedwait_uninterruptible(&g_wrbuffer.sem, timeout);
+  if (ret != OK)
+    {
+      return NULL;
+    }
+
+  /* Now, we are guaranteed to have a write buffer structure reserved
+   * for us in the free list.
+   */
+
+  wrb = (FAR struct tcp_wrbuffer_s *)sq_remfirst(&g_wrbuffer.freebuffers);
+  DEBUGASSERT(wrb);
+  memset(wrb, 0, sizeof(struct tcp_wrbuffer_s));
+
+  /* Now get the first I/O buffer for the write buffer structure */
+
+  wrb->wb_iob = net_iobtimedalloc(true, timeout);
+
+  /* Did we get an IOB?  We should always get one except under some really
+   * weird error conditions.
+   */
+
+  if (wrb->wb_iob == NULL)
+    {
+      nerr("ERROR: Failed to allocate I/O buffer\n");
+      tcp_wrbuffer_release(wrb);
+      return NULL;
+    }
+
+  return wrb;
 }
 
 /****************************************************************************
@@ -140,42 +184,7 @@ void tcp_wrbuffer_initialize(void)
 
 FAR struct tcp_wrbuffer_s *tcp_wrbuffer_alloc(void)
 {
-  FAR struct tcp_wrbuffer_s *wrb;
-
-  /* We need to allocate two things:  (1) A write buffer structure and (2)
-   * at least one I/O buffer to start the chain.
-   *
-   * Allocate the write buffer structure first then the IOB.  In order to
-   * avoid deadlocks, we will need to free the IOB first, then the write
-   * buffer
-   */
-
-  net_lockedwait_uninterruptible(&g_wrbuffer.sem);
-
-  /* Now, we are guaranteed to have a write buffer structure reserved
-   * for us in the free list.
-   */
-
-  wrb = (FAR struct tcp_wrbuffer_s *)sq_remfirst(&g_wrbuffer.freebuffers);
-  DEBUGASSERT(wrb);
-  memset(wrb, 0, sizeof(struct tcp_wrbuffer_s));
-
-  /* Now get the first I/O buffer for the write buffer structure */
-
-  wrb->wb_iob = net_ioballoc(false, IOBUSER_NET_TCP_WRITEBUFFER);
-
-  /* Did we get an IOB?  We should always get one except under some really
-   * weird error conditions.
-   */
-
-  if (wrb->wb_iob == NULL)
-    {
-      nerr("ERROR: Failed to allocate I/O buffer\n");
-      tcp_wrbuffer_release(wrb);
-      return NULL;
-    }
-
-  return wrb;
+  return tcp_wrbuffer_timedalloc(UINT_MAX);
 }
 
 /****************************************************************************
@@ -198,40 +207,7 @@ FAR struct tcp_wrbuffer_s *tcp_wrbuffer_alloc(void)
 
 FAR struct tcp_wrbuffer_s *tcp_wrbuffer_tryalloc(void)
 {
-  FAR struct tcp_wrbuffer_s *wrb;
-
-  /* We need to allocate two things:  (1) A write buffer structure and (2)
-   * at least one I/O buffer to start the chain.
-   *
-   * Allocate the write buffer structure first then the IOBG.  In order to
-   * avoid deadlocks, we will need to free the IOB first, then the write
-   * buffer
-   */
-
-  if (nxsem_trywait(&g_wrbuffer.sem) != OK)
-    {
-      return NULL;
-    }
-
-  /* Now, we are guaranteed to have a write buffer structure reserved
-   * for us in the free list.
-   */
-
-  wrb = (FAR struct tcp_wrbuffer_s *)sq_remfirst(&g_wrbuffer.freebuffers);
-  DEBUGASSERT(wrb);
-  memset(wrb, 0, sizeof(struct tcp_wrbuffer_s));
-
-  /* Now get the first I/O buffer for the write buffer structure */
-
-  wrb->wb_iob = iob_tryalloc(false, IOBUSER_NET_TCP_WRITEBUFFER);
-  if (!wrb->wb_iob)
-    {
-      nerr("ERROR: Failed to allocate I/O buffer\n");
-      tcp_wrbuffer_release(wrb);
-      return NULL;
-    }
-
-  return wrb;
+  return tcp_wrbuffer_timedalloc(0);
 }
 
 /****************************************************************************
@@ -257,18 +233,60 @@ void tcp_wrbuffer_release(FAR struct tcp_wrbuffer_s *wrb)
 
   if (wrb->wb_iob != NULL)
     {
-      iob_free_chain(wrb->wb_iob, IOBUSER_NET_TCP_WRITEBUFFER);
+      iob_free_chain(wrb->wb_iob);
     }
 
+#ifdef CONFIG_NET_TCP_FAST_RETRANSMIT
   /* Reset the ack counter */
 
   TCP_WBNACK(wrb) = 0;
+#endif
 
   /* Then free the write buffer structure */
 
   sq_addlast(&wrb->wb_node, &g_wrbuffer.freebuffers);
   nxsem_post(&g_wrbuffer.sem);
 }
+
+/****************************************************************************
+ * Name: tcp_wrbuffer_inqueue_size
+ *
+ * Description:
+ *   Get the in-queued write buffer size from connection
+ *
+ * Input Parameters:
+ *   conn - The TCP connection of interest
+ *
+ * Assumptions:
+ *   Called from user logic with the network locked.
+ *
+ ****************************************************************************/
+
+#if CONFIG_NET_SEND_BUFSIZE > 0
+uint32_t tcp_wrbuffer_inqueue_size(FAR struct tcp_conn_s *conn)
+{
+  FAR struct tcp_wrbuffer_s *wrb;
+  FAR sq_entry_t *entry;
+  uint32_t total = 0;
+
+  if (conn)
+    {
+      for (entry = sq_peek(&conn->unacked_q); entry; entry = sq_next(entry))
+        {
+          wrb = (FAR struct tcp_wrbuffer_s *)entry;
+          total += TCP_WBPKTLEN(wrb);
+        }
+
+      for (entry = sq_peek(&conn->write_q); entry; entry = sq_next(entry))
+        {
+          wrb = (FAR struct tcp_wrbuffer_s *)entry;
+          total += TCP_WBPKTLEN(wrb);
+        }
+    }
+
+  return total;
+}
+#endif /* CONFIG_NET_SEND_BUFSIZE */
 
 /****************************************************************************
  * Name: tcp_wrbuffer_test

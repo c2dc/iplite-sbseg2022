@@ -45,6 +45,15 @@
 #include <sys/types.h>
 
 /****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#if defined(CONFIG_FS_LARGEFILE) && defined(CONFIG_HAVE_LONG_LONG)
+#  define preadv64  preadv
+#  define pwritev64 pwritev
+#endif
+
+/****************************************************************************
  * Public Types
  ****************************************************************************/
 
@@ -146,6 +155,12 @@ ssize_t readv(int fildes, FAR const struct iovec *iov, int iovcnt);
  ****************************************************************************/
 
 ssize_t writev(int fildes, FAR const struct iovec *iov, int iovcnt);
+
+ssize_t preadv(int fildes, FAR const struct iovec *iov, int iovcnt,
+               off_t offset);
+
+ssize_t pwritev(int fildes, FAR const struct iovec *iov, int iovcnt,
+                off_t offset);
 
 #undef EXTERN
 #if defined(__cplusplus)

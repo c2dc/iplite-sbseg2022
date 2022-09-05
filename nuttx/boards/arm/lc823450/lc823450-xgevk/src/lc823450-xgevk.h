@@ -67,7 +67,7 @@ int lc823450_adc_setup(void);
  *
  ****************************************************************************/
 
-#if defined(CONFIG_LIB_BOARDCTL) || defined(CONFIG_BOARD_LATE_INITIALIZE)
+#if defined(CONFIG_BOARDCTL) || defined(CONFIG_BOARD_LATE_INITIALIZE)
 int lc823450_bringup(void);
 #endif
 
@@ -76,7 +76,7 @@ int lc823450_bringup(void);
  ****************************************************************************/
 
 #ifdef CONFIG_BMA250
-int lc823450_bma250initialize(FAR const char *devpath);
+int lc823450_bma250initialize(const char *devpath);
 #endif
 
 #ifdef CONFIG_AUDIO_WM8776

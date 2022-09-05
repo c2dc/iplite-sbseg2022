@@ -74,7 +74,7 @@
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -95,7 +95,7 @@ int sam_bringup(void)
 #endif
 
 #if defined(CONFIG_SAMD5E5_WDT) && defined(CONFIG_WATCHDOG)
-  (void)sam_wdt_initialize(CONFIG_WATCHDOG_DEVPATH);
+  sam_wdt_initialize(CONFIG_WATCHDOG_DEVPATH);
 #endif
 
 #ifdef CONFIG_SAMD5E5_SERCOM5_ISI2C

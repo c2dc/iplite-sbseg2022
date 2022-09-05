@@ -1,38 +1,20 @@
 /****************************************************************************
  * arch/arm/src/lpc31xx/lpc31_i2c.c
  *
- *   Author: David Hewson
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- *   Copyright (C) 2010-2011, 2014, 2016-2017 Gregory Nutt. All rights
- *   reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -47,6 +29,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -59,9 +42,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "lpc31_i2c.h"
 #include "lpc31_evntrtr.h"
 #include "lpc31_syscreg.h"
@@ -114,16 +95,16 @@ static struct lpc31_i2cdev_s i2cdevices[2];
  * Private Function Prototypes
  ****************************************************************************/
 
-static int  i2c_interrupt(int irq, FAR void *context, FAR void *arg);
+static int  i2c_interrupt(int irq, void *context, void *arg);
 static void i2c_progress(struct lpc31_i2cdev_s *priv);
 static void i2c_timeout(wdparm_t arg);
 static void i2c_hwreset(struct lpc31_i2cdev_s *priv);
 static void i2c_setfrequency(struct lpc31_i2cdev_s *priv,
                              uint32_t frequency);
-static int  i2c_transfer(FAR struct i2c_master_s *dev,
-                         FAR struct i2c_msg_s *msgs, int count);
+static int  i2c_transfer(struct i2c_master_s *dev,
+                         struct i2c_msg_s *msgs, int count);
 #ifdef CONFIG_I2C_RESET
-static int  i2c_reset(FAR struct i2c_master_s * dev);
+static int  i2c_reset(struct i2c_master_s * dev);
 #endif
 
 /****************************************************************************
@@ -187,7 +168,7 @@ static void i2c_setfrequency(struct lpc31_i2cdev_s *priv, uint32_t frequency)
  *
  ****************************************************************************/
 
-static int i2c_interrupt(int irq, FAR void *context, FAR void *arg)
+static int i2c_interrupt(int irq, void *context, void *arg)
 {
   struct lpc31_i2cdev_s *priv = (struct lpc31_i2cdev_s *)arg;
 
@@ -483,8 +464,8 @@ static void i2c_hwreset(struct lpc31_i2cdev_s *priv)
  *
  ****************************************************************************/
 
-static int i2c_transfer(FAR struct i2c_master_s *dev,
-                        FAR struct i2c_msg_s *msgs, int count)
+static int i2c_transfer(struct i2c_master_s *dev,
+                        struct i2c_msg_s *msgs, int count)
 {
   struct lpc31_i2cdev_s *priv = (struct lpc31_i2cdev_s *) dev;
   irqstate_t flags;
@@ -547,7 +528,7 @@ static int i2c_transfer(FAR struct i2c_master_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_I2C_RESET
-static int i2c_reset(FAR struct i2c_master_s * dev)
+static int i2c_reset(struct i2c_master_s * dev)
 {
   return OK;
 }
@@ -619,7 +600,7 @@ struct i2c_master_s *lpc31_i2cbus_initialize(int port)
  *
  ****************************************************************************/
 
-int lpc31_i2cbus_uninitialize(FAR struct i2c_master_s *dev)
+int lpc31_i2cbus_uninitialize(struct i2c_master_s *dev)
 {
   struct lpc31_i2cdev_s *priv = (struct lpc31_i2cdev_s *)dev;
 

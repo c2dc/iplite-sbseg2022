@@ -30,7 +30,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <sched.h>
-#include <syslog.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/signal.h>
@@ -221,7 +221,7 @@ int usbmonitor_start(void)
         }
       else
         {
-          g_usbmonitor.pid = ret;
+          g_usbmonitor.pid = (pid_t)ret;
           uinfo("Started: %d\n", g_usbmonitor.pid);
           ret = OK;
         }

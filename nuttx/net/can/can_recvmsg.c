@@ -272,7 +272,7 @@ static inline int can_readahead(struct can_recvfrom_s *pstate)
 
           /* And free the I/O buffer chain */
 
-          iob_free_chain(iob, IOBUSER_NET_CAN_READAHEAD);
+          iob_free_chain(iob);
         }
       else
         {
@@ -281,8 +281,7 @@ static inline int can_readahead(struct can_recvfrom_s *pstate)
            * buffer queue).
            */
 
-          iob_trimhead_queue(&conn->readahead, recvlen,
-                             IOBUSER_NET_CAN_READAHEAD);
+          iob_trimhead_queue(&conn->readahead, recvlen);
         }
 
       /* do not pass frames with DLC > 8 to a legacy socket */
@@ -356,7 +355,7 @@ static inline int can_readahead_timestamp(struct can_conn_s *conn,
 
           /* And free the I/O buffer chain */
 
-          iob_free_chain(iob, IOBUSER_NET_CAN_READAHEAD);
+          iob_free_chain(iob);
         }
       else
         {
@@ -365,8 +364,7 @@ static inline int can_readahead_timestamp(struct can_conn_s *conn,
            * buffer queue).
            */
 
-          iob_trimhead_queue(&conn->readahead, recvlen,
-                             IOBUSER_NET_CAN_READAHEAD);
+          iob_trimhead_queue(&conn->readahead, recvlen);
         }
 
       return recvlen;
@@ -406,11 +404,12 @@ static int can_recv_filter(struct can_conn_s *conn, canid_t id)
 #endif
 
 static uint16_t can_recvfrom_eventhandler(FAR struct net_driver_s *dev,
-                                          FAR void *pvconn,
                                           FAR void *pvpriv, uint16_t flags)
 {
-  struct can_recvfrom_s *pstate = (struct can_recvfrom_s *)pvpriv;
+  struct can_recvfrom_s *pstate = pvpriv;
+#if defined(CONFIG_NET_CANPROTO_OPTIONS) || defined(CONFIG_NET_TIMESTAMP)
   struct can_conn_s *conn = (struct can_conn_s *)pstate->pr_sock->s_conn;
+#endif
 
   /* 'priv' might be null in some race conditions (?) */
 
@@ -434,10 +433,10 @@ static uint16_t can_recvfrom_eventhandler(FAR struct net_driver_s *dev,
           if (!conn->fd_frames)
 #endif
             {
-#if defined(CONFIG_NET_TIMESTAMP)
-              if ((conn->psock->s_timestamp && (dev->d_len >
+#ifdef CONFIG_NET_TIMESTAMP
+              if ((conn->sconn.s_timestamp && (dev->d_len >
                   sizeof(struct can_frame) + sizeof(struct timeval)))
-                  || (!conn->psock->s_timestamp && (dev->d_len >
+                  || (!conn->sconn.s_timestamp && (dev->d_len >
                    sizeof(struct can_frame))))
 #else
               if (dev->d_len > sizeof(struct can_frame))
@@ -455,7 +454,7 @@ static uint16_t can_recvfrom_eventhandler(FAR struct net_driver_s *dev,
           can_newdata(dev, pstate);
 
 #ifdef CONFIG_NET_TIMESTAMP
-          if (pstate->pr_sock->s_timestamp)
+          if (conn->sconn.s_timestamp)
             {
               if (pstate->pr_msglen == sizeof(struct timeval))
                 {
@@ -594,7 +593,7 @@ ssize_t can_recvmsg(FAR struct socket *psock, FAR struct msghdr *msg,
   state.pr_buffer = msg->msg_iov->iov_base;
 
 #ifdef CONFIG_NET_TIMESTAMP
-  if (psock->s_timestamp && msg->msg_controllen >=
+  if (conn->sconn.s_timestamp && msg->msg_controllen >=
         (sizeof(struct cmsghdr) + sizeof(struct timeval)))
     {
       struct cmsghdr *cmsg = CMSG_FIRSTHDR(msg);
@@ -626,7 +625,7 @@ ssize_t can_recvmsg(FAR struct socket *psock, FAR struct msghdr *msg,
   if (ret > 0)
     {
 #ifdef CONFIG_NET_TIMESTAMP
-      if (psock->s_timestamp)
+      if (conn->sconn.s_timestamp)
         {
           if (state.pr_msglen == sizeof(struct timeval))
             {
@@ -649,7 +648,7 @@ ssize_t can_recvmsg(FAR struct socket *psock, FAR struct msghdr *msg,
 
   /* Handle non-blocking CAN sockets */
 
-  if (_SS_ISNONBLOCK(psock->s_flags) || (flags & MSG_DONTWAIT) != 0)
+  if (_SS_ISNONBLOCK(conn->sconn.s_flags) || (flags & MSG_DONTWAIT) != 0)
     {
       /* Return the number of bytes read from the read-ahead buffer if
        * something was received (already in 'ret'); EAGAIN if not.

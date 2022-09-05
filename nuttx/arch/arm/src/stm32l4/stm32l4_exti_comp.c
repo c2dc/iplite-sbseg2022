@@ -42,7 +42,7 @@
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32l4_comp.h"
 #include "stm32l4_exti.h"
 #include "hardware/stm32l4_exti.h"
@@ -82,7 +82,7 @@ static const uint32_t g_comp_lines[STM32L4_COMP_NUM] =
  * Private Functions
  ****************************************************************************/
 
-static int stm32l4_exti_comp_isr(int irq, void *context, FAR void *arg)
+static int stm32l4_exti_comp_isr(int irq, void *context, void *arg)
 {
   uint32_t pr;
   uint32_t ln;

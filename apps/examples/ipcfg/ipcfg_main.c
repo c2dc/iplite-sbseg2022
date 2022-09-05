@@ -1,5 +1,5 @@
 /****************************************************************************
- * examples/ipcfg/ipcfg_main.c
+ * apps/examples/ipcfg/ipcfg_main.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -282,7 +282,10 @@ static void ipcfg_dump_ipv4addr(FAR const char *variable, in_addr_t address)
         address
       };
 
-      printf("%s%s\n", variable, inet_ntoa(saddr));
+      char inetaddr[INET_ADDRSTRLEN];
+
+      printf("%s%s\n", variable,
+             inet_ntoa_r(saddr, inetaddr, sizeof(inetaddr)));
     }
 }
 #endif

@@ -7,7 +7,7 @@
  *   Ported by: Darcy Gong
  *
  * It derives from the Rhombus OS math library by Nick Johnson which has
- * a compatibile, MIT-style license:
+ * a compatible, MIT-style license:
  *
  * Copyright (C) 2009-2011 Nick Johnson <nickbjohnson4224 at gmail.com>
  *
@@ -46,12 +46,12 @@ double modf(double x, double *iptr)
     }
   else if (fabs(x) < 1.0)
     {
-      *iptr = (x * 0.0);
+      *iptr = 0.0;
       return x;
     }
   else
     {
-      *iptr = (double)(int64_t) x;
+      *iptr = (double)(int64_t)x;
       return (x - *iptr);
     }
 }

@@ -25,13 +25,13 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 #include <arch/irq.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
 
 #ifdef CONFIG_SAMA5_PIO_IRQ
@@ -638,7 +638,7 @@ uint32_t *arm_decodeirq(uint32_t *regs)
 #if defined(CONFIG_SAMA5_SAIC)
 /* This is the entry point from the ARM FIQ vector handler */
 
-uint32_t *arm_decodefiq(FAR uint32_t *regs)
+uint32_t *arm_decodefiq(uint32_t *regs)
 {
   uint32_t *ret;
 

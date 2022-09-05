@@ -77,6 +77,7 @@
 
 #include <stdbool.h>
 #include <sys/types.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 #include <string.h>
@@ -238,6 +239,9 @@ static const struct file_operations ee24xx_fops =
   ee24xx_seek,  /* seek */
   ee24xx_ioctl, /* ioctl */
   NULL          /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL        /* unlink */
+#endif
 };
 
 #ifdef CONFIG_AT24CS_UUID
@@ -250,6 +254,9 @@ static const struct file_operations at24cs_uuid_fops =
   NULL,             /* seek */
   NULL,             /* ioctl */
   NULL              /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL            /* unlink */
+#endif
 };
 #endif
 

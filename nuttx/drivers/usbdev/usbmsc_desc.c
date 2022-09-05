@@ -33,6 +33,10 @@
 #include <nuttx/usb/usb.h>
 #include <nuttx/usb/usbdev_trace.h>
 
+#ifdef CONFIG_USBMSC_BOARD_SERIALSTR
+#include <nuttx/board.h>
+#endif
+
 #include "usbmsc.h"
 
 /****************************************************************************
@@ -103,7 +107,9 @@ static const struct usb_qualdesc_s g_qualdesc =
 #ifndef CONFIG_USBMSC_COMPOSITE
 const char g_mscvendorstr[]  = CONFIG_USBMSC_VENDORSTR;
 const char g_mscproductstr[] = CONFIG_USBMSC_PRODUCTSTR;
+#ifndef CONFIG_USBMSC_BOARD_SERIALSTR
 const char g_mscserialstr[]  = CONFIG_USBMSC_SERIALSTR;
+#endif
 #endif
 
 /****************************************************************************
@@ -122,9 +128,10 @@ const char g_mscserialstr[]  = CONFIG_USBMSC_SERIALSTR;
  *
  ****************************************************************************/
 
-int usbmsc_mkstrdesc(uint8_t id, struct usb_strdesc_s *strdesc)
+int usbmsc_mkstrdesc(uint8_t id, struct FAR usb_strdesc_s *strdesc)
 {
-  const char *str;
+  FAR uint8_t *data = (FAR uint8_t *)(strdesc + 1);
+  FAR const char *str;
   int len;
   int ndata;
   int i;
@@ -136,10 +143,10 @@ int usbmsc_mkstrdesc(uint8_t id, struct usb_strdesc_s *strdesc)
       {
         /* Descriptor 0 is the language id */
 
-        strdesc->len     = 4;
-        strdesc->type    = USB_DESC_TYPE_STRING;
-        strdesc->data[0] = LSBYTE(USBMSC_STR_LANGUAGE);
-        strdesc->data[1] = MSBYTE(USBMSC_STR_LANGUAGE);
+        strdesc->len  = 4;
+        strdesc->type = USB_DESC_TYPE_STRING;
+        data[0] = LSBYTE(USBMSC_STR_LANGUAGE);
+        data[1] = MSBYTE(USBMSC_STR_LANGUAGE);
         return 4;
       }
 
@@ -152,7 +159,11 @@ int usbmsc_mkstrdesc(uint8_t id, struct usb_strdesc_s *strdesc)
       break;
 
     case USBMSC_SERIALSTRID:
+#ifdef CONFIG_USBMSC_BOARD_SERIALSTR
+      str = board_usbdev_serialstr();
+#else
       str = g_mscserialstr;
+#endif
       break;
 #endif
 
@@ -178,8 +189,8 @@ int usbmsc_mkstrdesc(uint8_t id, struct usb_strdesc_s *strdesc)
 
   for (i = 0, ndata = 0; i < len; i++, ndata += 2)
     {
-      strdesc->data[ndata]   = str[i];
-      strdesc->data[ndata + 1] = 0;
+      data[ndata]     = str[i];
+      data[ndata + 1] = 0;
     }
 
   strdesc->len  = ndata + 2;

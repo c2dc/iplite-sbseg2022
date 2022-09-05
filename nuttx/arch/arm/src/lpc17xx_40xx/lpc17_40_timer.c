@@ -36,8 +36,6 @@
 #include <arch/board/board.h>
 
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "chip.h"
 #include "hardware/lpc17_40_syscon.h"
 #include "lpc17_40_timer.h"
@@ -70,7 +68,7 @@
 /* Debug ********************************************************************/
 
 #ifdef CONFIG_DEBUG_PWM_INFO
-#  define pwm_dumpgpio(p,m) stm32_dumpgpio(p,m)
+#  define pwm_dumpgpio(p,m) lpc17_40_dumpgpio(p,m)
 #else
 #  define pwm_dumpgpio(p,m)
 #endif
@@ -83,14 +81,14 @@
 
 struct lpc17_40_timer_s
 {
-  FAR const struct pwm_ops_s *ops;     /* PWM operations */
-  uint8_t                     timid;   /* Timer ID {0,...,7} */
-  uint8_t                     channel; /* Timer output channel: {1,..4} */
-  uint8_t                     timtype; /* See the TIMTYPE_* definitions */
-  uint32_t                    base;    /* The base address of the timer */
-  uint32_t                    pincfg;  /* Output pin configuration */
-  uint32_t                    pclk;    /* The frequency of the peripheral clock
-                                        * that drives the timer module. */
+  const struct pwm_ops_s *ops;     /* PWM operations */
+  uint8_t                 timid;   /* Timer ID {0,...,7} */
+  uint8_t                 channel; /* Timer output channel: {1,..4} */
+  uint8_t                 timtype; /* See the TIMTYPE_* definitions */
+  uint32_t                base;    /* The base address of the timer */
+  uint32_t                pincfg;  /* Output pin configuration */
+  uint32_t                pclk;    /* The frequency of the peripheral clock
+                                    * that drives the timer module. */
 };
 
 /****************************************************************************
@@ -105,27 +103,27 @@ static void timer_putreg(struct lpc17_40_timer_s *priv,
 
 #ifdef CONFIG_DEBUG_PWM_INFO
 static void timer_dumpregs(struct lpc17_40_timer_s *priv,
-                           FAR const char *msg);
+                           const char *msg);
 #else
 #  define timer_dumpregs(priv,msg)
 #endif
 
 /* Timer management */
 
-static int timer_timer(FAR struct lpc17_40_timer_s *priv,
-                     FAR const struct pwm_info_s *info);
+static int timer_timer(struct lpc17_40_timer_s *priv,
+                       const struct pwm_info_s *info);
 
 /* PWM driver methods */
 
-static int timer_setup(FAR struct pwm_lowerhalf_s *dev);
-static int timer_shutdown(FAR struct pwm_lowerhalf_s *dev);
+static int timer_setup(struct pwm_lowerhalf_s *dev);
+static int timer_shutdown(struct pwm_lowerhalf_s *dev);
 
-static int timer_start(FAR struct pwm_lowerhalf_s *dev,
-                     FAR const struct pwm_info_s *info);
+static int timer_start(struct pwm_lowerhalf_s *dev,
+                       const struct pwm_info_s *info);
 
-static int timer_stop(FAR struct pwm_lowerhalf_s *dev);
-static int timer_ioctl(FAR struct pwm_lowerhalf_s *dev,
-                     int cmd, unsigned long arg);
+static int timer_stop(struct pwm_lowerhalf_s *dev);
+static int timer_ioctl(struct pwm_lowerhalf_s *dev,
+                       int cmd, unsigned long arg);
 
 /****************************************************************************
  * Private Data
@@ -218,29 +216,29 @@ static void timer_putreg(struct lpc17_40_timer_s *priv, int offset,
 
 #ifdef CONFIG_DEBUG_PWM_INFO
 static void timer_dumpregs(struct lpc17_40_timer_s *priv,
-                           FAR const char *msg)
+                           const char *msg)
 {
   pwminfo("%s:\n", msg);
   pwminfo("  CR1: %04x CR2:  %04x SMCR:  %04x DIER:  %04x\n",
-          timer_getreg(priv, LPC17_40_PWM_MR0_OFFSET),
-          timer_getreg(priv, LPC17_40_PWM_MR1_OFFSET),
-          timer_getreg(priv, LPC17_40_PWM_MR2_OFFSET),
-          timer_getreg(priv, LPC17_40_PWM_MR3_OFFSET));
+          timer_getreg(priv, LPC17_40_TMR_MR0_OFFSET),
+          timer_getreg(priv, LPC17_40_TMR_MR1_OFFSET),
+          timer_getreg(priv, LPC17_40_TMR_MR2_OFFSET),
+          timer_getreg(priv, LPC17_40_TMR_MR3_OFFSET));
 #if defined(CONFIG_LPC17_40_TMR0)
   if (priv->timtype == TIMTYPE_ADVANCED)
     {
       pwminfo("  RCR: %04x BDTR: %04x DCR:   %04x DMAR:  %04x\n",
-              timer_getreg(priv, LPC17_40_PWM_MR0_OFFSET),
-              timer_getreg(priv, LPC17_40_PWM_MR1_OFFSET),
-              timer_getreg(priv, LPC17_40_PWM_MR2_OFFSET),
-              timer_getreg(priv, LPC17_40_PWM_MR3_OFFSET));
+              timer_getreg(priv, LPC17_40_TMR_MR0_OFFSET),
+              timer_getreg(priv, LPC17_40_TMR_MR1_OFFSET),
+              timer_getreg(priv, LPC17_40_TMR_MR2_OFFSET),
+              timer_getreg(priv, LPC17_40_TMR_MR3_OFFSET));
     }
   else
 #endif
     {
       pwminfo("  DCR: %04x DMAR: %04x\n",
-              timer_getreg(priv, LPC17_40_PWM_MR2_OFFSET),
-              timer_getreg(priv, LPC17_40_PWM_MR3_OFFSET));
+              timer_getreg(priv, LPC17_40_TMR_MR2_OFFSET),
+              timer_getreg(priv, LPC17_40_TMR_MR3_OFFSET));
     }
 }
 #endif
@@ -260,8 +258,8 @@ static void timer_dumpregs(struct lpc17_40_timer_s *priv,
  *
  ****************************************************************************/
 
-static int timer_timer(FAR struct lpc17_40_timer_s *priv,
-                       FAR const struct pwm_info_s *info)
+static int timer_timer(struct lpc17_40_timer_s *priv,
+                       const struct pwm_info_s *info)
 {
   irqstate_t flags;
   uint32_t regval;
@@ -355,9 +353,9 @@ static int timer_tim1interrupt(int irq, void *context)
  *
  ****************************************************************************/
 
-static int timer_setup(FAR struct pwm_lowerhalf_s *dev)
+static int timer_setup(struct pwm_lowerhalf_s *dev)
 {
-  FAR struct lpc17_40_timer_s *priv = (FAR struct lpc17_40_timer_s *)dev;
+  struct lpc17_40_timer_s *priv = (struct lpc17_40_timer_s *)dev;
   irqstate_t flags;
   uint32_t regval;
 
@@ -444,9 +442,9 @@ static int timer_setup(FAR struct pwm_lowerhalf_s *dev)
  *
  ****************************************************************************/
 
-static int timer_shutdown(FAR struct pwm_lowerhalf_s *dev)
+static int timer_shutdown(struct pwm_lowerhalf_s *dev)
 {
-  FAR struct lpc17_40_timer_s *priv = (FAR struct lpc17_40_timer_s *)dev;
+  struct lpc17_40_timer_s *priv = (struct lpc17_40_timer_s *)dev;
   uint32_t pincfg;
 
   pwminfo("TIM%d pincfg: %08x\n", priv->timid, priv->pincfg);
@@ -471,10 +469,10 @@ static int timer_shutdown(FAR struct pwm_lowerhalf_s *dev)
  *
  ****************************************************************************/
 
-static int timer_start(FAR struct pwm_lowerhalf_s *dev,
-                       FAR const struct pwm_info_s *info)
+static int timer_start(struct pwm_lowerhalf_s *dev,
+                       const struct pwm_info_s *info)
 {
-  FAR struct lpc17_40_timer_s *priv = (FAR struct lpc17_40_timer_s *)dev;
+  struct lpc17_40_timer_s *priv = (struct lpc17_40_timer_s *)dev;
   return timer_timer(priv, info);
 }
 
@@ -497,9 +495,9 @@ static int timer_start(FAR struct pwm_lowerhalf_s *dev,
  *
  ****************************************************************************/
 
-static int timer_stop(FAR struct pwm_lowerhalf_s *dev)
+static int timer_stop(struct pwm_lowerhalf_s *dev)
 {
-  FAR struct lpc17_40_timer_s *priv = (FAR struct lpc17_40_timer_s *)dev;
+  struct lpc17_40_timer_s *priv = (struct lpc17_40_timer_s *)dev;
   uint32_t resetbit;
   uint32_t regaddr;
   uint32_t regval;
@@ -552,11 +550,11 @@ static int timer_stop(FAR struct pwm_lowerhalf_s *dev)
  *
  ****************************************************************************/
 
-static int timer_ioctl(FAR struct pwm_lowerhalf_s *dev,
+static int timer_ioctl(struct pwm_lowerhalf_s *dev,
                        int cmd, unsigned long arg)
 {
 #ifdef CONFIG_DEBUG_PWM_INFO
-  FAR struct lpc17_40_timer_s *priv = (FAR struct lpc17_40_timer_s *)dev;
+  struct lpc17_40_timer_s *priv = (struct lpc17_40_timer_s *)dev;
 
   /* There are no platform-specific ioctl commands */
 
@@ -586,9 +584,9 @@ static int timer_ioctl(FAR struct pwm_lowerhalf_s *dev,
  *
  ****************************************************************************/
 
-FAR struct pwm_lowerhalf_s *lpc17_40_timerinitialize(int timer)
+struct pwm_lowerhalf_s *lpc17_40_timerinitialize(int timer)
 {
-  FAR struct lpc17_40_timer_s *lower;
+  struct lpc17_40_timer_s *lower;
 
   pwminfo("TIM%d\n", timer);
 
@@ -608,7 +606,7 @@ FAR struct pwm_lowerhalf_s *lpc17_40_timerinitialize(int timer)
         return NULL;
     }
 
-  return (FAR struct pwm_lowerhalf_s *)lower;
+  return (struct pwm_lowerhalf_s *)lower;
 }
 
 #endif /* CONFIG_LPC17_40_TIMn_TIMER, n = 1,...,14 */

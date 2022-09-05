@@ -31,6 +31,7 @@
 #include <nuttx/mm/mm.h>
 
 #include "mm_heap/mm.h"
+#include "kasan/kasan.h"
 
 /****************************************************************************
  * Public Functions
@@ -57,16 +58,14 @@
 void mm_addregion(FAR struct mm_heap_s *heap, FAR void *heapstart,
                   size_t heapsize)
 {
-  FAR struct mm_heap_impl_s *heap_impl;
   FAR struct mm_freenode_s *node;
   uintptr_t heapbase;
   uintptr_t heapend;
+  bool ret;
 #if CONFIG_MM_REGIONS > 1
   int IDX;
 
-  DEBUGASSERT(MM_IS_VALID(heap));
-  heap_impl = heap->mm_impl;
-  IDX = heap_impl->mm_nregions;
+  IDX = heap->mm_nregions;
 
   /* Writing past CONFIG_MM_REGIONS would have catastrophic consequences */
 
@@ -78,9 +77,6 @@ void mm_addregion(FAR struct mm_heap_s *heap, FAR void *heapstart,
 
 #else
 # define IDX 0
-
-  DEBUGASSERT(MM_IS_VALID(heap));
-  heap_impl = heap->mm_impl;
 #endif
 
 #if defined(CONFIG_MM_SMALL) && !defined(CONFIG_SMALL_MEMORY)
@@ -92,21 +88,37 @@ void mm_addregion(FAR struct mm_heap_s *heap, FAR void *heapstart,
   DEBUGASSERT(heapsize <= MMSIZE_MAX + 1);
 #endif
 
-  mm_takesemaphore(heap);
+  /* Register to KASan for access check */
 
-  /* Adjust the provide heap start and size so that they are both aligned
-   * with the MM_MIN_CHUNK size.
+  kasan_register(heapstart, &heapsize);
+
+  ret = mm_takesemaphore(heap);
+  DEBUGASSERT(ret);
+
+  /* Adjust the provided heap start and size.
+   *
+   * Note: (uintptr_t)node + SIZEOF_MM_ALLOCNODE is what's actually
+   * returned to the malloc user, which should have natural alignment.
+   * (that is, in this implementation, MM_MIN_CHUNK-alignment.)
    */
 
-  heapbase = MM_ALIGN_UP((uintptr_t)heapstart);
+  heapbase = MM_ALIGN_UP((uintptr_t)heapstart + 2 * SIZEOF_MM_ALLOCNODE) -
+             2 * SIZEOF_MM_ALLOCNODE;
   heapend  = MM_ALIGN_DOWN((uintptr_t)heapstart + (uintptr_t)heapsize);
   heapsize = heapend - heapbase;
 
+#if defined(CONFIG_FS_PROCFS) && \
+    !defined(CONFIG_FS_PROCFS_EXCLUDE_MEMINFO) && \
+    (defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__))
+  minfo("[%s] Region %d: base=%p size=%zu\n",
+        heap->mm_procfs.name, IDX + 1, heapstart, heapsize);
+#else
   minfo("Region %d: base=%p size=%zu\n", IDX + 1, heapstart, heapsize);
+#endif
 
   /* Add the size of this region to the total size of the heap */
 
-  heap_impl->mm_heapsize += heapsize;
+  heap->mm_heapsize += heapsize;
 
   /* Create two "allocated" guard nodes at the beginning and end of
    * the heap.  These only serve to keep us from allocating outside
@@ -116,23 +128,25 @@ void mm_addregion(FAR struct mm_heap_s *heap, FAR void *heapstart,
    * all available memory.
    */
 
-  heap_impl->mm_heapstart[IDX]            = (FAR struct mm_allocnode_s *)
-                                            heapbase;
-  heap_impl->mm_heapstart[IDX]->size      = SIZEOF_MM_ALLOCNODE;
-  heap_impl->mm_heapstart[IDX]->preceding = MM_ALLOC_BIT;
-  node                                    = (FAR struct mm_freenode_s *)
-                                            (heapbase + SIZEOF_MM_ALLOCNODE);
-  node->size                              = heapsize - 2*SIZEOF_MM_ALLOCNODE;
-  node->preceding                         = SIZEOF_MM_ALLOCNODE;
-  heap_impl->mm_heapend[IDX]              = (FAR struct mm_allocnode_s *)
-                                            (heapend - SIZEOF_MM_ALLOCNODE);
-  heap_impl->mm_heapend[IDX]->size        = SIZEOF_MM_ALLOCNODE;
-  heap_impl->mm_heapend[IDX]->preceding   = node->size | MM_ALLOC_BIT;
+  heap->mm_heapstart[IDX]            = (FAR struct mm_allocnode_s *)
+                                       heapbase;
+  MM_ADD_BACKTRACE(heap, heap->mm_heapstart[IDX]);
+  heap->mm_heapstart[IDX]->size      = SIZEOF_MM_ALLOCNODE;
+  heap->mm_heapstart[IDX]->preceding = MM_ALLOC_BIT;
+  node                               = (FAR struct mm_freenode_s *)
+                                       (heapbase + SIZEOF_MM_ALLOCNODE);
+  node->size                         = heapsize - 2*SIZEOF_MM_ALLOCNODE;
+  node->preceding                    = SIZEOF_MM_ALLOCNODE;
+  heap->mm_heapend[IDX]              = (FAR struct mm_allocnode_s *)
+                                       (heapend - SIZEOF_MM_ALLOCNODE);
+  heap->mm_heapend[IDX]->size        = SIZEOF_MM_ALLOCNODE;
+  heap->mm_heapend[IDX]->preceding   = node->size | MM_ALLOC_BIT;
+  MM_ADD_BACKTRACE(heap, heap->mm_heapend[IDX]);
 
 #undef IDX
 
 #if CONFIG_MM_REGIONS > 1
-  heap_impl->mm_nregions++;
+  heap->mm_nregions++;
 #endif
 
   /* Add the single, large free node to the nodelist */
@@ -150,65 +164,52 @@ void mm_addregion(FAR struct mm_heap_s *heap, FAR void *heapstart,
  *   heap region.
  *
  * Input Parameters:
+ *   name      - The heap procfs name
  *   heap      - The selected heap
  *   heapstart - Start of the initial heap region
  *   heapsize  - Size of the initial heap region
  *
  * Returned Value:
- *   None
+ *   Return the address of a new heap instance.
  *
  * Assumptions:
  *
  ****************************************************************************/
 
-void mm_initialize(FAR struct mm_heap_s *heap, FAR void *heapstart,
-                   size_t heapsize)
+FAR struct mm_heap_s *mm_initialize(FAR const char *name,
+                                    FAR void *heapstart, size_t heapsize)
 {
-  FAR struct mm_heap_impl_s *heap_impl;
-  int i;
+  FAR struct mm_heap_s *heap;
+  uintptr_t             heap_adj;
+  int                   i;
 
-  minfo("Heap: start=%p size=%zu\n", heapstart, heapsize);
+  minfo("Heap: name=%s, start=%p size=%zu\n", name, heapstart, heapsize);
 
-  /* Reserve a block space for mm_heap_impl_s context */
+  /* First ensure the memory to be used is aligned */
 
-  DEBUGASSERT(heapsize > sizeof(struct mm_heap_impl_s));
-  heap->mm_impl = (FAR struct mm_heap_impl_s *)heapstart;
-  heap_impl = heap->mm_impl;
-  heapsize -= sizeof(struct mm_heap_impl_s);
-  heapstart = (FAR char *)heapstart + sizeof(struct mm_heap_impl_s);
+  heap_adj  = MM_ALIGN_UP((uintptr_t)heapstart);
+  heapsize -= heap_adj - (uintptr_t)heapstart;
 
-  /* The following two lines have cause problems for some older ZiLog
-   * compilers in the past (but not the more recent).  Life is easier if we
-   * just the suppress them altogther for those tools.
-   */
+  /* Reserve a block space for mm_heap_s context */
 
-#ifndef __ZILOG__
-  CHECK_ALLOCNODE_SIZE;
-  CHECK_FREENODE_SIZE;
-#endif
+  DEBUGASSERT(heapsize > sizeof(struct mm_heap_s));
+  heap = (FAR struct mm_heap_s *)heap_adj;
+  heapsize -= sizeof(struct mm_heap_s);
+  heapstart = (FAR char *)heap_adj + sizeof(struct mm_heap_s);
+
   DEBUGASSERT(MM_MIN_CHUNK >= SIZEOF_MM_FREENODE);
   DEBUGASSERT(MM_MIN_CHUNK >= SIZEOF_MM_ALLOCNODE);
 
   /* Set up global variables */
 
-  heap_impl->mm_heapsize = 0;
-
-#if CONFIG_MM_REGIONS > 1
-  heap_impl->mm_nregions = 0;
-#endif
-
-  /* Initialize mm_delaylist */
-
-  heap_impl->mm_delaylist = NULL;
+  memset(heap, 0, sizeof(struct mm_heap_s));
 
   /* Initialize the node array */
 
-  memset(heap_impl->mm_nodelist, 0,
-         sizeof(struct mm_freenode_s) * MM_NNODES);
   for (i = 1; i < MM_NNODES; i++)
     {
-      heap_impl->mm_nodelist[i - 1].flink = &heap_impl->mm_nodelist[i];
-      heap_impl->mm_nodelist[i].blink     = &heap_impl->mm_nodelist[i - 1];
+      heap->mm_nodelist[i - 1].flink = &heap->mm_nodelist[i];
+      heap->mm_nodelist[i].blink     = &heap->mm_nodelist[i - 1];
     }
 
   /* Initialize the malloc semaphore to one (to support one-at-
@@ -217,7 +218,49 @@ void mm_initialize(FAR struct mm_heap_s *heap, FAR void *heapstart,
 
   mm_seminitialize(heap);
 
+#if defined(CONFIG_FS_PROCFS) && !defined(CONFIG_FS_PROCFS_EXCLUDE_MEMINFO)
+#  if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
+  heap->mm_procfs.name = name;
+  heap->mm_procfs.heap = heap;
+#    ifdef CONFIG_MM_BACKTRACE_DEFAULT
+  heap->mm_procfs.backtrace = true;
+#    endif
+#  endif
+#endif
+
   /* Add the initial region of memory to the heap */
 
   mm_addregion(heap, heapstart, heapsize);
+
+#if defined(CONFIG_FS_PROCFS) && !defined(CONFIG_FS_PROCFS_EXCLUDE_MEMINFO)
+#  if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
+  procfs_register_meminfo(&heap->mm_procfs);
+#  endif
+#endif
+
+  return heap;
+}
+
+/****************************************************************************
+ * Name: mm_uninitialize
+ *
+ * Description:
+ *   Uninitialize the selected heap data structures.
+ *
+ * Input Parameters:
+ *   heap - The heap to uninitialize
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+void mm_uninitialize(FAR struct mm_heap_s *heap)
+{
+#if defined(CONFIG_FS_PROCFS) && !defined(CONFIG_FS_PROCFS_EXCLUDE_MEMINFO)
+#  if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
+  procfs_unregister_meminfo(&heap->mm_procfs);
+#  endif
+#endif
+  mm_semuninitialize(heap);
 }

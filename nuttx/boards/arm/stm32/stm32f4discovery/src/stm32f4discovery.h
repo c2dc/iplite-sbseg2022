@@ -227,6 +227,14 @@
 
 #define GPIO_CS43L22_RESET  (GPIO_OUTPUT|GPIO_SPEED_50MHz|GPIO_PORTD|GPIO_PIN4)
 
+/* Digital Joystick 5-WAY */
+
+#define GPIO_JOY_UP       (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTE|GPIO_PIN2)
+#define GPIO_JOY_CENTER   (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTE|GPIO_PIN3)
+#define GPIO_JOY_LEFT     (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTE|GPIO_PIN4)
+#define GPIO_JOY_DOWN     (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTE|GPIO_PIN5)
+#define GPIO_JOY_RIGHT    (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTE|GPIO_PIN6)
+
 /* LoRa SX127x */
 
 #define GPIO_SX127X_DIO0    (GPIO_INPUT|GPIO_FLOAT|GPIO_EXTI|GPIO_PORTD|GPIO_PIN0)
@@ -242,6 +250,15 @@
 
 #define STM32F4DISCOVERY_PWMTIMER   4
 #define STM32F4DISCOVERY_PWMCHANNEL 2
+
+/* Capture
+ *
+ * The STM32F4 Discovery has no real on-board pwm capture devices, but the
+ * board can be configured to capture pwm using TIM3 CH2 PB5.
+ */
+
+#define STM32F4DISCOVERY_CAPTURETIMER   3
+#define STM32F4DISCOVERY_CAPTURECHANNEL 2
 
 /* SPI chip selects */
 
@@ -405,7 +422,7 @@
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -444,7 +461,7 @@ void weak_function stm32_i2sdev_initialize(void);
  ****************************************************************************/
 
 #ifdef CONFIG_SENSORS_BH1750FVI
-int stm32_bh1750initialize(FAR const char *devpath);
+int stm32_bh1750initialize(const char *devpath);
 #endif
 
 /****************************************************************************
@@ -479,7 +496,7 @@ int stm32_mmcsd_initialize(int port, int minor);
  ****************************************************************************/
 
 #ifdef CONFIG_INPUT_NUNCHUCK
-int nunchuck_initialize(FAR char *devname);
+int nunchuck_initialize(char *devname);
 #endif
 
 /****************************************************************************
@@ -491,7 +508,7 @@ int nunchuck_initialize(FAR char *devname);
  ****************************************************************************/
 
 #ifdef CONFIG_LEDS_MAX7219
-int stm32_max7219init(FAR const char *devpath);
+int stm32_max7219init(const char *devpath);
 #endif
 
 /****************************************************************************
@@ -514,7 +531,7 @@ int stm32_ds1307_init(void);
  *
  ****************************************************************************/
 
-int stm32_st7032init(FAR const char *devpath);
+int stm32_st7032init(const char *devpath);
 
 /****************************************************************************
  * Name: stm32_usbinitialize
@@ -556,6 +573,18 @@ int stm32_pwm_setup(void);
 #endif
 
 /****************************************************************************
+ * Name: stm32_capture_setup
+ *
+ * Description:
+ *  Initialize pwm capture support
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_CAPTURE
+int stm32_capture_setup(FAR const char *devpath);
+#endif
+
+/****************************************************************************
  * Name: stm32_can_setup
  *
  * Description:
@@ -563,7 +592,7 @@ int stm32_pwm_setup(void);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_CAN
+#ifdef CONFIG_STM32_CAN_CHARDRIVER
 int stm32_can_setup(void);
 #endif
 
@@ -683,7 +712,7 @@ int stm32_zerocross_initialize(void);
  ****************************************************************************/
 
 #ifdef CONFIG_SENSORS_MAX31855
-int stm32_max31855initialize(FAR const char *devpath, int bus,
+int stm32_max31855initialize(const char *devpath, int bus,
                              uint16_t devid);
 #endif
 
@@ -697,7 +726,7 @@ int stm32_max31855initialize(FAR const char *devpath, int bus,
  ****************************************************************************/
 
 #ifdef CONFIG_SENSORS_MLX90614
-int stm32_mlx90614init(FAR const char *devpath);
+int stm32_mlx90614init(const char *devpath);
 #endif
 
 /****************************************************************************
@@ -709,7 +738,7 @@ int stm32_mlx90614init(FAR const char *devpath);
  ****************************************************************************/
 
 #ifdef CONFIG_SENSORS_MAX6675
-int stm32_max6675initialize(FAR const char *devpath);
+int stm32_max6675initialize(const char *devpath);
 #endif
 
 /****************************************************************************
@@ -792,7 +821,7 @@ int stm32_rgbled_setup(void);
  ****************************************************************************/
 
 #ifdef CONFIG_TIMER
-int stm32_timer_driver_setup(FAR const char *devpath, int timer);
+int stm32_timer_driver_setup(const char *devpath, int timer);
 #endif
 
 /****************************************************************************
@@ -854,7 +883,19 @@ int hciuart_dev_initialize(void);
  ****************************************************************************/
 
 #ifdef CONFIG_WL_GS2200M
-int stm32_gs2200m_initialize(FAR const char *devpath, int bus);
+int stm32_gs2200m_initialize(const char *devpath, int bus);
+#endif
+
+/****************************************************************************
+ * Name: stm32_djoy_initialize
+ *
+ * Description:
+ *   Initialize and register the discrete joystick driver
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_INPUT_DJOYSTICK
+int stm32_djoy_initialize(void);
 #endif
 
 #endif /* __ASSEMBLY__ */

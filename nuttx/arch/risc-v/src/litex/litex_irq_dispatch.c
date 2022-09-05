@@ -29,37 +29,32 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
-#include <nuttx/board.h>
-#include <arch/board/board.h>
 
-#include "riscv_arch.h"
 #include "riscv_internal.h"
-
 #include "litex.h"
 
 /****************************************************************************
- * Public Data
+ * Pre-processor Definitions
  ****************************************************************************/
 
-volatile uint32_t * g_current_regs;
+#define RV_IRQ_MASK 27
 
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
 
 /****************************************************************************
- * litex_dispatch_irq
+ * riscv_dispatch_irq
  ****************************************************************************/
 
-void *litex_dispatch_irq(uint32_t vector, uint32_t *regs)
+void *riscv_dispatch_irq(uintptr_t vector, uintptr_t *regs)
 {
-  uint32_t  irq = (vector >> 27) | (vector & 0xf);
-  uint32_t *mepc = regs;
+  int irq = (vector >> RV_IRQ_MASK) | (vector & 0xf);
   int i;
 
   /* Firstly, check if the irq is machine external interrupt */
 
-  if (LITEX_IRQ_MEXT == irq)
+  if (RISCV_IRQ_MEXT == irq)
     {
       /* litex vexriscv dont follow riscv plic standard */
 
@@ -84,43 +79,13 @@ void *litex_dispatch_irq(uint32_t vector, uint32_t *regs)
       irq += val;
     }
 
-  /* NOTE: In case of ecall, we need to adjust mepc in the context */
-
-  if (LITEX_IRQ_ECALLM == irq)
-    {
-      *mepc += 4;
-    }
-
   /* Acknowledge the interrupt */
 
   riscv_ack_irq(irq);
 
-#ifdef CONFIG_SUPPRESS_INTERRUPTS
-  PANIC();
-#else
-  /* Current regs non-zero indicates that we are processing an interrupt;
-   * g_current_regs is also used to manage interrupt level context switches.
-   *
-   * Nested interrupts are not supported
-   */
-
-  DEBUGASSERT(g_current_regs == NULL);
-  g_current_regs = regs;
-
   /* Deliver the IRQ */
 
-  irq_dispatch(irq, regs);
-
-#endif
-
-  /* If a context switch occurred while processing the interrupt then
-   * g_current_regs may have change value.  If we return any value different
-   * from the input regs, then the lower level will know that a context
-   * switch occurred during interrupt processing.
-   */
-
-  regs = (uint32_t *)g_current_regs;
-  g_current_regs = NULL;
+  regs = riscv_doirq(irq, regs);
 
   return regs;
 }

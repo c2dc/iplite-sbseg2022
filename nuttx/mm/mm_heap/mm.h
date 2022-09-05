@@ -27,10 +27,15 @@
 
 #include <nuttx/config.h>
 
+#include <nuttx/fs/procfs.h>
+
+#include <assert.h>
+#include <execinfo.h>
 #include <sys/types.h>
 #include <stdbool.h>
 #include <string.h>
 #include <semaphore.h>
+#include <unistd.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -40,12 +45,12 @@
 
 /* Chunk Header Definitions *************************************************/
 
-/* These definitions define the characteristics of allocator
+/* These definitions define the characteristics of the allocator:
  *
  * MM_MIN_SHIFT is used to define MM_MIN_CHUNK.
- * MM_MIN_CHUNK - is the smallest physical chunk that can be allocated.  It
- *   must be at least a large as sizeof(struct mm_freenode_s).  Larger values
- *   may improve performance slightly, but will waste memory due to
+ * MM_MIN_CHUNK - is the smallest physical chunk that can be allocated.
+ *   It must be at least as large as sizeof(struct mm_freenode_s). Larger
+ *   values may improve performance slightly, but will waste memory due to
  *   quantization losses.
  *
  * MM_MAX_SHIFT is used to define MM_MAX_CHUNK
@@ -61,8 +66,8 @@
  * REVISIT: We could do better on machines with 16-bit addressing.
  */
 
-#  define MM_MIN_SHIFT   B2C_SHIFT( 4)  /* 16 bytes */
-#  define MM_MAX_SHIFT   B2C_SHIFT(15)  /* 32 Kb */
+#  define MM_MIN_SHIFT_   ( 4)  /* 16 bytes */
+#  define MM_MAX_SHIFT    (15)  /* 32 Kb */
 
 #elif defined(CONFIG_HAVE_LONG_LONG)
 /* Four byte offsets; Pointers may be 4 or 8 bytes
@@ -70,19 +75,53 @@
  */
 
 #  if UINTPTR_MAX <= UINT32_MAX
-#    define MM_MIN_SHIFT B2C_SHIFT( 4)  /* 16 bytes */
+#    define MM_MIN_SHIFT_ ( 4)  /* 16 bytes */
 #  elif UINTPTR_MAX <= UINT64_MAX
-#    define MM_MIN_SHIFT B2C_SHIFT( 5)  /* 32 bytes */
+#    define MM_MIN_SHIFT_ ( 5)  /* 32 bytes */
 #  endif
-#  define MM_MAX_SHIFT   B2C_SHIFT(22)  /*  4 Mb */
+#  define MM_MAX_SHIFT    (22)  /*  4 Mb */
 
 #else
 /* Four byte offsets; Pointers must be 4 bytes.
  * sizeof(struct mm_freenode_s) is 16 bytes.
  */
 
-#  define MM_MIN_SHIFT   B2C_SHIFT( 4)  /* 16 bytes */
-#  define MM_MAX_SHIFT   B2C_SHIFT(22)  /*  4 Mb */
+#  define MM_MIN_SHIFT_   ( 4)  /* 16 bytes */
+#  define MM_MAX_SHIFT    (22)  /*  4 Mb */
+#endif
+
+#if CONFIG_MM_BACKTRACE == 0
+#  define MM_MIN_SHIFT    (MM_MIN_SHIFT_ + 1)
+#  define MM_ADD_BACKTRACE(heap, ptr) \
+     do \
+       { \
+         FAR struct mm_allocnode_s *tmp = (FAR struct mm_allocnode_s *)(ptr); \
+         tmp->pid = getpid(); \
+       } \
+     while (0)
+#elif CONFIG_MM_BACKTRACE > 0
+#  define MM_MIN_SHIFT    (MM_MIN_SHIFT_ + 2)
+#  define MM_ADD_BACKTRACE(heap, ptr) \
+     do \
+       { \
+         FAR struct mm_allocnode_s *tmp = (FAR struct mm_allocnode_s *)(ptr); \
+         kasan_unpoison(tmp, SIZEOF_MM_ALLOCNODE); \
+         tmp->pid = getpid(); \
+         if ((heap)->mm_procfs.backtrace) \
+           { \
+             memset(tmp->backtrace, 0, sizeof(tmp->backtrace)); \
+             backtrace(tmp->backtrace, CONFIG_MM_BACKTRACE); \
+           } \
+         else \
+           { \
+             tmp->backtrace[0] = 0; \
+           } \
+         kasan_poison(tmp, SIZEOF_MM_ALLOCNODE); \
+       } \
+     while (0)
+#else
+#  define MM_ADD_BACKTRACE(heap, ptr)
+#  define MM_MIN_SHIFT MM_MIN_SHIFT_
 #endif
 
 /* All other definitions derive from these two */
@@ -95,32 +134,38 @@
 #define MM_ALIGN_UP(a)   (((a) + MM_GRAN_MASK) & ~MM_GRAN_MASK)
 #define MM_ALIGN_DOWN(a) ((a) & ~MM_GRAN_MASK)
 
-/* An allocated chunk is distinguished from a free chunk by bit 31 (or 15)
+/* An allocated chunk is distinguished from a free chunk by bit 0
  * of the 'preceding' chunk size.  If set, then this is an allocated chunk.
  */
 
+#define MM_ALLOC_BIT     0x1
 #ifdef CONFIG_MM_SMALL
-# define MM_ALLOC_BIT    0x8000
+# define MMSIZE_MAX      UINT16_MAX
 #else
-# define MM_ALLOC_BIT    0x80000000
+# define MMSIZE_MAX      UINT32_MAX
 #endif
+
 #define MM_IS_ALLOCATED(n) \
   ((int)((FAR struct mm_allocnode_s *)(n)->preceding) < 0)
+
+/* What is the size of the allocnode? */
+
+#define SIZEOF_MM_ALLOCNODE sizeof(struct mm_allocnode_s)
+
+/* What is the size of the freenode? */
+
+#define SIZEOF_MM_FREENODE sizeof(struct mm_freenode_s)
 
 /****************************************************************************
  * Public Types
  ****************************************************************************/
 
-struct mm_heap_s;
-
 /* Determines the size of the chunk size/offset type */
 
 #ifdef CONFIG_MM_SMALL
 typedef uint16_t mmsize_t;
-#  define MMSIZE_MAX UINT16_MAX
 #else
 typedef uint32_t mmsize_t;
-#  define MMSIZE_MAX UINT32_MAX
 #endif
 
 /* This describes an allocated chunk.  An allocated chunk is
@@ -130,55 +175,52 @@ typedef uint32_t mmsize_t;
 
 struct mm_allocnode_s
 {
-  mmsize_t size;           /* Size of this chunk */
-  mmsize_t preceding;      /* Size of the preceding chunk */
+#if CONFIG_MM_BACKTRACE >= 0
+  pid_t pid;                                /* The pid for caller */
+#  if CONFIG_MM_BACKTRACE > 0
+  FAR void *backtrace[CONFIG_MM_BACKTRACE]; /* The backtrace buffer for caller */
+#  endif
+#endif
+  mmsize_t size;                            /* Size of this chunk */
+  mmsize_t preceding;                       /* Size of the preceding chunk */
 };
 
-/* What is the size of the allocnode? */
-
-#ifdef CONFIG_MM_SMALL
-# define SIZEOF_MM_ALLOCNODE   B2C(4)
-#else
-# define SIZEOF_MM_ALLOCNODE   B2C(8)
-#endif
-
-#define CHECK_ALLOCNODE_SIZE \
-  DEBUGASSERT(sizeof(struct mm_allocnode_s) == SIZEOF_MM_ALLOCNODE)
+static_assert(SIZEOF_MM_ALLOCNODE <= MM_MIN_CHUNK,
+              "Error size for struct mm_allocnode_s\n");
 
 /* This describes a free chunk */
 
 struct mm_freenode_s
 {
-  mmsize_t size;                   /* Size of this chunk */
-  mmsize_t preceding;              /* Size of the preceding chunk */
-  FAR struct mm_freenode_s *flink; /* Supports a doubly linked list */
+#if CONFIG_MM_BACKTRACE >= 0
+  pid_t pid;                                /* The pid for caller */
+#  if CONFIG_MM_BACKTRACE > 0
+  FAR void *backtrace[CONFIG_MM_BACKTRACE]; /* The backtrace buffer for caller */
+#  endif
+#endif
+  mmsize_t size;                            /* Size of this chunk */
+  mmsize_t preceding;                       /* Size of the preceding chunk */
+  FAR struct mm_freenode_s *flink;          /* Supports a doubly linked list */
   FAR struct mm_freenode_s *blink;
 };
+
+static_assert(SIZEOF_MM_FREENODE <= MM_MIN_CHUNK,
+              "Error size for struct mm_freenode_s\n");
 
 struct mm_delaynode_s
 {
   FAR struct mm_delaynode_s *flink;
 };
 
-/* What is the size of the freenode? */
-
-#define MM_PTR_SIZE sizeof(FAR struct mm_freenode_s *)
-#define SIZEOF_MM_FREENODE (SIZEOF_MM_ALLOCNODE + 2*MM_PTR_SIZE)
-
-#define CHECK_FREENODE_SIZE \
-  DEBUGASSERT(sizeof(struct mm_freenode_s) == SIZEOF_MM_FREENODE)
-
 /* This describes one heap (possibly with multiple regions) */
 
-struct mm_heap_impl_s
+struct mm_heap_s
 {
   /* Mutually exclusive access to this data set is enforced with
    * the following un-named semaphore.
    */
 
   sem_t mm_semaphore;
-  pid_t mm_holder;
-  int mm_counts_held;
 
   /* This is the size of the heap provided to mm */
 
@@ -200,16 +242,31 @@ struct mm_heap_impl_s
 
   struct mm_freenode_s mm_nodelist[MM_NNODES];
 
-  /* Free delay list, for some situation can't do free immdiately */
+  /* Free delay list, for some situations where we can't do free
+   * immdiately.
+   */
 
-  FAR struct mm_delaynode_s *mm_delaylist;
+  FAR struct mm_delaynode_s *mm_delaylist[CONFIG_SMP_NCPUS];
+
+#if defined(CONFIG_FS_PROCFS) && !defined(CONFIG_FS_PROCFS_EXCLUDE_MEMINFO)
+  struct procfs_meminfo_entry_s mm_procfs;
+#endif
 };
+
+/* This describes the callback for mm_foreach */
+
+typedef CODE void (*mmchunk_handler_t)(FAR struct mm_allocnode_s *node,
+                                       FAR void *arg);
+
+/****************************************************************************
+ * Public Function Prototypes
+ ****************************************************************************/
 
 /* Functions contained in mm_sem.c ******************************************/
 
 void mm_seminitialize(FAR struct mm_heap_s *heap);
-void mm_takesemaphore(FAR struct mm_heap_s *heap);
-int  mm_trysemaphore(FAR struct mm_heap_s *heap);
+void mm_semuninitialize(FAR struct mm_heap_s *heap);
+bool mm_takesemaphore(FAR struct mm_heap_s *heap);
 void mm_givesemaphore(FAR struct mm_heap_s *heap);
 
 /* Functions contained in mm_shrinkchunk.c **********************************/
@@ -222,8 +279,13 @@ void mm_shrinkchunk(FAR struct mm_heap_s *heap,
 void mm_addfreechunk(FAR struct mm_heap_s *heap,
                      FAR struct mm_freenode_s *node);
 
-/* Functions contained in mm_size2ndx.c.c ***********************************/
+/* Functions contained in mm_size2ndx.c *************************************/
 
 int mm_size2ndx(size_t size);
+
+/* Functions contained in mm_foreach.c **************************************/
+
+void mm_foreach(FAR struct mm_heap_s *heap, mmchunk_handler_t handler,
+                FAR void *arg);
 
 #endif /* __MM_MM_HEAP_MM_H */

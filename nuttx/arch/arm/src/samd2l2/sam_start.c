@@ -30,9 +30,7 @@
 
 #include <nuttx/init.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "sam_config.h"
 #include "sam_lowputc.h"
 #include "sam_clockconfig.h"
@@ -55,8 +53,7 @@
  * 0x2000:ffff - End of SRAM and end of heap (assuming 64KB of SRAM)
  */
 
-#define IDLE_STACK ((uint32_t)&_ebss+CONFIG_IDLETHREAD_STACKSIZE-4)
-#define HEAP_BASE  ((uint32_t)&_ebss+CONFIG_IDLETHREAD_STACKSIZE)
+#define IDLE_STACK ((uint32_t)&_ebss+CONFIG_IDLETHREAD_STACKSIZE)
 
 /****************************************************************************
  * Public Data
@@ -87,7 +84,7 @@ const uintptr_t g_idle_topstack = IDLE_STACK;
  ****************************************************************************/
 
 /****************************************************************************
- * Name: _start
+ * Name: __start
  *
  * Description:
  *   This is the reset entry point.

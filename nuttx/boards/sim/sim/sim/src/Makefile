@@ -28,25 +28,19 @@ ifeq ($(CONFIG_BOARD_LATE_INITIALIZE),y)
   CSRCS += sim_boot.c
 endif
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_BOARDCTL),y)
   CSRCS += sim_appinit.c
 endif
 
 ifeq ($(CONFIG_BOARD_LATE_INITIALIZE),y)
   CSRCS += sim_bringup.c
-ifeq ($(CONFIG_LIB_ZONEINFO_ROMFS),y)
+ifeq ($(CONFIG_LIBC_ZONEINFO_ROMFS),y)
   CSRCS += sim_zoneinfo.c
 endif
-else ifeq ($(CONFIG_LIB_BOARDCTL),y)
+else ifeq ($(CONFIG_BOARDCTL),y)
   CSRCS += sim_bringup.c
-ifeq ($(CONFIG_LIB_ZONEINFO_ROMFS),y)
+ifeq ($(CONFIG_LIBC_ZONEINFO_ROMFS),y)
   CSRCS += sim_zoneinfo.c
-endif
-endif
-
-ifeq ($(CONFIG_SIM_X11FB),y)
-ifeq ($(CONFIG_SIM_TOUCHSCREEN),y)
-  CSRCS += sim_touchscreen.c
 endif
 endif
 
@@ -60,13 +54,17 @@ endif
 
 ifeq ($(CONFIG_NSH_ROMFSETC),y)
 ifneq ($(CONFIG_NSH_CUSTOMROMFS),y)
-  RCSRCS = etc/init.d/rcS
+  RCSRCS = etc/init.d/rc.sysinit etc/init.d/rcS
   RCRAWS = etc/group etc/passwd
 endif
 endif
 
 ifeq ($(CONFIG_ARCH_BUTTONS),y)
   CSRCS += sim_buttons.c
+endif
+
+ifeq ($(CONFIG_MOTOR_FOC_DUMMY),y)
+CSRCS += sim_foc.c
 endif
 
 include $(TOPDIR)/boards/Board.mk

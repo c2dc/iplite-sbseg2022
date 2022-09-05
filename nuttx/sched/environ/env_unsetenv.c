@@ -28,6 +28,7 @@
 
 #include <sched.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/kmalloc.h>
@@ -60,60 +61,30 @@ int unsetenv(FAR const char *name)
 {
   FAR struct tcb_s *rtcb = this_task();
   FAR struct task_group_s *group = rtcb->group;
-  FAR char *pvar;
-  FAR char *newenvp;
-  int newsize;
-  int ret = OK;
+  int idx;
 
-  DEBUGASSERT(name && group);
+  DEBUGASSERT(group);
+
+  /* Check the incoming parameter */
+
+  if (name == NULL || *name == '\0' || strchr(name, '=') != NULL)
+    {
+      set_errno(EINVAL);
+      return ERROR;
+    }
 
   /* Check if the variable exists */
 
   sched_lock();
-  if (group && (pvar = env_findvar(group, name)) != NULL)
+  if (group && (idx = env_findvar(group, name)) >= 0)
     {
       /* It does!  Remove the name=value pair from the environment. */
 
-      env_removevar(group, pvar);
-
-      /* Reallocate the new environment buffer */
-
-      newsize = group->tg_envsize;
-      if (newsize <= 0)
-        {
-          /* Free the old environment (if there was one) */
-
-          if (group->tg_envp != NULL)
-            {
-              kumm_free(group->tg_envp);
-              group->tg_envp = NULL;
-            }
-
-          group->tg_envsize = 0;
-        }
-      else
-        {
-          /* Reallocate the environment to reclaim a little memory */
-
-          newenvp = (FAR char *)kumm_realloc(group->tg_envp, newsize);
-          if (newenvp == NULL)
-            {
-              set_errno(ENOMEM);
-              ret = ERROR;
-            }
-          else
-            {
-              /* Save the new environment pointer (it might have changed due
-               * to reallocation).
-               */
-
-              group->tg_envp = newenvp;
-            }
-        }
+      env_removevar(group, idx);
     }
 
   sched_unlock();
-  return ret;
+  return OK;
 }
 
 #endif /* CONFIG_DISABLE_ENVIRON */

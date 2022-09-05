@@ -28,8 +28,7 @@
 #include <debug.h>
 
 #include "chip.h"
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "stm32.h"
 #include "stm3240g-eval.h"
 
@@ -48,7 +47,7 @@
 #endif
 
 /* SRAM Timing
- * REVIST:
+ * REVISIT:
  * These were ported from the STM3240G-EVAL and have not been verified on
  * this platform.
  */

@@ -29,7 +29,7 @@
 #include <nuttx/board.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32_start.h"
 #include "nucleo-f303ze.h"
 
@@ -74,7 +74,7 @@ void stm32_boardinitialize(void)
 #ifdef CONFIG_BOARD_LATE_INITIALIZE
 void board_late_initialize(void)
 {
-#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_LIB_BOARDCTL)
+#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_BOARDCTL)
   /* Perform board bring-up here instead of from the
    * board_app_initialize().
    */

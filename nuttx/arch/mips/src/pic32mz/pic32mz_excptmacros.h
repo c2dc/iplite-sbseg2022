@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_MIPS_SRC_PIC32MZ_EXCPTMACROS_H
-#define __ARCH_MIPS_SRC_PIC32MZ_EXCPTMACROS_H
+#ifndef __ARCH_MIPS_SRC_PIC32MZ_PIC32MZ_EXCPTMACROS_H
+#define __ARCH_MIPS_SRC_PIC32MZ_PIC32MZ_EXCPTMACROS_H
 
 /****************************************************************************
  * Included Files
@@ -41,7 +41,8 @@
  ****************************************************************************/
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
-  .global g_intstackbase
+  .global g_intstackalloc
+  .global g_intstacktop
 #ifdef CONFIG_PIC32MZ_NESTED_INTERRUPTS
   .global g_nestlevel
 #endif
@@ -442,4 +443,4 @@
   .endm
 
 #endif /* __ASSEMBLY__ */
-#endif /* __ARCH_MIPS_SRC_PIC32MZ_EXCPTMACROS_H */
+#endif /* __ARCH_MIPS_SRC_PIC32MZ_PIC32MZ_EXCPTMACROS_H */

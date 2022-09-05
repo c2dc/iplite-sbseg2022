@@ -9,6 +9,60 @@ config APPSDIR
 	string
 	option env="APPSDIR"
 
+menu "License Setup"
+config ALLOW_BSD_COMPONENTS
+	bool "Use components that have BSD licenses"
+	default n
+	---help---
+		When this option is enabled the project will allow the use
+		of components that have BSD licenses.
+
+		NOTE: Please check that the license for each enabled
+		component matches your project license.
+
+		NOTE: If this option is not set the following components
+		are not included in the setup menu:
+		Crypto
+		    AES cypher support
+		FS
+		    NFS client file system
+		    SPIFFS File System
+		Wireless
+		    Bluetooth LE support
+
+config ALLOW_GPL_COMPONENTS
+	bool "Use components that have GPL/LGPL licenses"
+	default n
+	---help---
+		When this option is enabled the project will allow the use
+		of components that have GPL/LGPL licenses.
+
+		NOTE: Please check that the license for each enabled
+		component matches your project license.
+
+config ALLOW_MIT_COMPONENTS
+	bool "Use components that have MIT licenses"
+	default n
+	---help---
+		When this option is enabled the project will allow the use
+		of components that have MIT licenses.
+
+		NOTE: Please check that the license for each enabled
+		component matches your project license.
+
+config ALLOW_BSDNORDIC_COMPONENTS
+	bool "Use components that have 5-Clause Nordic licenses"
+	depends on ARCH_CHIP_NRF52
+	default n
+	---help---
+		When this option is enabled the project will allow the use
+		of components that have 5-Clause Nordic licenses.
+
+		NOTE: Please check that the license for each enabled
+		component matches your project license.
+
+endmenu # License Setup
+
 menu "Build Setup"
 
 config EXPERIMENTAL
@@ -513,6 +567,10 @@ endmenu # Customize Header Files
 
 menu "Debug Options"
 
+config NDEBUG
+	bool "Define NDEBUG globally"
+	default !DEBUG_ASSERTIONS
+
 config DEBUG_ALERT
 	bool
 	default n
@@ -795,6 +853,12 @@ config DEBUG_LIB_INFO
 	---help---
 		Enable C library informational output to SYSLOG.
 
+config DEBUG_SYS_QUEUE
+	bool "Queue Debug option"
+	default n
+	---help---
+		Enable sys queue debug.
+
 endif # DEBUG_LIB
 
 config DEBUG_MM
@@ -897,6 +961,37 @@ config DEBUG_POWER_INFO
 		Enable power-related informational output to SYSLOG.
 
 endif # DEBUG_POWER
+
+config DEBUG_BATTERY
+	bool "Battery-related Debug Features"
+	default n
+	---help---
+		Enable Battery-related debug features.
+
+if DEBUG_BATTERY
+
+config DEBUG_BATTERY_ERROR
+	bool "Battery-related Error Output"
+	default n
+	depends on DEBUG_ERROR
+	---help---
+		Enable battery-related error output to SYSLOG.
+
+config DEBUG_BATTERY_WARN
+	bool "Battery-related Warnings Output"
+	default n
+	depends on DEBUG_WARN
+	---help---
+		Enable battery-related warning output to SYSLOG.
+
+config DEBUG_BATTERY_INFO
+	bool "Battery-related Informational Output"
+	default n
+	depends on DEBUG_INFO
+	---help---
+		Enable battery-related informational output to SYSLOG.
+
+endif # DEBUG_BATTERY
 
 config DEBUG_WIRELESS
 	bool "Wireless Debug Features"
@@ -1107,7 +1202,7 @@ comment "Driver Debug Options"
 config DEBUG_LCD
 	bool "Low-level LCD Debug Features"
 	default n
-	depends on LCD
+	depends on LCD || SLCD
 	---help---
 		Enable LCD driver debug features.
 
@@ -1141,7 +1236,7 @@ endif # DEBUG_LCD
 config DEBUG_LEDS
 	bool "Low-level LED Debug Features"
 	default n
-	depends on ARCH_HAVE_LEDS
+	depends on ARCH_HAVE_LEDS || WS2812
 	---help---
 		Enable LED driver debug features.
 
@@ -1710,6 +1805,13 @@ config DEBUG_WATCHDOG_INFO
 
 endif # DEBUG_WATCHDOG
 
+config DEBUG_MOTOR
+	bool "Motor Debug Features"
+	default n
+	depends on MOTOR
+	---help---
+		Enable motor debug features.
+
 if DEBUG_MOTOR
 
 config DEBUG_MOTOR_ERROR
@@ -1734,7 +1836,47 @@ config DEBUG_MOTOR_INFO
 		Enable motor informational output to SYSLOG.
 
 endif # DEBUG_MOTOR
+
+config DEBUG_VIDEO
+	bool "Video Debug Features"
+	default n
+	depends on DRIVERS_VIDEO
+	---help---
+		Enable video debug features.
+
+if DEBUG_VIDEO
+
+config DEBUG_VIDEO_ERROR
+	bool "Video Error Output"
+	default n
+	depends on DEBUG_ERROR
+	---help---
+		Enable video error output to SYSLOG.
+
+config DEBUG_VIDEO_WARN
+	bool "Video Warnings Output"
+	default n
+	depends on DEBUG_WARN
+	---help---
+		Enable video warning output to SYSLOG.
+
+config DEBUG_VIDEO_INFO
+	bool "Video Informational Output"
+	default n
+	depends on DEBUG_INFO
+	---help---
+		Enable video informational output to SYSLOG.
+
+endif # DEBUG_VIDEO
 endif # DEBUG_FEATURES
+
+config DEBUG_TCBINFO
+	bool "Enable TCBinfo struct for debug"
+	default n
+	---help---
+		Enables tcbinfo struct for debugger information.
+		Selecting this option will enable g_tcbinfo in arch and
+		procfs.
 
 config ARCH_HAVE_STACKCHECK
 	bool
@@ -1783,6 +1925,14 @@ config DEBUG_SYMBOLS
 	---help---
 		Build with debug symbols (needed for use with a debugger).
 
+config FRAME_POINTER
+	bool "Compile the NuttX with frame pointers"
+	default n
+	---help---
+		If you say Y here the resulting NuttX image will be slightly
+		larger and slower, but it gives very useful debugging information
+		in case of bugs.
+
 endmenu # Debug Options
 
 config ARCH_HAVE_CUSTOMOPT
@@ -1822,6 +1972,28 @@ config DEBUG_OPTLEVEL
 		This string represents the custom optimization level that will be
 		used if DEBUG_CUSTOMOPT.
 
+config DEBUG_OPT_UNUSED_SECTIONS
+	bool "Optimization to eliminate the unused input sections"
+	default y
+	depends on ARCH_TOOLCHAIN_GNU
+	---help---
+		Use these options on systems where the linker can perform optimizations
+		to improve locality of reference in the instruction space.  Most systems
+		using the ELF object format have linkers with such optimizations.
+
+		Enable this option to optimization the unused input sections with the
+		linker by compiling with " -ffunction-sections -fdata-sections ", and
+		linking with " --gc-sections ".
+
+config DEBUG_LINK_MAP
+	bool "Generate link map file"
+	default y
+	---help---
+		Selecting this option will pass "-Map=$(TOPDIR)$(DELIM)nuttx.map" to ld
+		when linking NuttX ELF. That file can be useful for verifying
+		and debugging magic section games, and for seeing which
+		pieces of code get eliminated with DEBUG_OPT_UNUSED_SECTIONS.
+
 endmenu # Build Setup
 
 menu "System Type"
@@ -1833,59 +2005,59 @@ source "boards/Kconfig"
 endmenu
 
 menu "RTOS Features"
-source sched/Kconfig
-source syscall/Kconfig
+source "sched/Kconfig"
+source "syscall/Kconfig"
 endmenu
 
 menu "Device Drivers"
-source drivers/Kconfig
+source "drivers/Kconfig"
 endmenu
 
 menu "Networking Support"
-source net/Kconfig
+source "net/Kconfig"
 endmenu
 
 menu "Crypto API"
-source crypto/Kconfig
+source "crypto/Kconfig"
 endmenu
 
 menu "File Systems"
-source fs/Kconfig
+source "fs/Kconfig"
 endmenu
 
 menu "Graphics Support"
-source graphics/Kconfig
-source libs/libnx/Kconfig
+source "graphics/Kconfig"
+source "libs/libnx/Kconfig"
 endmenu
 
 menu "Memory Management"
-source mm/Kconfig
+source "mm/Kconfig"
 endmenu
 
 menu "Audio Support"
-source audio/Kconfig
+source "audio/Kconfig"
 endmenu
 
 menu "Video Support"
-source video/Kconfig
+source "video/Kconfig"
 endmenu
 
 menu "Wireless Support"
-source wireless/Kconfig
+source "wireless/Kconfig"
 endmenu
 
 menu "Binary Loader"
-source binfmt/Kconfig
+source "binfmt/Kconfig"
 endmenu
 
 menu "Library Routines"
-source libs/libc/Kconfig
-source libs/libxx/Kconfig
-source libs/libdsp/Kconfig
+source "libs/libc/Kconfig"
+source "libs/libxx/Kconfig"
+source "libs/libdsp/Kconfig"
 endmenu
 
 menu "Open Asymmetric Multi Processing"
-source openamp/Kconfig
+source "openamp/Kconfig"
 endmenu
 
 menu "Application Configuration"
@@ -1899,7 +2071,7 @@ endmenu
 # does not contain a Kconfig file
 
 config EXTERNALDIR
-        string
-        option env="EXTERNALDIR"
+	string
+	option env="EXTERNALDIR"
 
 source "$EXTERNALDIR/Kconfig"

@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_RENESAS_INCLUDE_SH1_LIMITS_H
-#define __ARCH_RENESAS_INCLUDE_SH1_LIMITS_H
+#ifndef __ARCH_RENESAS_INCLUDE_SH1_PLIMITS_H
+#define __ARCH_RENESAS_INCLUDE_SH1_PLIMITS_H
 
 /****************************************************************************
  * Included Files
@@ -37,11 +37,11 @@
 /* These could be different on machines where char is unsigned */
 
 #ifdef __CHAR_UNSIGNED__
-#define CHAR_MIN    0
-#define CHAR_MAX    UCHAR_MAX
+#  define CHAR_MIN  0
+#  define CHAR_MAX  UCHAR_MAX
 #else
-#define CHAR_MIN    SCHAR_MIN
-#define CHAR_MAX    SCHAR_MAX
+#  define CHAR_MIN  SCHAR_MIN
+#  define CHAR_MAX  SCHAR_MAX
 #endif
 
 #define SHRT_MIN    (-SHRT_MAX - 1)
@@ -70,4 +70,15 @@
 #define PTR_MAX     2147483647
 #define UPTR_MAX    4294967295U
 
-#endif /* __ARCH_RENESAS_INCLUDE_SH1_LIMITS_H */
+#if !defined(__WCHAR_TYPE__)
+#  define WCHAR_MIN INT_MIN
+#  define WCHAR_MAX INT_MAX
+#elif defined(__WCHAR_UNSIGNED__)
+#  define WCHAR_MIN 0
+#  define WCHAR_MAX __WCHAR_MAX__
+#else
+#  define WCHAR_MIN (-__WCHAR_MAX__ - 1)
+#  define WCHAR_MAX __WCHAR_MAX__
+#endif
+
+#endif /* __ARCH_RENESAS_INCLUDE_SH1_PLIMITS_H */

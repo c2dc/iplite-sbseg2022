@@ -34,6 +34,7 @@
 #include <inttypes.h>
 #include <stdlib.h>
 #include <fixedmath.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -76,8 +77,6 @@ static void max31855_unlock(FAR struct spi_dev_s *spi);
 
 /* Character driver methods */
 
-static int     max31855_open(FAR struct file *filep);
-static int     max31855_close(FAR struct file *filep);
 static ssize_t max31855_read(FAR struct file *filep, FAR char *buffer,
                              size_t buflen);
 static ssize_t max31855_write(FAR struct file *filep, FAR const char *buffer,
@@ -89,13 +88,16 @@ static ssize_t max31855_write(FAR struct file *filep, FAR const char *buffer,
 
 static const struct file_operations g_max31855fops =
 {
-  max31855_open,
-  max31855_close,
-  max31855_read,
-  max31855_write,
-  NULL,
-  NULL,
-  NULL
+  NULL,            /* open */
+  NULL,            /* close */
+  max31855_read,   /* read */
+  max31855_write,  /* write */
+  NULL,            /* seek */
+  NULL,            /* ioctl */
+  NULL             /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL           /* unlink */
+#endif
 };
 
 /****************************************************************************
@@ -130,32 +132,6 @@ static void max31855_lock(FAR struct spi_dev_s *spi)
 static void max31855_unlock(FAR struct spi_dev_s *spi)
 {
   SPI_LOCK(spi, false);
-}
-
-/****************************************************************************
- * Name: max31855_open
- *
- * Description:
- *   This function is called whenever the MAX31855 device is opened.
- *
- ****************************************************************************/
-
-static int max31855_open(FAR struct file *filep)
-{
-  return OK;
-}
-
-/****************************************************************************
- * Name: max31855_close
- *
- * Description:
- *   This routine is called when the MAX31855 device is closed.
- *
- ****************************************************************************/
-
-static int max31855_close(FAR struct file *filep)
-{
-  return OK;
 }
 
 /****************************************************************************

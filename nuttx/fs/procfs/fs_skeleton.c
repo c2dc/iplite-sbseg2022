@@ -1,36 +1,20 @@
 /****************************************************************************
  * fs/procfs/fs_skeleton.c
  *
- *   Copyright (C) 2017 Gregory Nutt. All rights reserved.
- *   Copyright (C) 2015 Ken Pettit. All rights reserved.
- *   Author: Ken Pettit <pettitkd@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -58,7 +42,6 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/fs/procfs.h>
-#include <nuttx/fs/dirent.h>
 
 #include <arch/irq.h>
 
@@ -116,9 +99,10 @@ static int     skel_dup(FAR const struct file *oldp,
                  FAR struct file *newp);
 
 static int     skel_opendir(FAR const char *relpath,
-                 FAR struct fs_dirent_s *dir);
+                 FAR struct fs_dirent_s **dir);
 static int     skel_closedir(FAR struct fs_dirent_s *dir);
-static int     skel_readdir(FAR struct fs_dirent_s *dir);
+static int     skel_readdir(FAR struct fs_dirent_s *dir,
+                            FAR struct dirent *entry);
 static int     skel_rewinddir(FAR struct fs_dirent_s *dir);
 
 static int     skel_stat(FAR const char *relpath, FAR struct stat *buf);
@@ -353,12 +337,13 @@ static int skel_dup(FAR const struct file *oldp, FAR struct file *newp)
  *
  ****************************************************************************/
 
-static int skel_opendir(FAR const char *relpath, FAR struct fs_dirent_s *dir)
+static int skel_opendir(FAR const char *relpath,
+                        FAR struct fs_dirent_s **dir)
 {
   FAR struct skel_level1_s *level1;
 
   finfo("relpath: \"%s\"\n", relpath ? relpath : "NULL");
-  DEBUGASSERT(relpath && dir && !dir->u.procfs);
+  DEBUGASSERT(relpath);
 
   /* The path refers to the 1st level sbdirectory.  Allocate the level1
    * dirent structure.
@@ -381,7 +366,7 @@ static int skel_opendir(FAR const char *relpath, FAR struct fs_dirent_s *dir)
   level1->base.nentries = 0;
   level1->base.index    = 0;
 
-  dir->u.procfs = (FAR void *) level1;
+  *dir = (FAR struct fs_dirent_s *)level1;
   return OK;
 }
 
@@ -394,17 +379,8 @@ static int skel_opendir(FAR const char *relpath, FAR struct fs_dirent_s *dir)
 
 static int skel_closedir(FAR struct fs_dirent_s *dir)
 {
-  FAR struct skel_level1_s *priv;
-
-  DEBUGASSERT(dir && dir->u.procfs);
-  priv = dir->u.procfs;
-
-  if (priv)
-    {
-      kmm_free(priv);
-    }
-
-  dir->u.procfs = NULL;
+  DEBUGASSERT(dir);
+  kmm_free(dir);
   return OK;
 }
 
@@ -415,15 +391,16 @@ static int skel_closedir(FAR struct fs_dirent_s *dir)
  *
  ****************************************************************************/
 
-static int skel_readdir(FAR struct fs_dirent_s *dir)
+static int skel_readdir(FAR struct fs_dirent_s *dir,
+                        FAR struct dirent *entry)
 {
   FAR struct skel_level1_s *level1;
-  char  filename[16];
+  char filename[16];
   int index;
   int ret;
 
-  DEBUGASSERT(dir && dir->u.procfs);
-  level1 = dir->u.procfs;
+  DEBUGASSERT(dir);
+  level1 = (FAR struct skel_level1_s *)dir;
 
   /* TODO:  Perform device specific readdir function here.  This may
    *        or may not involve validating the nentries variable
@@ -455,8 +432,8 @@ static int skel_readdir(FAR struct fs_dirent_s *dir)
 
       /* TODO:  Specify the type of entry */
 
-      dir->fd_dir.d_type = DTYPE_FILE;
-      strncpy(dir->fd_dir.d_name, filename, NAME_MAX);
+      entry->d_type = DTYPE_FILE;
+      strlcpy(entry->d_name, filename, sizeof(entry->d_name));
 
       /* Set up the next directory entry offset.  NOTE that we could use the
        * standard f_pos instead of our own private index.
@@ -480,8 +457,8 @@ static int skel_rewinddir(FAR struct fs_dirent_s *dir)
 {
   FAR struct skel_level1_s *priv;
 
-  DEBUGASSERT(dir && dir->u.procfs);
-  priv = dir->u.procfs;
+  DEBUGASSERT(dir);
+  priv = (FAR struct skel_level1_s *)dir;
 
   priv->base.index = 0;
   return OK;

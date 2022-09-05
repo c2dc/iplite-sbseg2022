@@ -1,35 +1,20 @@
 /****************************************************************************
  * arch/arm/src/stm32l4/stm32l4_oneshot_lowerhalf.c
  *
- *   Copyright (C) 2016 Gregory Nutt. All rights reserved.
- *   Authors: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -66,13 +51,13 @@ struct stm32l4_oneshot_lowerhalf_s
    * compatible to struct stm32l4_oneshot_lowerhalf_s and vice versa.
    */
 
-  struct oneshot_lowerhalf_s lh;  /* Common lower-half driver fields */
+  struct oneshot_lowerhalf_s lh;    /* Common lower-half driver fields */
 
   /* Private lower half data follows */
 
   struct stm32l4_oneshot_s oneshot; /* STM32-specific oneshot state */
   oneshot_callback_t callback;      /* internal handler that receives callback */
-  FAR void *arg;                    /* Argument that is passed to the handler */
+  void *arg;                        /* Argument that is passed to the handler */
 };
 
 /****************************************************************************
@@ -81,13 +66,13 @@ struct stm32l4_oneshot_lowerhalf_s
 
 static void stm32l4_oneshot_handler(void *arg);
 
-static int stm32l4_max_delay(FAR struct oneshot_lowerhalf_s *lower,
-                             FAR struct timespec *ts);
-static int stm32l4_start(FAR struct oneshot_lowerhalf_s *lower,
-                         oneshot_callback_t callback, FAR void *arg,
-                         FAR const struct timespec *ts);
-static int stm32l4_cancel(FAR struct oneshot_lowerhalf_s *lower,
-                          FAR struct timespec *ts);
+static int stm32l4_max_delay(struct oneshot_lowerhalf_s *lower,
+                             struct timespec *ts);
+static int stm32l4_start(struct oneshot_lowerhalf_s *lower,
+                         oneshot_callback_t callback, void *arg,
+                         const struct timespec *ts);
+static int stm32l4_cancel(struct oneshot_lowerhalf_s *lower,
+                          struct timespec *ts);
 
 /****************************************************************************
  * Private Data
@@ -123,10 +108,10 @@ static const struct oneshot_operations_s g_oneshot_ops =
 
 static void stm32l4_oneshot_handler(void *arg)
 {
-  FAR struct stm32l4_oneshot_lowerhalf_s *priv =
-    (FAR struct stm32l4_oneshot_lowerhalf_s *)arg;
+  struct stm32l4_oneshot_lowerhalf_s *priv =
+    (struct stm32l4_oneshot_lowerhalf_s *)arg;
   oneshot_callback_t callback;
-  FAR void *cbarg;
+  void *cbarg;
 
   DEBUGASSERT(priv != NULL);
 
@@ -169,11 +154,11 @@ static void stm32l4_oneshot_handler(void *arg)
  *
  ****************************************************************************/
 
-static int stm32l4_max_delay(FAR struct oneshot_lowerhalf_s *lower,
-                             FAR struct timespec *ts)
+static int stm32l4_max_delay(struct oneshot_lowerhalf_s *lower,
+                             struct timespec *ts)
 {
-  FAR struct stm32l4_oneshot_lowerhalf_s *priv =
-    (FAR struct stm32l4_oneshot_lowerhalf_s *)lower;
+  struct stm32l4_oneshot_lowerhalf_s *priv =
+    (struct stm32l4_oneshot_lowerhalf_s *)lower;
   uint64_t usecs;
   int ret;
 
@@ -211,12 +196,12 @@ static int stm32l4_max_delay(FAR struct oneshot_lowerhalf_s *lower,
  *
  ****************************************************************************/
 
-static int stm32l4_start(FAR struct oneshot_lowerhalf_s *lower,
-                       oneshot_callback_t callback, FAR void *arg,
-                       FAR const struct timespec *ts)
+static int stm32l4_start(struct oneshot_lowerhalf_s *lower,
+                         oneshot_callback_t callback, void *arg,
+                         const struct timespec *ts)
 {
-  FAR struct stm32l4_oneshot_lowerhalf_s *priv =
-    (FAR struct stm32l4_oneshot_lowerhalf_s *)lower;
+  struct stm32l4_oneshot_lowerhalf_s *priv =
+    (struct stm32l4_oneshot_lowerhalf_s *)lower;
   irqstate_t flags;
   int ret;
 
@@ -263,11 +248,11 @@ static int stm32l4_start(FAR struct oneshot_lowerhalf_s *lower,
  *
  ****************************************************************************/
 
-static int stm32l4_cancel(FAR struct oneshot_lowerhalf_s *lower,
-                        FAR struct timespec *ts)
+static int stm32l4_cancel(struct oneshot_lowerhalf_s *lower,
+                          struct timespec *ts)
 {
-  FAR struct stm32l4_oneshot_lowerhalf_s *priv =
-    (FAR struct stm32l4_oneshot_lowerhalf_s *)lower;
+  struct stm32l4_oneshot_lowerhalf_s *priv =
+    (struct stm32l4_oneshot_lowerhalf_s *)lower;
   irqstate_t flags;
   int ret;
 
@@ -312,15 +297,15 @@ static int stm32l4_cancel(FAR struct oneshot_lowerhalf_s *lower,
  *
  ****************************************************************************/
 
-FAR struct oneshot_lowerhalf_s *oneshot_initialize(int chan,
-                                                   uint16_t resolution)
+struct oneshot_lowerhalf_s *oneshot_initialize(int chan,
+                                               uint16_t resolution)
 {
-  FAR struct stm32l4_oneshot_lowerhalf_s *priv;
+  struct stm32l4_oneshot_lowerhalf_s *priv;
   int ret;
 
   /* Allocate an instance of the lower half driver */
 
-  priv = (FAR struct stm32l4_oneshot_lowerhalf_s *)
+  priv = (struct stm32l4_oneshot_lowerhalf_s *)
     kmm_zalloc(sizeof(struct stm32l4_oneshot_lowerhalf_s));
 
   if (priv == NULL)

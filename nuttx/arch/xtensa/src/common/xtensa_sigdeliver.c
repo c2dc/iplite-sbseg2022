@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include <sched.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -45,7 +46,7 @@
  *
  * Description:
  *   This is the a signal handling trampoline.  When a signal action was
- *   posted.  The task context was mucked with and forced to branch to this
+ *   posted, the task context was mucked with and forced to branch to this
  *   location with interrupts disabled.
  *
  ****************************************************************************/
@@ -53,14 +54,7 @@
 void xtensa_sig_deliver(void)
 {
   struct tcb_s *rtcb = this_task();
-  uint32_t regs[XCPTCONTEXT_REGS];
-
-  /* Save the errno.  This must be preserved throughout the signal handling
-   * so that the user code final gets the correct errno value (probably
-   * EINTR).
-   */
-
-  int saved_errno = get_errno();
+  uint32_t *regs = rtcb->xcp.saved_regs;
 
 #ifdef CONFIG_SMP
   /* In the SMP case, we must terminate the critical section while the signal
@@ -76,10 +70,6 @@ void xtensa_sig_deliver(void)
   sinfo("rtcb=%p sigdeliver=%p sigpendactionq.head=%p\n",
         rtcb, rtcb->xcp.sigdeliver, rtcb->sigpendactionq.head);
   DEBUGASSERT(rtcb->xcp.sigdeliver != NULL);
-
-  /* Save the return state on the stack. */
-
-  xtensa_copystate(regs, rtcb->xcp.regs);
 
 #ifdef CONFIG_SMP
   /* In the SMP case, up_schedule_sigaction(0) will have incremented
@@ -137,10 +127,6 @@ void xtensa_sig_deliver(void)
   up_irq_save();
 #endif
 
-  /* Restore the saved errno value */
-
-  set_errno(saved_errno);
-
   /* Modify the saved return state with the actual saved values in the
    * TCB.  This depends on the fact that nested signal handling is
    * not supported.  Therefore, these values will persist throughout the
@@ -151,46 +137,9 @@ void xtensa_sig_deliver(void)
    * could be modified by a hostile program.
    */
 
-  regs[REG_PC]         = rtcb->xcp.saved_pc;
-  regs[REG_PS]         = rtcb->xcp.saved_ps;
   rtcb->xcp.sigdeliver = NULL;  /* Allows next handler to be scheduled */
 
-  /* Issue:
-   *
-   * Task1 --> process
-   *       --> xtensa_context_save(S1)
-   *       --> s32i a0, a2, (4 * REG_A0)
-   *       --> rtcb->xcp.regs[REG_A0] = A0
-   *
-   * Task preemption
-   *
-   * Task2 --> Post signal to Task1
-   *       --> Wake up Task1
-   *
-   * Task1 --> xtensa_sig_deliver
-   *       --> up_irq_enable()
-   *       --> Task preemption
-   *
-   * Task preemption --> xtensa_context_save
-   *                 --> rtcb->xcp.regs[REG_A0] = A0 of "xtensa_sig_deliver"
-   *                     = _xtensa_sig_trampoline + 6
-   *                     = "j 1b"
-   *
-   * Process ...
-   *
-   * Task1 --> xtensa_sig_deliver
-   *       --> xtensa_context_restore
-   *       --> xtensa_context_save(S1)
-   *       --> l32i a0, a2, (4 * REG_A0)
-   *       --> a0 = "j 1b"
-   *       --> ret
-   *       --> run "j 1b"
-   */
-
-  rtcb->xcp.regs[REG_A0] = regs[REG_A0];
-
   /* Then restore the correct state for this thread of execution.
-   * NOTE: The co-processor state should already be correct.
    */
 
   board_autoled_off(LED_SIGNAL);

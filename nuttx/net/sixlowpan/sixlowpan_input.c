@@ -63,6 +63,7 @@
 #include "nuttx/wireless/ieee802154/ieee802154_mac.h"
 
 #ifdef CONFIG_NET_PKT
+#  include <nuttx/net/pkt.h>
 #  include "pkt/pkt.h"
 #endif
 
@@ -762,7 +763,7 @@ int sixlowpan_input(FAR struct radio_driver_s *radio,
 
       if (ret >= 0)
         {
-          iob_free(iob, IOBUSER_NET_6LOWPAN);
+          iob_free(iob);
         }
 
       /* Was the frame successfully processed? Is the packet in d_buf fully

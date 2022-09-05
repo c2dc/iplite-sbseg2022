@@ -53,6 +53,8 @@
 #define WATCHDOG_AUTOMONITOR_TIMEOUT_MSEC \
   (1000 * CONFIG_WATCHDOG_AUTOMONITOR_TIMEOUT)
 
+#if defined(CONFIG_WATCHDOG_AUTOMONITOR_BY_TIMER) || \
+    defined(CONFIG_WATCHDOG_AUTOMONITOR_BY_WORKER)
 #if (CONFIG_WATCHDOG_AUTOMONITOR_TIMEOUT == \
     CONFIG_WATCHDOG_AUTOMONITOR_PING_INTERVAL)
 #define WATCHDOG_AUTOMONITOR_PING_INTERVAL \
@@ -60,6 +62,7 @@
 #else
 #define WATCHDOG_AUTOMONITOR_PING_INTERVAL \
   SEC2TICK(CONFIG_WATCHDOG_AUTOMONITOR_PING_INTERVAL)
+#endif
 #endif
 
 #endif
@@ -118,6 +121,9 @@ static const struct file_operations g_wdogops =
   NULL,       /* seek */
   wdog_ioctl, /* ioctl */
   NULL        /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL      /* unlink */
+#endif
 };
 
 /****************************************************************************
@@ -171,7 +177,8 @@ static void watchdog_automonitor_idle(FAR struct pm_callback_s *cb,
   FAR struct watchdog_upperhalf_s *upper = (FAR void *)cb;
   FAR struct watchdog_lowerhalf_s *lower = upper->lower;
 
-  if (upper->monitor)
+  if (domain == PM_IDLE_DOMAIN &&
+      pmstate != PM_RESTORE && upper->monitor)
     {
       lower->ops->keepalive(lower);
     }

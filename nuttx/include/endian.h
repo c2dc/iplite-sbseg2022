@@ -45,25 +45,44 @@
  */
 
 #define LITTLE_ENDIAN         1234
+#define __LITTLE_ENDIAN       1234
 #define BIG_ENDIAN            4321
+#define __BIG_ENDIAN          4321
 
 /* Common byte swapping macros */
 
-#define __SWAP_UINT16_ISMACRO 1
-#undef  __SWAP_UINT32_ISMACRO
-
-#ifdef __SWAP_UINT16_ISMACRO
+#ifdef CONFIG_HAVE_BUILTIN_BSWAP16
+#  define __swap_uint16 __builtin_bswap16
+#else
 #  define __swap_uint16(n) \
     (uint16_t)(((((uint16_t)(n)) & 0x00ff) << 8) | \
                ((((uint16_t)(n)) >> 8) & 0x00ff))
 #endif
 
-#ifdef __SWAP_UINT32_ISMACRO
+#ifdef CONFIG_HAVE_BUILTIN_BSWAP32
+#  define __swap_uint32 __builtin_bswap32
+#else
 #  define __swap_uint32(n) \
     (uint32_t)(((((uint32_t)(n)) & 0x000000ffUL) << 24) | \
                ((((uint32_t)(n)) & 0x0000ff00UL) <<  8) | \
                ((((uint32_t)(n)) & 0x00ff0000UL) >>  8) | \
                ((((uint32_t)(n)) & 0xff000000UL) >> 24))
+#endif
+
+#ifdef CONFIG_HAVE_LONG_LONG
+#  ifdef CONFIG_HAVE_BUILTIN_BSWAP64
+#    define __swap_uint64 __builtin_bswap64
+#  else
+#    define __swap_uint64(n) \
+        (uint64_t)(((((uint64_t)(n)) & 0x00000000000000ffULL) << 56) | \
+                   ((((uint64_t)(n)) & 0x000000000000ff00ULL) << 40) | \
+                   ((((uint64_t)(n)) & 0x0000000000ff0000ULL) << 24) | \
+                   ((((uint64_t)(n)) & 0x00000000ff000000ULL) <<  8) | \
+                   ((((uint64_t)(n)) & 0x000000ff00000000ULL) >>  8) | \
+                   ((((uint64_t)(n)) & 0x0000ff0000000000ULL) >> 24) | \
+                   ((((uint64_t)(n)) & 0x00ff000000000000ULL) >> 40) | \
+                   ((((uint64_t)(n)) & 0xff00000000000000ULL) >> 56))
+#  endif
 #endif
 
 /* Endian-specific definitions */
@@ -72,6 +91,7 @@
 /* Big-endian byte order */
 
 #  define BYTE_ORDER          BIG_ENDIAN
+#  define __BYTE_ORDER        BIG_ENDIAN
 
 /* Big-endian byte order macros */
 
@@ -96,6 +116,7 @@
 /* Little-endian byte order */
 
 #  define BYTE_ORDER          LITTLE_ENDIAN
+#  define __BYTE_ORDER        __LITTLE_ENDIAN
 
 /* Little-endian byte order macros */
 
@@ -117,20 +138,20 @@
 #  endif
 #endif
 
-/****************************************************************************
- * Public Function Prototypes
- ****************************************************************************/
+/* OpenBSD style */
 
-#ifndef __SWAP_UINT16_ISMACRO
-uint16_t __swap_uint16(uint16_t n);
-#endif
+#define swap16                __swap_uint16
+#define swap32                __swap_uint32
+#define swap64                __swap_uint64
 
-#ifndef __SWAP_UINT32_ISMACRO
-uint32_t __swap_uint32(uint32_t n);
-#endif
+#define betoh16               be16toh
+#define letoh16               le16toh
+#define betoh32               be32toh
+#define letoh32               le32toh
 
-#if CONFIG_HAVE_LONG_LONG
-uint64_t __swap_uint64(uint64_t n);
+#ifdef CONFIG_HAVE_LONG_LONG
+#define betoh64               be64toh
+#define letoh64               le64toh
 #endif
 
 #endif /* __INCLUDE_ENDIAN_H */

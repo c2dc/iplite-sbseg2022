@@ -28,11 +28,11 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <assert.h>
+#include <sys/ioctl.h>
 
 #include <nuttx/sched.h>
 #include <nuttx/cancelpt.h>
 #include <nuttx/fs/fs.h>
-#include <nuttx/net/net.h>
 
 #include "inode/inode.h"
 
@@ -106,14 +106,12 @@ static int file_vfcntl(FAR struct file *filep, int cmd, va_list ap)
 
           if (oflags & FD_CLOEXEC)
             {
-              filep->f_oflags |= O_CLOEXEC;
+              ret = file_ioctl(filep, FIOCLEX, NULL);
             }
           else
             {
-              filep->f_oflags &= ~O_CLOEXEC;
+              ret = file_ioctl(filep, FIONCLEX, NULL);
             }
-
-          ret = OK;
         }
         break;
 
@@ -144,11 +142,20 @@ static int file_vfcntl(FAR struct file *filep, int cmd, va_list ap)
 
         {
           int oflags = va_arg(ap, int);
+          int nonblock = !!(oflags & O_NONBLOCK);
 
-          oflags          &=  FFCNTL;
-          filep->f_oflags &= ~FFCNTL;
-          filep->f_oflags |=  oflags;
-          ret              =  OK;
+          ret = file_ioctl(filep, FIONBIO, &nonblock);
+          if (ret == OK)
+            {
+              oflags          &=  (FFCNTL & ~O_NONBLOCK);
+              filep->f_oflags &= ~(FFCNTL & ~O_NONBLOCK);
+              filep->f_oflags |=  oflags;
+
+              if ((filep->f_oflags & O_APPEND) != 0)
+                {
+                  file_seek(filep, 0, SEEK_END);
+                }
+            }
         }
         break;
 
@@ -206,6 +213,15 @@ static int file_vfcntl(FAR struct file *filep, int cmd, va_list ap)
         ret = -ENOSYS; /* Not implemented */
         break;
 
+      case F_GETPATH:
+        /* Get the path of the file descriptor. The argument must be a buffer
+         * of size PATH_MAX or greater.
+         */
+
+        {
+          ret = file_ioctl(filep, FIOC_FILEPATH, va_arg(ap, FAR char *));
+        }
+
       default:
         break;
     }
@@ -229,27 +245,11 @@ static int nx_vfcntl(int fd, int cmd, va_list ap)
     {
       DEBUGASSERT(filep != NULL);
 
-      /* check for operations on a socket descriptor */
+      /* Let file_vfcntl() do the real work.  The errno is not set on
+       * failures.
+       */
 
-#ifdef CONFIG_NET
-      if (INODE_IS_SOCKET(filep->f_inode) &&
-          cmd != F_DUPFD && cmd != F_GETFD && cmd != F_SETFD)
-        {
-          /* Yes.. defer socket descriptor operations to
-           * psock_vfcntl(). The errno is not set on failures.
-           */
-
-          ret = psock_vfcntl(sockfd_socket(fd), cmd, ap);
-        }
-      else
-#endif
-        {
-          /* Let file_vfcntl() do the real work.  The errno is not set on
-           * failures.
-           */
-
-          ret = file_vfcntl(filep, cmd, ap);
-        }
+      ret = file_vfcntl(filep, cmd, ap);
     }
 
   return ret;

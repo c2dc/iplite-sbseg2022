@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <stdio.h>
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
@@ -77,25 +78,44 @@ struct note_startalloc_s
 #ifdef CONFIG_SCHED_INSTRUMENTATION_FILTER
 static struct note_filter_s g_note_filter =
 {
-  .mode =
-    {
-      .flag = CONFIG_SCHED_INSTRUMENTATION_FILTER_DEFAULT_MODE,
+  {
+     CONFIG_SCHED_INSTRUMENTATION_FILTER_DEFAULT_MODE
 #ifdef CONFIG_SMP
-      .cpuset = CONFIG_SCHED_INSTRUMENTATION_CPUSET,
+     , CONFIG_SCHED_INSTRUMENTATION_CPUSET
 #endif
-    }
+  }
 };
 
-#ifdef CONFIG_SMP
+#ifdef CONFIG_SCHED_INSTRUMENTATION_IRQHANDLER
 static unsigned int g_note_disabled_irq_nest[CONFIG_SMP_NCPUS];
-#else
-static unsigned int g_note_disabled_irq_nest[1];
 #endif
 #endif
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: sched_note_flatten
+ *
+ * Description:
+ *   Copy the data in the little endian layout
+ *
+ ****************************************************************************/
+
+static inline void sched_note_flatten(FAR uint8_t *dst,
+                                      FAR void *src, size_t len)
+{
+#ifdef CONFIG_ENDIAN_BIG
+  FAR uint8_t *end = (FAR uint8_t *)src + len - 1;
+  while (len-- > 0)
+    {
+      *dst++ = *end--;
+    }
+#else
+  memcpy(dst, src, len);
+#endif
+}
 
 /****************************************************************************
  * Name: note_common
@@ -123,36 +143,26 @@ static void note_common(FAR struct tcb_s *tcb,
 
   clock_systime_timespec(&ts);
 #else
-  uint32_t systime    = (uint32_t)clock_systime_ticks();
+  clock_t systime = clock_systime_ticks();
 #endif
 
   /* Save all of the common fields */
 
-  note->nc_length     = length;
-  note->nc_type       = type;
-  note->nc_priority   = tcb->sched_priority;
+  note->nc_length   = length;
+  note->nc_type     = type;
+  note->nc_priority = tcb->sched_priority;
 #ifdef CONFIG_SMP
-  note->nc_cpu        = tcb->cpu;
+  note->nc_cpu      = tcb->cpu;
 #endif
-  note->nc_pid[0]     = (uint8_t)(tcb->pid & 0xff);
-  note->nc_pid[1]     = (uint8_t)((tcb->pid >> 8) & 0xff);
+  sched_note_flatten(note->nc_pid, &tcb->pid, sizeof(tcb->pid));
 
 #ifdef CONFIG_SCHED_INSTRUMENTATION_HIRES
-  note->nc_systime_nsec[0] = (uint8_t)(ts.tv_nsec         & 0xff);
-  note->nc_systime_nsec[1] = (uint8_t)((ts.tv_nsec >> 8)  & 0xff);
-  note->nc_systime_nsec[2] = (uint8_t)((ts.tv_nsec >> 16) & 0xff);
-  note->nc_systime_nsec[3] = (uint8_t)((ts.tv_nsec >> 24) & 0xff);
-  note->nc_systime_sec[0] = (uint8_t)(ts.tv_sec         & 0xff);
-  note->nc_systime_sec[1] = (uint8_t)((ts.tv_sec >> 8)  & 0xff);
-  note->nc_systime_sec[2] = (uint8_t)((ts.tv_sec >> 16) & 0xff);
-  note->nc_systime_sec[3] = (uint8_t)((ts.tv_sec >> 24) & 0xff);
+  sched_note_flatten(note->nc_systime_nsec, &ts.tv_nsec, sizeof(ts.tv_nsec));
+  sched_note_flatten(note->nc_systime_sec, &ts.tv_sec, sizeof(ts.tv_sec));
 #else
   /* Save the LS 32-bits of the system timer in little endian order */
 
-  note->nc_systime[0] = (uint8_t)(systime         & 0xff);
-  note->nc_systime[1] = (uint8_t)((systime >> 8)  & 0xff);
-  note->nc_systime[2] = (uint8_t)((systime >> 16) & 0xff);
-  note->nc_systime[3] = (uint8_t)((systime >> 24) & 0xff);
+  sched_note_flatten(note->nc_systime, &systime, sizeof(systime));
 #endif
 }
 
@@ -192,6 +202,41 @@ static inline int note_isenabled(void)
 
   return true;
 }
+
+/****************************************************************************
+ * Name: note_isenabled_switch
+ *
+ * Description:
+ *   Check whether the switch instrumentation is enabled.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   True is returned if the instrumentation is enabled.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_SCHED_INSTRUMENTATION_SWITCH
+static inline int note_isenabled_switch(void)
+{
+#ifdef CONFIG_SCHED_INSTRUMENTATION_FILTER
+  if (!note_isenabled())
+    {
+      return false;
+    }
+
+  /* If the switch trace is disabled, do nothing. */
+
+  if ((g_note_filter.mode.flag & NOTE_FILTER_MODE_FLAG_SWITCH) == 0)
+    {
+      return false;
+    }
+#endif
+
+  return true;
+}
+#endif
 
 /****************************************************************************
  * Name: note_isenabled_syscall
@@ -309,6 +354,41 @@ static inline int note_isenabled_irq(int irq, bool enter)
 #endif
 
 /****************************************************************************
+ * Name: note_isenabled_dump
+ *
+ * Description:
+ *   Check whether the dump instrumentation is enabled.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   True is returned if the instrumentation is enabled.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_SCHED_INSTRUMENTATION_DUMP
+static inline int note_isenabled_dump(void)
+{
+#ifdef CONFIG_SCHED_INSTRUMENTATION_FILTER
+  if (!note_isenabled())
+    {
+      return false;
+    }
+
+  /* If the dump trace is disabled, do nothing. */
+
+  if ((g_note_filter.mode.flag & NOTE_FILTER_MODE_FLAG_DUMP) == 0)
+    {
+      return false;
+    }
+#endif
+
+  return true;
+}
+#endif
+
+/****************************************************************************
  * Name: note_spincommon
  *
  * Description:
@@ -339,20 +419,8 @@ static void note_spincommon(FAR struct tcb_s *tcb,
 
   note_common(tcb, &note.nsp_cmn, sizeof(struct note_spinlock_s), type);
 
-  note.nsp_spinlock[0] = (uint8_t)((uintptr_t)spinlock & 0xff);
-  note.nsp_spinlock[1] = (uint8_t)(((uintptr_t)spinlock >> 8)  & 0xff);
-#if UINTPTR_MAX > UINT16_MAX
-  note.nsp_spinlock[2] = (uint8_t)(((uintptr_t)spinlock >> 16) & 0xff);
-  note.nsp_spinlock[3] = (uint8_t)(((uintptr_t)spinlock >> 24) & 0xff);
-#if UINTPTR_MAX > UINT32_MAX
-  note.nsp_spinlock[4] = (uint8_t)(((uintptr_t)spinlock >> 32) & 0xff);
-  note.nsp_spinlock[5] = (uint8_t)(((uintptr_t)spinlock >> 40) & 0xff);
-  note.nsp_spinlock[6] = (uint8_t)(((uintptr_t)spinlock >> 48) & 0xff);
-  note.nsp_spinlock[7] = (uint8_t)(((uintptr_t)spinlock >> 56) & 0xff);
-#endif
-#endif
-
-  note.nsp_value    = (uint8_t)*spinlock;
+  sched_note_flatten(note.nsp_spinlock, &spinlock, sizeof(spinlock));
+  note.nsp_value = *(uint8_t *)spinlock;
 
   /* Add the note to circular buffer */
 
@@ -402,7 +470,7 @@ void sched_note_start(FAR struct tcb_s *tcb)
   namelen = strlen(tcb->name);
 
   DEBUGASSERT(namelen <= CONFIG_TASK_NAME_SIZE);
-  strncpy(note.nsa_name, tcb->name, CONFIG_TASK_NAME_SIZE + 1);
+  strlcpy(note.nsa_name, tcb->name, sizeof(note.nsa_name));
 
   length = SIZEOF_NOTE_START(namelen + 1);
 #else
@@ -436,11 +504,12 @@ void sched_note_stop(FAR struct tcb_s *tcb)
   sched_note_add(&note, sizeof(struct note_stop_s));
 }
 
+#ifdef CONFIG_SCHED_INSTRUMENTATION_SWITCH
 void sched_note_suspend(FAR struct tcb_s *tcb)
 {
   struct note_suspend_s note;
 
-  if (!note_isenabled())
+  if (!note_isenabled_switch())
     {
       return;
     }
@@ -460,7 +529,7 @@ void sched_note_resume(FAR struct tcb_s *tcb)
 {
   struct note_resume_s note;
 
-  if (!note_isenabled())
+  if (!note_isenabled_switch())
     {
       return;
     }
@@ -473,6 +542,7 @@ void sched_note_resume(FAR struct tcb_s *tcb)
 
   sched_note_add(&note, sizeof(struct note_resume_s));
 }
+#endif
 
 #ifdef CONFIG_SMP
 void sched_note_cpu_start(FAR struct tcb_s *tcb, int cpu)
@@ -514,11 +584,12 @@ void sched_note_cpu_started(FAR struct tcb_s *tcb)
   sched_note_add(&note, sizeof(struct note_cpu_started_s));
 }
 
+#ifdef CONFIG_SCHED_INSTRUMENTATION_SWITCH
 void sched_note_cpu_pause(FAR struct tcb_s *tcb, int cpu)
 {
   struct note_cpu_pause_s note;
 
-  if (!note_isenabled())
+  if (!note_isenabled_switch())
     {
       return;
     }
@@ -538,7 +609,7 @@ void sched_note_cpu_paused(FAR struct tcb_s *tcb)
 {
   struct note_cpu_paused_s note;
 
-  if (!note_isenabled())
+  if (!note_isenabled_switch())
     {
       return;
     }
@@ -557,7 +628,7 @@ void sched_note_cpu_resume(FAR struct tcb_s *tcb, int cpu)
 {
   struct note_cpu_resume_s note;
 
-  if (!note_isenabled())
+  if (!note_isenabled_switch())
     {
       return;
     }
@@ -577,7 +648,7 @@ void sched_note_cpu_resumed(FAR struct tcb_s *tcb)
 {
   struct note_cpu_resumed_s note;
 
-  if (!note_isenabled())
+  if (!note_isenabled_switch())
     {
       return;
     }
@@ -591,6 +662,7 @@ void sched_note_cpu_resumed(FAR struct tcb_s *tcb)
 
   sched_note_add(&note, sizeof(struct note_cpu_resumed_s));
 }
+#endif
 #endif
 
 #ifdef CONFIG_SCHED_INSTRUMENTATION_PREEMPTION
@@ -607,8 +679,8 @@ void sched_note_premption(FAR struct tcb_s *tcb, bool locked)
 
   note_common(tcb, &note.npr_cmn, sizeof(struct note_preempt_s),
               locked ? NOTE_PREEMPT_LOCK : NOTE_PREEMPT_UNLOCK);
-  note.npr_count[0] = (uint8_t)(tcb->lockcount & 0xff);
-  note.npr_count[1] = (uint8_t)((tcb->lockcount >> 8) & 0xff);
+  sched_note_flatten(note.npr_count,
+                     &tcb->lockcount, sizeof(tcb->lockcount));
 
   /* Add the note to circular buffer */
 
@@ -631,8 +703,7 @@ void sched_note_csection(FAR struct tcb_s *tcb, bool enter)
   note_common(tcb, &note.ncs_cmn, sizeof(struct note_csection_s),
               enter ? NOTE_CSECTION_ENTER : NOTE_CSECTION_LEAVE);
 #ifdef CONFIG_SMP
-  note.ncs_count[0] = (uint8_t)(tcb->irqcount & 0xff);
-  note.ncs_count[1] = (uint8_t)((tcb->irqcount >> 8) & 0xff);
+  sched_note_flatten(note.ncs_count, &tcb->irqcount, sizeof(tcb->irqcount));
 #endif
 
   /* Add the note to circular buffer */
@@ -671,10 +742,10 @@ void sched_note_syscall_enter(int nr, int argc, ...)
   struct note_syscall_enter_s note;
   FAR struct tcb_s *tcb = this_task();
   unsigned int length;
-  va_list ap;
   uintptr_t arg;
-  int i;
   uint8_t *args;
+  va_list ap;
+  int i;
 
   if (!note_isenabled_syscall(nr))
     {
@@ -705,18 +776,8 @@ void sched_note_syscall_enter(int nr, int argc, ...)
   for (i = 0; i < argc; i++)
     {
       arg = (uintptr_t)va_arg(ap, uintptr_t);
-      *args++ = (uint8_t)(arg & 0xff);
-      *args++ = (uint8_t)((arg >> 8)  & 0xff);
-#if UINTPTR_MAX > UINT16_MAX
-      *args++ = (uint8_t)((arg >> 16) & 0xff);
-      *args++ = (uint8_t)((arg >> 24) & 0xff);
-#if UINTPTR_MAX > UINT32_MAX
-      *args++ = (uint8_t)((arg >> 32) & 0xff);
-      *args++ = (uint8_t)((arg >> 40) & 0xff);
-      *args++ = (uint8_t)((arg >> 48) & 0xff);
-      *args++ = (uint8_t)((arg >> 56) & 0xff);
-#endif
-#endif
+      sched_note_flatten(args, &arg, sizeof(arg));
+      args += sizeof(uintptr_t);
     }
 
   va_end(ap);
@@ -741,20 +802,9 @@ void sched_note_syscall_leave(int nr, uintptr_t result)
   note_common(tcb, &note.nsc_cmn, sizeof(struct note_syscall_leave_s),
               NOTE_SYSCALL_LEAVE);
   DEBUGASSERT(nr <= UCHAR_MAX);
-  note.nsc_nr     = nr;
+  note.nsc_nr = nr;
 
-  note.nsc_result[0] = (uint8_t)(result & 0xff);
-  note.nsc_result[1] = (uint8_t)((result >> 8)  & 0xff);
-#if UINTPTR_MAX > UINT16_MAX
-  note.nsc_result[2] = (uint8_t)((result >> 16) & 0xff);
-  note.nsc_result[3] = (uint8_t)((result >> 24) & 0xff);
-#if UINTPTR_MAX > UINT32_MAX
-  note.nsc_result[4] = (uint8_t)((result >> 32) & 0xff);
-  note.nsc_result[5] = (uint8_t)((result >> 40) & 0xff);
-  note.nsc_result[6] = (uint8_t)((result >> 48) & 0xff);
-  note.nsc_result[7] = (uint8_t)((result >> 56) & 0xff);
-#endif
-#endif
+  sched_note_flatten(note.nsc_result, &result, sizeof(result));
 
   /* Add the note to circular buffer */
 
@@ -786,6 +836,341 @@ void sched_note_irqhandler(int irq, FAR void *handler, bool enter)
                  sizeof(struct note_irqhandler_s));
 }
 #endif
+
+#ifdef CONFIG_SCHED_INSTRUMENTATION_DUMP
+void sched_note_string(uintptr_t ip, FAR const char *buf)
+{
+  FAR struct note_string_s *note;
+  uint8_t data[255];
+  unsigned int length;
+  FAR struct tcb_s *tcb = this_task();
+
+  if (!note_isenabled_dump())
+    {
+      return;
+    }
+
+  note = (FAR struct note_string_s *)data;
+  length = SIZEOF_NOTE_STRING(strlen(buf));
+  if (length > sizeof(data))
+    {
+      length = sizeof(data);
+    }
+
+  /* Format the note */
+
+  note_common(tcb, &note->nst_cmn, length,
+              NOTE_DUMP_STRING);
+
+  sched_note_flatten(note->nst_ip, &ip, sizeof(uintptr_t));
+  memcpy(note->nst_data, buf, length - sizeof(struct note_string_s));
+  data[length - 1] = '\0';
+
+  /* Add the note to circular buffer */
+
+  sched_note_add(note, length);
+}
+
+void sched_note_dump(uintptr_t ip, uint8_t event,
+                     FAR const void *buf, size_t len)
+{
+  FAR struct note_binary_s *note;
+  char data[255];
+  unsigned int length;
+  FAR struct tcb_s *tcb = this_task();
+
+  if (!note_isenabled_dump())
+    {
+      return;
+    }
+
+  note = (FAR struct note_binary_s *)data;
+  length = SIZEOF_NOTE_BINARY(len);
+  if (length > sizeof(data))
+    {
+      length = sizeof(data);
+    }
+
+  /* Format the note */
+
+  note_common(tcb, &note->nbi_cmn, length,
+              NOTE_DUMP_BINARY);
+
+  sched_note_flatten(note->nbi_ip, &ip, sizeof(uintptr_t));
+  note->nbi_event = event;
+  memcpy(note->nbi_data, buf, length - sizeof(struct note_binary_s) + 1);
+
+  /* Add the note to circular buffer */
+
+  sched_note_add(note, length);
+}
+
+void sched_note_vprintf(uintptr_t ip,
+                        FAR const char *fmt, va_list va)
+{
+  FAR struct note_string_s *note;
+  uint8_t data[255];
+  unsigned int length;
+  FAR struct tcb_s *tcb = this_task();
+
+  if (!note_isenabled_dump())
+    {
+      return;
+    }
+
+  note = (FAR struct note_string_s *)data;
+  length = vsnprintf(note->nst_data,
+                     sizeof(data) - sizeof(struct note_string_s),
+                     fmt,
+                     va);
+  length = SIZEOF_NOTE_STRING(length);
+  if (length > sizeof(data))
+    {
+      length = sizeof(data);
+    }
+
+  /* Format the note */
+
+  note_common(tcb, &note->nst_cmn, length,
+              NOTE_DUMP_STRING);
+
+  sched_note_flatten(note->nst_ip, &ip, sizeof(uintptr_t));
+
+  /* Add the note to circular buffer */
+
+  sched_note_add(note, length);
+}
+
+void sched_note_vbprintf(uintptr_t ip, uint8_t event,
+                         FAR const char *fmt, va_list va)
+{
+  FAR struct note_binary_s *note;
+  uint8_t data[255];
+  begin_packed_struct union
+    {
+      char c;
+      short s;
+      int i;
+      long l;
+#ifdef CONFIG_HAVE_LONG_LONG
+      long long ll;
+#endif
+      intmax_t im;
+      size_t sz;
+      ptrdiff_t ptr;
+#ifdef CONFIG_HAVE_FLOAT
+      float f;
+#endif
+#ifdef CONFIG_HAVE_DOUBLE
+      double d;
+#endif
+#ifdef CONFIG_HAVE_LONG_DOUBLE
+      long double ld;
+#endif
+    }
+
+  end_packed_struct *var;
+
+  char c;
+  int length;
+  bool search_fmt = 0;
+  int next = 0;
+  FAR struct tcb_s *tcb = this_task();
+
+  if (!note_isenabled_dump())
+    {
+      return;
+    }
+
+  note = (FAR struct note_binary_s *)data;
+  length = sizeof(data) - sizeof(struct note_binary_s) + 1;
+
+  while ((c = *fmt++) != '\0')
+    {
+      if (c != '%' && search_fmt == 0)
+        {
+          continue;
+        }
+
+      search_fmt = 1;
+      var = (FAR void *)&note->nbi_data[next];
+
+      if (c == 'd' || c == 'i' || c == 'u' ||
+          c == 'o' || c == 'x' || c == 'X')
+        {
+          if (*(fmt - 2) == 'h' && *(fmt - 3) == 'h')
+            {
+              if (next + sizeof(var->c) > length)
+                {
+                  break;
+                }
+
+              var->c = va_arg(va, int);
+              next += sizeof(var->c);
+            }
+          else if (*(fmt - 2) == 'h')
+            {
+              if (next + sizeof(var->s) > length)
+                {
+                  break;
+                }
+
+              var->s = va_arg(va, int);
+              next += sizeof(var->s);
+            }
+          else if (*(fmt - 2) == 'j')
+            {
+              if (next + sizeof(var->im) > length)
+                {
+                  break;
+                }
+
+              var->im = va_arg(va, intmax_t);
+              next += sizeof(var->im);
+            }
+#ifdef CONFIG_HAVE_LONG_LONG
+          else if (*(fmt - 2) == 'l' && *(fmt - 3) == 'l')
+            {
+              if (next + sizeof(var->ll) > length)
+                {
+                  break;
+                }
+
+              var->ll = va_arg(va, long long);
+              next += sizeof(var->ll);
+            }
+#endif
+          else if (*(fmt - 2) == 'l')
+            {
+              if (next + sizeof(var->l) > length)
+                {
+                  break;
+                }
+
+              var->l = va_arg(va, long);
+              next += sizeof(var->l);
+            }
+          else if (*(fmt - 2) == 'z')
+            {
+              if (next + sizeof(var->sz) > length)
+                {
+                  break;
+                }
+
+              var->sz = va_arg(va, size_t);
+              next += sizeof(var->sz);
+            }
+          else if (*(fmt - 2) == 't')
+            {
+              if (next + sizeof(var->ptr) > length)
+                {
+                  break;
+                }
+
+              var->ptr = va_arg(va, ptrdiff_t);
+              next += sizeof(var->ptr);
+            }
+          else
+            {
+              if (next + sizeof(var->i) > length)
+                {
+                  break;
+                }
+
+              var->i = va_arg(va, int);
+              next += sizeof(var->i);
+            }
+
+          search_fmt = 0;
+        }
+
+      if (c == 'e' || c == 'f' || c == 'g' ||
+          c == 'E' || c == 'F' || c == 'G')
+        {
+          if (*(fmt - 2) == 'L')
+            {
+#ifdef CONFIG_HAVE_LONG_DOUBLE
+              if (next + sizeof(var->ld) > length)
+                {
+                  break;
+                }
+
+              var->ld = va_arg(va, long double);
+              next += sizeof(var->ld);
+#endif
+            }
+          else if (*(fmt - 2) == 'l')
+            {
+#ifdef CONFIG_HAVE_DOUBLE
+              if (next + sizeof(var->d) > length)
+                {
+                  break;
+                }
+
+              var->d = va_arg(va, double);
+              next += sizeof(var->d);
+#endif
+            }
+          else
+#ifdef CONFIG_HAVE_FLOAT
+            {
+              if (next + sizeof(var->l) > length)
+                {
+                  break;
+                }
+
+              var->l = va_arg(va, double);
+              next += sizeof(var->l);
+#endif
+            }
+
+          search_fmt = 0;
+        }
+    }
+
+  length = SIZEOF_NOTE_BINARY(next);
+
+  /* Format the note */
+
+  note_common(tcb, &note->nbi_cmn, length,
+              NOTE_DUMP_BINARY);
+
+  sched_note_flatten(note->nbi_ip, &ip, sizeof(uintptr_t));
+  note->nbi_event = event;
+
+  /* Add the note to circular buffer */
+
+  sched_note_add(note, length);
+}
+
+void sched_note_printf(uintptr_t ip,
+                       FAR const char *fmt, ...)
+{
+  va_list va;
+  va_start(va, fmt);
+  sched_note_vprintf(ip, fmt, va);
+  va_end(va);
+}
+
+void sched_note_bprintf(uintptr_t ip, uint8_t event,
+                        FAR const char *fmt, ...)
+{
+  va_list va;
+  va_start(va, fmt);
+  sched_note_vbprintf(ip, event, fmt, va);
+  va_end(va);
+}
+
+void sched_note_begin(uintptr_t ip, FAR const char *buf)
+{
+  sched_note_printf(ip, "B|%d|%s", getpid(), buf);
+}
+
+void sched_note_end(uintptr_t ip, FAR const char *buf)
+{
+  sched_note_printf(ip, "E|%d|%s", getpid(), buf);
+}
+#endif /* CONFIG_SCHED_INSTRUMENTATION_DUMP */
 
 #ifdef CONFIG_SCHED_INSTRUMENTATION_FILTER
 

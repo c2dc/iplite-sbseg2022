@@ -130,7 +130,7 @@ nuttx$(EXEEXT): $(HEAD_OBJ) board$(DELIM)libboard$(LIBEXT) nuttx.linkcmd
 
 # This is part of the top-level export target
 
-export_startup: board$(DELIM)libboard$(LIBEXT) $(STARTUP_OBJS)
+export_startup: $(STARTUP_OBJS)
 	$(Q) if [ -d "$(EXPORT_DIR)$(DELIM)startup" ]; then \
 		cp -f $(STARTUP_OBJS) "$(EXPORT_DIR)$(DELIM)startup"; \
 	 else \
@@ -144,8 +144,6 @@ depend: .depend
 
 context::
 
-clean_context::
-
 clean:
 	$(Q) if [ -e board$(DELIM)Makefile ]; then \
 		$(MAKE) -C board clean ; \
@@ -157,7 +155,7 @@ clean:
 	$(call DELFILE, libarch$(LIBEXT))
 	$(call CLEAN)
 
-distclean: clean
+distclean:: clean
 	$(Q) if [ -e board$(DELIM)Makefile ]; then \
 		$(MAKE) -C board distclean ; \
 	fi

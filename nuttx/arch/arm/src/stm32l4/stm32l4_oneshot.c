@@ -1,36 +1,20 @@
 /****************************************************************************
  * arch/arm/src/stm32l4/stm32l4_oneshot.c
  *
- *   Copyright (C) 2016-2017 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *           dev@ziggurat29.com
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the names NuttX nor Atmel nor the names of its contributors
- *    may be used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -91,7 +75,7 @@ static int stm32l4_oneshot_handler(int irq, void *context, void *arg)
 {
   struct stm32l4_oneshot_s *oneshot = (struct stm32l4_oneshot_s *) arg;
   oneshot_handler_t oneshot_handler;
-  FAR void *oneshot_arg;
+  void *oneshot_arg;
 
   tmrinfo("Expired...\n");
   DEBUGASSERT(oneshot != NULL && oneshot->handler);
@@ -196,7 +180,7 @@ static inline int stm32l4_allocate_handler(struct stm32l4_oneshot_s *oneshot)
  *
  ****************************************************************************/
 
-int stm32l4_oneshot_initialize(FAR struct stm32l4_oneshot_s *oneshot,
+int stm32l4_oneshot_initialize(struct stm32l4_oneshot_s *oneshot,
                                int chan, uint16_t resolution)
 {
   uint32_t frequency;
@@ -238,8 +222,8 @@ int stm32l4_oneshot_initialize(FAR struct stm32l4_oneshot_s *oneshot,
  *
  ****************************************************************************/
 
-int stm32l4_oneshot_max_delay(FAR struct stm32l4_oneshot_s *oneshot,
-                              FAR uint64_t *usec)
+int stm32l4_oneshot_max_delay(struct stm32l4_oneshot_s *oneshot,
+                              uint64_t *usec)
 {
   DEBUGASSERT(oneshot != NULL && usec != NULL);
 
@@ -268,9 +252,9 @@ int stm32l4_oneshot_max_delay(FAR struct stm32l4_oneshot_s *oneshot,
  *
  ****************************************************************************/
 
-int stm32l4_oneshot_start(FAR struct stm32l4_oneshot_s *oneshot,
-                          oneshot_handler_t handler, FAR void *arg,
-                          FAR const struct timespec *ts)
+int stm32l4_oneshot_start(struct stm32l4_oneshot_s *oneshot,
+                          oneshot_handler_t handler, void *arg,
+                          const struct timespec *ts)
 {
   uint64_t usec;
   uint64_t period;
@@ -367,8 +351,8 @@ int stm32l4_oneshot_start(FAR struct stm32l4_oneshot_s *oneshot,
  *
  ****************************************************************************/
 
-int stm32l4_oneshot_cancel(FAR struct stm32l4_oneshot_s *oneshot,
-                           FAR struct timespec *ts)
+int stm32l4_oneshot_cancel(struct stm32l4_oneshot_s *oneshot,
+                           struct timespec *ts)
 {
   irqstate_t flags;
   uint64_t usec;

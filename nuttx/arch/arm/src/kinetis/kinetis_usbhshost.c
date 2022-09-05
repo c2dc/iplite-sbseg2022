@@ -1,37 +1,20 @@
 /****************************************************************************
  * arch/arm/src/kinetis/kinetis_usbhshost.c
  *
- *   Copyright (C) 2013-2017, 2020 Gregory Nutt. All rights reserved.
- *   Authors: Gregory Nutt <gnutt@nuttx.org>
- *            Dave Marples <dave@marples.net>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -62,7 +45,7 @@
 
 #include <arch/irq.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include "hardware/kinetis_sim.h"
 #include "hardware/kinetis_usbhs.h"
@@ -403,7 +386,7 @@ struct kinetis_ehci_trace_s
   uint16_t id;
   bool fmt2;
 #endif
-  FAR const char *string;
+  const char *string;
 };
 
 #endif /* HAVE_USBHOST_TRACE */
@@ -523,7 +506,7 @@ static ssize_t kinetis_transfer_wait(struct kinetis_epinfo_s *epinfo);
 #ifdef CONFIG_USBHOST_ASYNCH
 static inline int kinetis_ioc_async_setup(struct kinetis_rhport_s *rhport,
          struct kinetis_epinfo_s *epinfo, usbhost_asynch_t callback,
-         FAR void *arg);
+         void *arg);
 static void kinetis_asynch_completion(struct kinetis_epinfo_s *epinfo);
 #endif
 
@@ -543,60 +526,59 @@ static inline void kinetis_ioc_bottomhalf(void);
 static inline void kinetis_portsc_bottomhalf(void);
 static inline void kinetis_syserr_bottomhalf(void);
 static inline void kinetis_async_advance_bottomhalf(void);
-static void kinetis_ehci_bottomhalf(FAR void *arg);
+static void kinetis_ehci_bottomhalf(void *arg);
 static int kinetis_ehci_interrupt(int irq,
-                                  FAR void *context, FAR void *arg);
+                                  void *context, void *arg);
 
 /* USB Host Controller Operations *******************************************/
 
-static int kinetis_wait(FAR struct usbhost_connection_s *conn,
-         FAR struct usbhost_hubport_s **hport);
-static int kinetis_rh_enumerate(FAR struct usbhost_connection_s *conn,
-         FAR struct usbhost_hubport_s *hport);
-static int kinetis_enumerate(FAR struct usbhost_connection_s *conn,
-         FAR struct usbhost_hubport_s *hport);
-
-static int kinetis_ep0configure(FAR struct usbhost_driver_s *drvr,
-         usbhost_ep_t ep0, uint8_t funcaddr, uint8_t speed,
-         uint16_t maxpacketsize);
-static int kinetis_epalloc(FAR struct usbhost_driver_s *drvr,
-         const FAR struct usbhost_epdesc_s *epdesc, usbhost_ep_t *ep);
-static int kinetis_epfree(FAR struct usbhost_driver_s *drvr,
+static int kinetis_wait(struct usbhost_connection_s *conn,
+                        struct usbhost_hubport_s **hport);
+static int kinetis_rh_enumerate(struct usbhost_connection_s *conn,
+                                struct usbhost_hubport_s *hport);
+static int kinetis_enumerate(struct usbhost_connection_s *conn,
+                             struct usbhost_hubport_s *hport);
+static int kinetis_ep0configure(struct usbhost_driver_s *drvr,
+                                usbhost_ep_t ep0, uint8_t funcaddr,
+                                uint8_t speed, uint16_t maxpacketsize);
+static int kinetis_epalloc(struct usbhost_driver_s *drvr,
+                           const struct usbhost_epdesc_s *epdesc,
+                           usbhost_ep_t *ep);
+static int kinetis_epfree(struct usbhost_driver_s *drvr,
                           usbhost_ep_t ep);
-static int kinetis_alloc(FAR struct usbhost_driver_s *drvr,
-         FAR uint8_t **buffer, FAR size_t *maxlen);
-static int kinetis_free(FAR struct usbhost_driver_s *drvr,
-         FAR uint8_t *buffer);
-static int kinetis_ioalloc(FAR struct usbhost_driver_s *drvr,
-         FAR uint8_t **buffer, size_t buflen);
-static int kinetis_iofree(FAR struct usbhost_driver_s *drvr,
-         FAR uint8_t *buffer);
-static int kinetis_ctrlin(FAR struct usbhost_driver_s *drvr,
+static int kinetis_alloc(struct usbhost_driver_s *drvr,
+                         uint8_t **buffer, size_t *maxlen);
+static int kinetis_free(struct usbhost_driver_s *drvr,
+                        uint8_t *buffer);
+static int kinetis_ioalloc(struct usbhost_driver_s *drvr,
+                           uint8_t **buffer, size_t buflen);
+static int kinetis_iofree(struct usbhost_driver_s *drvr,
+                          uint8_t *buffer);
+static int kinetis_ctrlin(struct usbhost_driver_s *drvr,
                           usbhost_ep_t ep0,
-                          FAR const struct usb_ctrlreq_s *req,
-                          FAR uint8_t *buffer);
-static int kinetis_ctrlout(FAR struct usbhost_driver_s *drvr,
+                          const struct usb_ctrlreq_s *req,
+                          uint8_t *buffer);
+static int kinetis_ctrlout(struct usbhost_driver_s *drvr,
                            usbhost_ep_t ep0,
-                           FAR const struct usb_ctrlreq_s *req,
-                           FAR const uint8_t *buffer);
-static ssize_t kinetis_transfer(FAR struct usbhost_driver_s *drvr,
-         usbhost_ep_t ep, FAR uint8_t *buffer, size_t buflen);
+                           const struct usb_ctrlreq_s *req,
+                           const uint8_t *buffer);
+static ssize_t kinetis_transfer(struct usbhost_driver_s *drvr,
+                                usbhost_ep_t ep, uint8_t *buffer,
+                                size_t buflen);
 #ifdef CONFIG_USBHOST_ASYNCH
-static int kinetis_asynch(FAR struct usbhost_driver_s *drvr,
-                          usbhost_ep_t ep,
-                          FAR uint8_t *buffer,
-                          size_t buflen,
-                          usbhost_asynch_t callback,
-                          FAR void *arg);
+static int kinetis_asynch(struct usbhost_driver_s *drvr, usbhost_ep_t ep,
+                          uint8_t *buffer, size_t buflen,
+                          usbhost_asynch_t callback, void *arg);
 #endif
-static int kinetis_cancel(FAR struct usbhost_driver_s *drvr,
+static int kinetis_cancel(struct usbhost_driver_s *drvr,
                           usbhost_ep_t ep);
 #ifdef CONFIG_USBHOST_HUB
-static int kinetis_connect(FAR struct usbhost_driver_s *drvr,
-         FAR struct usbhost_hubport_s *hport, bool connected);
+static int kinetis_connect(struct usbhost_driver_s *drvr,
+                           struct usbhost_hubport_s *hport,
+                           bool connected);
 #endif
-static void kinetis_disconnect(FAR struct usbhost_driver_s *drvr,
-                             FAR struct usbhost_hubport_s *hport);
+static void kinetis_disconnect(struct usbhost_driver_s *drvr,
+                               struct usbhost_hubport_s *hport);
 
 /* Initialization ***********************************************************/
 
@@ -626,17 +608,17 @@ static const uint8_t g_ehci_speed[4] =
 
 /* The head of the asynchronous queue */
 
-static struct kinetis_qh_s g_asynchead __attribute__ ((aligned(32)));
+static struct kinetis_qh_s g_asynchead aligned_data(32);
 
 #ifndef CONFIG_USBHOST_INT_DISABLE
 /* The head of the periodic queue */
 
-static struct kinetis_qh_s g_intrhead   __attribute__ ((aligned(32)));
+static struct kinetis_qh_s g_intrhead   aligned_data(32);
 
 /* The frame list */
 
 #ifdef CONFIG_KINETIS_EHCI_PREALLOCATE
-static uint32_t g_framelist[FRAME_LIST_SIZE] __attribute__ ((aligned(4096)));
+static uint32_t g_framelist[FRAME_LIST_SIZE] aligned_data(4096);
 #else
 static uint32_t *g_framelist;
 #endif
@@ -650,12 +632,12 @@ static uint32_t *g_framelist;
 /* Queue Head (QH) pool */
 
 static struct kinetis_qh_s g_qhpool[CONFIG_KINETIS_EHCI_NQHS]
-                       __attribute__ ((aligned(32)));
+                       aligned_data(32);
 
 /* Queue Element Transfer Descriptor (qTD) pool */
 
 static struct kinetis_qtd_s g_qtdpool[CONFIG_KINETIS_EHCI_NQTDS]
-                        __attribute__ ((aligned(32)));
+                        aligned_data(32);
 
 #else
 /* Pools of dynamically data structures.  These will all be linked into the
@@ -2717,7 +2699,7 @@ static ssize_t kinetis_transfer_wait(struct kinetis_epinfo_s *epinfo)
 static inline int kinetis_ioc_async_setup(struct kinetis_rhport_s *rhport,
                                         struct kinetis_epinfo_s *epinfo,
                                         usbhost_asynch_t callback,
-                                        FAR void *arg)
+                                        void *arg)
 {
   irqstate_t flags;
   int ret = -ENODEV;
@@ -3410,7 +3392,7 @@ static inline void kinetis_async_advance_bottomhalf(void)
  *
  ****************************************************************************/
 
-static void kinetis_ehci_bottomhalf(FAR void *arg)
+static void kinetis_ehci_bottomhalf(void *arg)
 {
   uint32_t pending = (uint32_t)arg;
 
@@ -3553,7 +3535,7 @@ static void kinetis_ehci_bottomhalf(FAR void *arg)
  *
  ****************************************************************************/
 
-static int kinetis_ehci_interrupt(int irq, FAR void *context, FAR void *arg)
+static int kinetis_ehci_interrupt(int irq, void *context, void *arg)
 {
   uint32_t usbsts;
   uint32_t pending;
@@ -3585,7 +3567,7 @@ static int kinetis_ehci_interrupt(int irq, FAR void *context, FAR void *arg)
 
       DEBUGASSERT(work_available(&g_ehci.work));
       DEBUGVERIFY(work_queue(HPWORK, &g_ehci.work, kinetis_ehci_bottomhalf,
-                            (FAR void *)pending, 0));
+                            (void *)pending, 0));
 
       /* Disable further EHCI interrupts so that we do not overrun the work
        * queue. We acknowledge the interrupts after servicing.
@@ -3622,8 +3604,8 @@ static int kinetis_ehci_interrupt(int irq, FAR void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static int kinetis_wait(FAR struct usbhost_connection_s *conn,
-                      FAR struct usbhost_hubport_s **hport)
+static int kinetis_wait(struct usbhost_connection_s *conn,
+                        struct usbhost_hubport_s **hport)
 {
   irqstate_t flags;
   int rhpndx;
@@ -3725,8 +3707,8 @@ static int kinetis_wait(FAR struct usbhost_connection_s *conn,
  *
  ****************************************************************************/
 
-static int kinetis_rh_enumerate(FAR struct usbhost_connection_s *conn,
-                              FAR struct usbhost_hubport_s *hport)
+static int kinetis_rh_enumerate(struct usbhost_connection_s *conn,
+                                struct usbhost_hubport_s *hport)
 {
   struct kinetis_rhport_s *rhport;
   volatile uint32_t *regaddr;
@@ -3941,8 +3923,8 @@ static int kinetis_rh_enumerate(FAR struct usbhost_connection_s *conn,
   return OK;
 }
 
-static int kinetis_enumerate(FAR struct usbhost_connection_s *conn,
-                           FAR struct usbhost_hubport_s *hport)
+static int kinetis_enumerate(struct usbhost_connection_s *conn,
+                             struct usbhost_hubport_s *hport)
 {
   int ret;
 
@@ -4011,9 +3993,9 @@ static int kinetis_enumerate(FAR struct usbhost_connection_s *conn,
  *
  ****************************************************************************/
 
-static int kinetis_ep0configure(FAR struct usbhost_driver_s *drvr,
-                              usbhost_ep_t ep0, uint8_t funcaddr,
-                              uint8_t speed, uint16_t maxpacketsize)
+static int kinetis_ep0configure(struct usbhost_driver_s *drvr,
+                                usbhost_ep_t ep0, uint8_t funcaddr,
+                                uint8_t speed, uint16_t maxpacketsize)
 {
   struct kinetis_epinfo_s *epinfo = (struct kinetis_epinfo_s *)ep0;
   int ret;
@@ -4059,9 +4041,9 @@ static int kinetis_ep0configure(FAR struct usbhost_driver_s *drvr,
  *
  ****************************************************************************/
 
-static int kinetis_epalloc(FAR struct usbhost_driver_s *drvr,
-                         const FAR struct usbhost_epdesc_s *epdesc,
-                         usbhost_ep_t *ep)
+static int kinetis_epalloc(struct usbhost_driver_s *drvr,
+                           const struct usbhost_epdesc_s *epdesc,
+                           usbhost_ep_t *ep)
 {
   struct kinetis_epinfo_s *epinfo;
   struct usbhost_hubport_s *hport;
@@ -4145,7 +4127,7 @@ static int kinetis_epalloc(FAR struct usbhost_driver_s *drvr,
  *
  ****************************************************************************/
 
-static int kinetis_epfree(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep)
+static int kinetis_epfree(struct usbhost_driver_s *drvr, usbhost_ep_t ep)
 {
   struct kinetis_epinfo_s *epinfo = (struct kinetis_epinfo_s *)ep;
 
@@ -4192,8 +4174,8 @@ static int kinetis_epfree(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep)
  *
  ****************************************************************************/
 
-static int kinetis_alloc(FAR struct usbhost_driver_s *drvr,
-                       FAR uint8_t **buffer, FAR size_t *maxlen)
+static int kinetis_alloc(struct usbhost_driver_s *drvr,
+                         uint8_t **buffer, size_t *maxlen)
 {
   int ret = -ENOMEM;
   DEBUGASSERT(drvr && buffer && maxlen);
@@ -4203,8 +4185,8 @@ static int kinetis_alloc(FAR struct usbhost_driver_s *drvr,
    * multiple of the cache line size in length.
    */
 
-  *buffer = (FAR uint8_t *)kmm_memalign(ARMV7M_DCACHE_LINESIZE,
-                                        KINETIS_EHCI_BUFSIZE);
+  *buffer = (uint8_t *)kmm_memalign(ARMV7M_DCACHE_LINESIZE,
+                                    KINETIS_EHCI_BUFSIZE);
   if (*buffer)
     {
       *maxlen = KINETIS_EHCI_BUFSIZE;
@@ -4238,8 +4220,8 @@ static int kinetis_alloc(FAR struct usbhost_driver_s *drvr,
  *
  ****************************************************************************/
 
-static int kinetis_free(FAR struct usbhost_driver_s *drvr,
-                        FAR uint8_t *buffer)
+static int kinetis_free(struct usbhost_driver_s *drvr,
+                        uint8_t *buffer)
 {
   DEBUGASSERT(drvr && buffer);
 
@@ -4280,8 +4262,8 @@ static int kinetis_free(FAR struct usbhost_driver_s *drvr,
  *
  ****************************************************************************/
 
-static int kinetis_ioalloc(FAR struct usbhost_driver_s *drvr,
-                         FAR uint8_t **buffer, size_t buflen)
+static int kinetis_ioalloc(struct usbhost_driver_s *drvr,
+                           uint8_t **buffer, size_t buflen)
 {
   DEBUGASSERT(drvr && buffer && buflen > 0);
 
@@ -4292,7 +4274,7 @@ static int kinetis_ioalloc(FAR struct usbhost_driver_s *drvr,
    */
 
   buflen  = (buflen + DCACHE_LINEMASK) & ~DCACHE_LINEMASK;
-  *buffer = (FAR uint8_t *)kumm_memalign(ARMV7M_DCACHE_LINESIZE, buflen);
+  *buffer = (uint8_t *)kumm_memalign(ARMV7M_DCACHE_LINESIZE, buflen);
   return *buffer ? OK : -ENOMEM;
 }
 
@@ -4319,8 +4301,8 @@ static int kinetis_ioalloc(FAR struct usbhost_driver_s *drvr,
  *
  ****************************************************************************/
 
-static int kinetis_iofree(FAR struct usbhost_driver_s *drvr,
-                        FAR uint8_t *buffer)
+static int kinetis_iofree(struct usbhost_driver_s *drvr,
+                          uint8_t *buffer)
 {
   DEBUGASSERT(drvr && buffer);
 
@@ -4366,10 +4348,10 @@ static int kinetis_iofree(FAR struct usbhost_driver_s *drvr,
  *
  ****************************************************************************/
 
-static int kinetis_ctrlin(FAR struct usbhost_driver_s *drvr,
+static int kinetis_ctrlin(struct usbhost_driver_s *drvr,
                           usbhost_ep_t ep0,
-                          FAR const struct usb_ctrlreq_s *req,
-                          FAR uint8_t *buffer)
+                          const struct usb_ctrlreq_s *req,
+                          uint8_t *buffer)
 {
   struct kinetis_rhport_s *rhport = (struct kinetis_rhport_s *)drvr;
   struct kinetis_epinfo_s *ep0info = (struct kinetis_epinfo_s *)ep0;
@@ -4433,10 +4415,10 @@ errout_with_sem:
   return ret;
 }
 
-static int kinetis_ctrlout(FAR struct usbhost_driver_s *drvr,
+static int kinetis_ctrlout(struct usbhost_driver_s *drvr,
                            usbhost_ep_t ep0,
-                           FAR const struct usb_ctrlreq_s *req,
-                           FAR const uint8_t *buffer)
+                           const struct usb_ctrlreq_s *req,
+                           const uint8_t *buffer)
 {
   /* kinetis_ctrlin can handle both directions.  We just need to work around
    * the differences in the function signatures.
@@ -4484,9 +4466,9 @@ static int kinetis_ctrlout(FAR struct usbhost_driver_s *drvr,
  *
  ****************************************************************************/
 
-static ssize_t kinetis_transfer(FAR struct usbhost_driver_s *drvr,
-                              usbhost_ep_t ep, FAR uint8_t *buffer,
-                              size_t buflen)
+static ssize_t kinetis_transfer(struct usbhost_driver_s *drvr,
+                                usbhost_ep_t ep, uint8_t *buffer,
+                                size_t buflen)
 {
   struct kinetis_rhport_s *rhport = (struct kinetis_rhport_s *)drvr;
   struct kinetis_epinfo_s *epinfo = (struct kinetis_epinfo_s *)ep;
@@ -4597,9 +4579,9 @@ errout_with_sem:
  ****************************************************************************/
 
 #ifdef CONFIG_USBHOST_ASYNCH
-static int kinetis_asynch(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep,
-                        FAR uint8_t *buffer, size_t buflen,
-                        usbhost_asynch_t callback, FAR void *arg)
+static int kinetis_asynch(struct usbhost_driver_s *drvr, usbhost_ep_t ep,
+                          uint8_t *buffer, size_t buflen,
+                          usbhost_asynch_t callback, void *arg)
 {
   struct kinetis_rhport_s *rhport = (struct kinetis_rhport_s *)drvr;
   struct kinetis_epinfo_s *epinfo = (struct kinetis_epinfo_s *)ep;
@@ -4691,7 +4673,7 @@ errout_with_sem:
  *
  ****************************************************************************/
 
-static int kinetis_cancel(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep)
+static int kinetis_cancel(struct usbhost_driver_s *drvr, usbhost_ep_t ep)
 {
   struct kinetis_epinfo_s *epinfo = (struct kinetis_epinfo_s *)ep;
   struct kinetis_qh_s *qh;
@@ -4896,9 +4878,9 @@ errout_with_sem:
  ****************************************************************************/
 
 #ifdef CONFIG_USBHOST_HUB
-static int kinetis_connect(FAR struct usbhost_driver_s *drvr,
-                         FAR struct usbhost_hubport_s *hport,
-                         bool connected)
+static int kinetis_connect(struct usbhost_driver_s *drvr,
+                           struct usbhost_hubport_s *hport,
+                           bool connected)
 {
   irqstate_t flags;
 
@@ -4951,8 +4933,8 @@ static int kinetis_connect(FAR struct usbhost_driver_s *drvr,
  *
  ****************************************************************************/
 
-static void kinetis_disconnect(FAR struct usbhost_driver_s *drvr,
-                             FAR struct usbhost_hubport_s *hport)
+static void kinetis_disconnect(struct usbhost_driver_s *drvr,
+                               struct usbhost_hubport_s *hport)
 {
   DEBUGASSERT(hport != NULL);
   hport->devclass = NULL;
@@ -5106,9 +5088,9 @@ static int kinetis_reset(void)
  *
  ****************************************************************************/
 
-FAR struct usbhost_connection_s *kinetis_ehci_initialize(int controller)
+struct usbhost_connection_s *kinetis_ehci_initialize(int controller)
 {
-  FAR struct usbhost_hubport_s *hport;
+  struct usbhost_hubport_s *hport;
   uint32_t regval;
 #  if defined(CONFIG_DEBUG_USB) && defined(CONFIG_DEBUG_INFO)
   uint16_t regval16;
@@ -5513,7 +5495,7 @@ FAR struct usbhost_connection_s *kinetis_ehci_initialize(int controller)
  ****************************************************************************/
 
 #ifdef HAVE_USBHOST_TRACE
-FAR const char *usbhost_trformat1(uint16_t id)
+const char *usbhost_trformat1(uint16_t id)
 {
   int ndx = TRACE1_INDEX(id);
 
@@ -5525,7 +5507,7 @@ FAR const char *usbhost_trformat1(uint16_t id)
   return NULL;
 }
 
-FAR const char *usbhost_trformat2(uint16_t id)
+const char *usbhost_trformat2(uint16_t id)
 {
   int ndx = TRACE2_INDEX(id);
 

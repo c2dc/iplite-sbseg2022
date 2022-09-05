@@ -32,6 +32,7 @@
 #include <netdb.h>
 #include <errno.h>
 #include <assert.h>
+#include <debug.h>
 
 #include <arpa/inet.h>
 
@@ -194,7 +195,7 @@ static int lib_numeric_address(FAR const char *name,
       return -ERANGE;
     }
 
-  strncpy(ptr, name, buflen);
+  strlcpy(ptr, name, buflen);
 
   /* Set the address to h_name */
 
@@ -277,7 +278,7 @@ static int lib_localhost(FAR const char *name, FAR struct hostent_s *host,
           return -ERANGE;
         }
 
-      strncpy(dest, name, buflen);
+      strlcpy(dest, name, buflen);
 
       /* Set the address to h_name */
 
@@ -407,7 +408,7 @@ static int lib_find_answer(FAR const char *name, FAR struct hostent_s *host,
       return -ERANGE;
     }
 
-  strncpy(ptr, name, buflen);
+  strlcpy(ptr, name, buflen);
 
   /* Set the address to h_name */
 
@@ -431,25 +432,9 @@ static int lib_find_answer(FAR const char *name, FAR struct hostent_s *host,
 static int lib_dns_query(FAR const char *hostname,
                          FAR union dns_addr_u *addr, int *naddr)
 {
-  int sd;
-  int ret;
-
-  /* Create and bind a socket to the DNS server */
-
-  sd = dns_bind();
-  if (sd < 0)
-    {
-      return sd;
-    }
-
   /* Perform the query to get the IP address */
 
-  ret = dns_query(sd, hostname, addr, naddr);
-
-  /* Release the socket */
-
-  close(sd);
-  return ret;
+  return dns_query(hostname, addr, naddr);
 }
 #endif /* CONFIG_NETDB_DNSCLIENT */
 
@@ -560,7 +545,7 @@ static int lib_dns_lookup(FAR const char *name, FAR struct hostent_s *host,
   /* And copy name */
 
   DEBUGASSERT(buflen >= namelen + 1);
-  strncpy(ptr, name, buflen);
+  strlcpy(ptr, name, buflen);
 
   /* Set the address to h_name */
 

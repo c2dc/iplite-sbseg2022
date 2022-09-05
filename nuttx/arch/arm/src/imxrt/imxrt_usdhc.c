@@ -1,37 +1,20 @@
 /****************************************************************************
  * arch/arm/src/imxrt/imxrt_usdhc.c
  *
- *   Copyright (C) 2018-2019 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *           Dave Marples <dave@marples.net>
- *           Ivan Ucherdzhiev <ivanucherdjiev@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -61,8 +44,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "imxrt_config.h"
 #include "imxrt_gpio.h"
 #include "hardware/imxrt_pinmux.h"
@@ -117,6 +99,10 @@
 /* Maximum watermark value */
 
 #define USDHC_MAX_WATERMARK         128
+
+/* Block size for multi-block transfers */
+
+#define SDMMC_MAX_BLOCK_SIZE        (512)
 
 /* Data transfer / Event waiting interrupt mask bits */
 
@@ -194,8 +180,13 @@ struct imxrt_dev_s
 
   volatile uint8_t xfrflags;          /* Used to synchronize SDIO and DMA
                                        * completion */
-  uint32_t *bufferend;                /* Far end of R/W buffer for cache
-                                       * invalidation */
+                                      /* DMA buffer for unaligned transfers */
+#if defined(CONFIG_ARMV7M_DCACHE)
+  uint32_t blocksize;                 /* Current block size */
+  uint8_t  rxbuffer[SDMMC_MAX_BLOCK_SIZE]
+                   __attribute__((aligned(ARMV7M_DCACHE_LINESIZE)));
+  bool     unaligned_rx;              /* buffer is not cache-line aligned */
+#endif
 #endif
 
   /* Card interrupt support for SDIO */
@@ -287,6 +278,9 @@ static void imxrt_dataconfig(struct imxrt_dev_s *priv, bool bwrite,
 #ifndef CONFIG_IMXRT_USDHC_DMA
 static void imxrt_transmit(struct imxrt_dev_s *priv);
 static void imxrt_receive(struct imxrt_dev_s *priv);
+#if defined(CONFIG_ARMV7M_DCACHE)
+static void imxrt_recvdma(struct imxrt_dev_s *priv);
+#endif
 #endif
 
 static void imxrt_eventtimeout(wdparm_t arg);
@@ -297,73 +291,73 @@ static void imxrt_endtransfer(struct imxrt_dev_s *priv,
 
 /* Interrupt Handling *******************************************************/
 
-static int  imxrt_interrupt(int irq, void *context, FAR void *arg);
+static int  imxrt_interrupt(int irq, void *context, void *arg);
 
 /* SDIO interface methods ***************************************************/
 
 /* Mutual exclusion */
 
 #ifdef CONFIG_SDIO_MUXBUS
-static int imxrt_lock(FAR struct sdio_dev_s *dev, bool lock);
+static int imxrt_lock(struct sdio_dev_s *dev, bool lock);
 #endif
 
 /* Initialization/setup */
 
-static void imxrt_reset(FAR struct sdio_dev_s *dev);
-static sdio_capset_t imxrt_capabilities(FAR struct sdio_dev_s *dev);
-static sdio_statset_t imxrt_status(FAR struct sdio_dev_s *dev);
-static void imxrt_widebus(FAR struct sdio_dev_s *dev, bool enable);
+static void imxrt_reset(struct sdio_dev_s *dev);
+static sdio_capset_t imxrt_capabilities(struct sdio_dev_s *dev);
+static sdio_statset_t imxrt_status(struct sdio_dev_s *dev);
+static void imxrt_widebus(struct sdio_dev_s *dev, bool enable);
 
 #ifdef CONFIG_IMXRT_USDHC_ABSFREQ
-static void imxrt_frequency(FAR struct sdio_dev_s *dev, uint32_t frequency);
+static void imxrt_frequency(struct sdio_dev_s *dev, uint32_t frequency);
 #endif
 
-static void imxrt_clock(FAR struct sdio_dev_s *dev, enum sdio_clock_e rate);
-static int  imxrt_attach(FAR struct sdio_dev_s *dev);
+static void imxrt_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate);
+static int  imxrt_attach(struct sdio_dev_s *dev);
 
 /* Command/Status/Data Transfer */
 
-static int  imxrt_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int  imxrt_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
               uint32_t arg);
 
 #ifdef CONFIG_SDIO_BLOCKSETUP
-static void imxrt_blocksetup(FAR struct sdio_dev_s *dev,
+static void imxrt_blocksetup(struct sdio_dev_s *dev,
               unsigned int blocklen, unsigned int nblocks);
 #endif
 
 #ifndef CONFIG_IMXRT_USDHC_DMA
-static int  imxrt_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
+static int  imxrt_recvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
               size_t nbytes);
-static int  imxrt_sendsetup(FAR struct sdio_dev_s *dev,
-              FAR const uint8_t *buffer, size_t nbytes);
+static int  imxrt_sendsetup(struct sdio_dev_s *dev,
+              const uint8_t *buffer, size_t nbytes);
 #endif
 
-static int  imxrt_cancel(FAR struct sdio_dev_s *dev);
-static int  imxrt_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd);
-static int  imxrt_recvshortcrc(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int  imxrt_cancel(struct sdio_dev_s *dev);
+static int  imxrt_waitresponse(struct sdio_dev_s *dev, uint32_t cmd);
+static int  imxrt_recvshortcrc(struct sdio_dev_s *dev, uint32_t cmd,
               uint32_t *rshort);
-static int  imxrt_recvlong(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int  imxrt_recvlong(struct sdio_dev_s *dev, uint32_t cmd,
               uint32_t rlong[4]);
-static int  imxrt_recvshort(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int  imxrt_recvshort(struct sdio_dev_s *dev, uint32_t cmd,
               uint32_t *rshort);
 
 /* EVENT handler */
 
-static void imxrt_waitenable(FAR struct sdio_dev_s *dev,
+static void imxrt_waitenable(struct sdio_dev_s *dev,
               sdio_eventset_t eventset, uint32_t timeout);
-static sdio_eventset_t imxrt_eventwait(FAR struct sdio_dev_s *dev);
-static void imxrt_callbackenable(FAR struct sdio_dev_s *dev,
+static sdio_eventset_t imxrt_eventwait(struct sdio_dev_s *dev);
+static void imxrt_callbackenable(struct sdio_dev_s *dev,
               sdio_eventset_t eventset);
-static int  imxrt_registercallback(FAR struct sdio_dev_s *dev,
+static int  imxrt_registercallback(struct sdio_dev_s *dev,
               worker_t callback, void *arg);
 
 /* DMA */
 
 #ifdef CONFIG_IMXRT_USDHC_DMA
-static int  imxrt_dmarecvsetup(FAR struct sdio_dev_s *dev,
-              FAR uint8_t *buffer, size_t buflen);
-static int  imxrt_dmasendsetup(FAR struct sdio_dev_s *dev,
-              FAR const uint8_t *buffer, size_t buflen);
+static int  imxrt_dmarecvsetup(struct sdio_dev_s *dev,
+              uint8_t *buffer, size_t buflen);
+static int  imxrt_dmasendsetup(struct sdio_dev_s *dev,
+              const uint8_t *buffer, size_t buflen);
 #endif
 
 /* Initialization/uninitialization/reset ************************************/
@@ -782,6 +776,18 @@ static void imxrt_dataconfig(struct imxrt_dev_s *priv, bool bwrite,
   regval |= timeout << USDHC_SYSCTL_DTOCV_SHIFT;
   putreg32(regval, priv->addr + IMXRT_USDHC_SYSCTL_OFFSET);
 
+#if defined(CONFIG_IMXRT_USDHC_DMA) && defined(CONFIG_ARMV7M_DCACHE)
+      /* If cache is enabled, and this is an unaligned receive,
+       * receive one block at a time to the internal buffer
+       */
+
+      if (!bwrite && priv->unaligned_rx)
+        {
+          DEBUGASSERT(priv->blocksize <= sizeof(priv->rxbuffer));
+          datalen = priv->blocksize;
+        }
+#endif
+
   /* Set the watermark level */
 
   /* Set the Read Watermark Level to the datalen to be read (limited to half
@@ -999,6 +1005,81 @@ static void imxrt_receive(struct imxrt_dev_s *priv)
 #endif
 
 /****************************************************************************
+ * Name: imxrt_recvdma
+ *
+ * Description:
+ *   Receive SDIO data in dma mode
+ *
+ * Input Parameters:
+ *   priv  - Instance of the SDMMC private state structure.
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_IMXRT_USDHC_DMA) && defined(CONFIG_ARMV7M_DCACHE)
+static void imxrt_recvdma(struct imxrt_dev_s *priv)
+{
+  unsigned int watermark;
+
+  if (priv->unaligned_rx)
+    {
+      /* If we are receiving multiple blocks to an unaligned buffers,
+       * we receive them one-by-one
+       */
+
+      /* Copy the received data to client buffer */
+
+      memcpy(priv->buffer, priv->rxbuffer, priv->blocksize);
+
+      /* Invalidate the cache before receiving next block */
+
+      up_invalidate_dcache((uintptr_t)priv->rxbuffer,
+                           (uintptr_t)priv->rxbuffer + priv->blocksize);
+
+      /* Update how much there is left to receive */
+
+      priv->remaining -= priv->blocksize;
+    }
+  else
+    {
+      /* In an aligned case, we have always received all blocks */
+
+      priv->remaining = 0;
+    }
+
+  if (priv->remaining == 0)
+    {
+      /* no data remaining, end the transfer */
+
+      imxrt_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
+    }
+  else
+    {
+      /* We end up here only in unaligned rx-buffers case, and are receiving
+       * the data one block at a time
+       */
+
+      /* Update where to receive the following block */
+
+      priv->buffer = (uint32_t *)((uintptr_t)priv->buffer + priv->blocksize);
+
+      watermark = (priv->blocksize + 3) >> 2;
+      if (watermark > (USDHC_MAX_WATERMARK / 2))
+        {
+          watermark = (USDHC_MAX_WATERMARK / 2);
+        }
+
+      /* Re-enable datapath and wait for next block */
+
+      putreg32(watermark << USDHC_WML_RD_SHIFT,
+               priv->addr + IMXRT_USDHC_WML_OFFSET);
+    }
+}
+
+#endif
+/****************************************************************************
  * Name: imxrt_eventtimeout
  *
  * Description:
@@ -1108,13 +1189,6 @@ static void imxrt_endtransfer(struct imxrt_dev_s *priv,
 
   priv->remaining = 0;
 
-#ifdef CONFIG_IMXRT_USDHC_DMA
-  /* DMA modified the buffer, so we need to flush its cache lines. */
-
-  up_invalidate_dcache((uintptr_t) priv->buffer,
-                       (uintptr_t) priv->bufferend);
-#endif
-
   /* Debug instrumentation */
 
   imxrt_sample(priv, SAMPLENDX_END_TRANSFER);
@@ -1143,7 +1217,7 @@ static void imxrt_endtransfer(struct imxrt_dev_s *priv,
  *
  ****************************************************************************/
 
-static int imxrt_interrupt(int irq, void *context, FAR void *arg)
+static int imxrt_interrupt(int irq, void *context, void *arg)
 {
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)arg;
   uint32_t enabled;
@@ -1201,8 +1275,11 @@ static int imxrt_interrupt(int irq, void *context, FAR void *arg)
       if ((pending & USDHC_INT_TC) != 0)
         {
           /* Terminate the transfer */
-
+#if defined(CONFIG_IMXRT_USDHC_DMA) && defined(CONFIG_ARMV7M_DCACHE)
+          imxrt_recvdma(priv);
+#else
           imxrt_endtransfer(priv, SDIOWAIT_TRANSFERDONE);
+#endif
         }
 
       /* ... data block send/receive CRC failure */
@@ -1253,8 +1330,8 @@ static int imxrt_interrupt(int irq, void *context, FAR void *arg)
           mcinfo("Queuing callback to %p(%p)\n",
                  priv->callback, priv->cbarg);
 
-          (void)work_queue(HPWORK, &priv->cbwork, (worker_t)priv->callback,
-                          priv->cbarg, 0);
+          work_queue(HPWORK, &priv->cbwork, priv->callback,
+                     priv->cbarg, 0);
         }
       else
         {
@@ -1315,7 +1392,7 @@ static int imxrt_interrupt(int irq, void *context, FAR void *arg)
  ****************************************************************************/
 
 #ifdef CONFIG_SDIO_MUXBUS
-static int imxrt_lock(FAR struct sdio_dev_s *dev, bool lock)
+static int imxrt_lock(struct sdio_dev_s *dev, bool lock)
 {
   /* The multiplex bus is part of board support package. */
 
@@ -1339,9 +1416,9 @@ static int imxrt_lock(FAR struct sdio_dev_s *dev, bool lock)
  *
  ****************************************************************************/
 
-static void imxrt_reset(FAR struct sdio_dev_s *dev)
+static void imxrt_reset(struct sdio_dev_s *dev)
 {
-  FAR struct imxrt_dev_s *priv = (FAR struct imxrt_dev_s *)dev;
+  struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
 
   /* Disable all interrupts so that nothing interferes with the following. */
 
@@ -1422,7 +1499,7 @@ static void imxrt_reset(FAR struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
-static sdio_capset_t imxrt_capabilities(FAR struct sdio_dev_s *dev)
+static sdio_capset_t imxrt_capabilities(struct sdio_dev_s *dev)
 {
   sdio_capset_t caps = 0;
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
@@ -1476,7 +1553,7 @@ static sdio_capset_t imxrt_capabilities(FAR struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
-static sdio_statset_t imxrt_status(FAR struct sdio_dev_s *dev)
+static sdio_statset_t imxrt_status(struct sdio_dev_s *dev)
 {
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
   bool present = false;
@@ -1531,9 +1608,9 @@ static sdio_statset_t imxrt_status(FAR struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
-static void imxrt_widebus(FAR struct sdio_dev_s *dev, bool wide)
+static void imxrt_widebus(struct sdio_dev_s *dev, bool wide)
 {
-  FAR struct imxrt_dev_s *priv = (FAR struct imxrt_dev_s *)dev;
+  struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
   uint32_t regval;
 
   /* Set the Data Transfer Width (DTW) field in the PROCTL register. */
@@ -1568,7 +1645,7 @@ static void imxrt_widebus(FAR struct sdio_dev_s *dev, bool wide)
  ****************************************************************************/
 
 #ifdef CONFIG_IMXRT_USDHC_ABSFREQ
-static void imxrt_frequency(FAR struct sdio_dev_s *dev, uint32_t frequency)
+static void imxrt_frequency(struct sdio_dev_s *dev, uint32_t frequency)
 {
   uint32_t sdclkfs;
   uint32_t prescaled;
@@ -1701,10 +1778,10 @@ static void imxrt_frequency(FAR struct sdio_dev_s *dev, uint32_t frequency)
  *
  ****************************************************************************/
 
-static void imxrt_clock(FAR struct sdio_dev_s *dev, enum sdio_clock_e rate)
+static void imxrt_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
 {
-  FAR struct imxrt_dev_s *priv =
-    (FAR struct imxrt_dev_s *)dev; uint32_t regval;
+  struct imxrt_dev_s *priv =
+    (struct imxrt_dev_s *)dev; uint32_t regval;
 
   /* Clear the old prescaler and divisor values so that new ones can be
    * ORed in.
@@ -1807,10 +1884,10 @@ static void imxrt_clock(FAR struct sdio_dev_s *dev, enum sdio_clock_e rate)
  *
  ****************************************************************************/
 
-static int imxrt_attach(FAR struct sdio_dev_s *dev)
+static int imxrt_attach(struct sdio_dev_s *dev)
 {
   int ret;
-  FAR struct imxrt_dev_s *priv = (FAR struct imxrt_dev_s *)dev;
+  struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
 
   /* Attach the SDIO interrupt handler */
 
@@ -1872,10 +1949,10 @@ static int imxrt_attach(FAR struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
-static int imxrt_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int imxrt_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
                          uint32_t arg)
 {
-  FAR struct imxrt_dev_s *priv = (FAR struct imxrt_dev_s *)dev;
+  struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
   clock_t timeout;
   clock_t start;
   clock_t elapsed;
@@ -2129,16 +2206,20 @@ static int imxrt_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
  ****************************************************************************/
 
 #ifdef CONFIG_SDIO_BLOCKSETUP
-static void imxrt_blocksetup(FAR struct sdio_dev_s *dev,
+static void imxrt_blocksetup(struct sdio_dev_s *dev,
                              unsigned int blocklen,
                              unsigned int nblocks)
 {
-  FAR struct imxrt_dev_s *priv = (FAR struct imxrt_dev_s *)dev;
+  struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
 
   mcinfo("blocklen=%d, total transfer=%d (%d blocks)\n", blocklen,
          blocklen * nblocks, nblocks);
 
   /* Configure block size for next transfer */
+
+#if defined(CONFIG_ARMV7M_DCACHE)
+  priv->blocksize = blocklen;
+#endif
 
   putreg32(USDHC_BLKATTR_SIZE(blocklen) | USDHC_BLKATTR_CNT(nblocks),
            priv->addr + IMXRT_USDHC_BLKATTR_OFFSET);
@@ -2168,7 +2249,7 @@ static void imxrt_blocksetup(FAR struct sdio_dev_s *dev,
  ****************************************************************************/
 
 #ifndef CONFIG_IMXRT_USDHC_DMA
-static int imxrt_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
+static int imxrt_recvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
                            size_t nbytes)
 {
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
@@ -2217,8 +2298,8 @@ static int imxrt_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
  ****************************************************************************/
 
 #ifndef CONFIG_IMXRT_USDHC_DMA
-static int imxrt_sendsetup(FAR struct sdio_dev_s *dev,
-                           FAR const uint8_t *buffer,
+static int imxrt_sendsetup(struct sdio_dev_s *dev,
+                           const uint8_t *buffer,
                            size_t nbytes)
 {
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
@@ -2262,7 +2343,7 @@ static int imxrt_sendsetup(FAR struct sdio_dev_s *dev,
  *
  ****************************************************************************/
 
-static int imxrt_cancel(FAR struct sdio_dev_s *dev)
+static int imxrt_cancel(struct sdio_dev_s *dev)
 {
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
 
@@ -2318,7 +2399,7 @@ static int imxrt_cancel(FAR struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
-static int imxrt_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
+static int imxrt_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
 {
   clock_t timeout;
   clock_t start;
@@ -2326,7 +2407,7 @@ static int imxrt_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
   uint32_t errors;
   uint32_t enerrors;
 
-  FAR struct imxrt_dev_s *priv = (FAR struct imxrt_dev_s *)dev;
+  struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
   int ret = OK;
 
   switch (cmd & MMCSD_RESPONSE_MASK)
@@ -2420,10 +2501,10 @@ static int imxrt_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
  *
  ****************************************************************************/
 
-static int imxrt_recvshortcrc(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int imxrt_recvshortcrc(struct sdio_dev_s *dev, uint32_t cmd,
                               uint32_t *rshort)
 {
-  FAR struct imxrt_dev_s *priv = (FAR struct imxrt_dev_s *)dev;
+  struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
   uint32_t regval;
   int ret = OK;
 
@@ -2492,10 +2573,10 @@ static int imxrt_recvshortcrc(FAR struct sdio_dev_s *dev, uint32_t cmd,
   return ret;
 }
 
-static int imxrt_recvlong(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int imxrt_recvlong(struct sdio_dev_s *dev, uint32_t cmd,
                           uint32_t rlong[4])
 {
-  FAR struct imxrt_dev_s *priv = (FAR struct imxrt_dev_s *)dev;
+  struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
   uint32_t regval;
   int ret = OK;
 
@@ -2550,10 +2631,10 @@ static int imxrt_recvlong(FAR struct sdio_dev_s *dev, uint32_t cmd,
   return ret;
 }
 
-static int imxrt_recvshort(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int imxrt_recvshort(struct sdio_dev_s *dev, uint32_t cmd,
                            uint32_t *rshort)
 {
-  FAR struct imxrt_dev_s *priv = (FAR struct imxrt_dev_s *)dev;
+  struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
   uint32_t regval;
   int ret = OK;
 
@@ -2625,7 +2706,7 @@ static int imxrt_recvshort(FAR struct sdio_dev_s *dev, uint32_t cmd,
  *
  ****************************************************************************/
 
-static void imxrt_waitenable(FAR struct sdio_dev_s *dev,
+static void imxrt_waitenable(struct sdio_dev_s *dev,
                              sdio_eventset_t eventset, uint32_t timeout)
 {
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
@@ -2709,7 +2790,7 @@ static void imxrt_waitenable(FAR struct sdio_dev_s *dev,
  *
  ****************************************************************************/
 
-static sdio_eventset_t imxrt_eventwait(FAR struct sdio_dev_s *dev)
+static sdio_eventset_t imxrt_eventwait(struct sdio_dev_s *dev)
 {
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
   sdio_eventset_t wkupevent = 0; int ret;
@@ -2795,7 +2876,7 @@ static sdio_eventset_t imxrt_eventwait(FAR struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
-static void imxrt_callbackenable(FAR struct sdio_dev_s *dev,
+static void imxrt_callbackenable(struct sdio_dev_s *dev,
                                  sdio_eventset_t eventset)
 {
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
@@ -2829,7 +2910,7 @@ static void imxrt_callbackenable(FAR struct sdio_dev_s *dev,
  *
  ****************************************************************************/
 
-static int imxrt_registercallback(FAR struct sdio_dev_s *dev,
+static int imxrt_registercallback(struct sdio_dev_s *dev,
                                   worker_t callback, void *arg)
 {
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
@@ -2865,8 +2946,8 @@ static int imxrt_registercallback(FAR struct sdio_dev_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_IMXRT_USDHC_DMA
-static int imxrt_dmarecvsetup(FAR struct sdio_dev_s *dev,
-                              FAR uint8_t *buffer, size_t buflen)
+static int imxrt_dmarecvsetup(struct sdio_dev_s *dev,
+                              uint8_t *buffer, size_t buflen)
 {
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
@@ -2877,13 +2958,34 @@ static int imxrt_dmarecvsetup(FAR struct sdio_dev_s *dev,
   imxrt_sampleinit();
   imxrt_sample(priv, SAMPLENDX_BEFORE_SETUP);
 
+#if defined(CONFIG_ARMV7M_DCACHE)
+  if (((uintptr_t)buffer & (ARMV7M_DCACHE_LINESIZE - 1)) != 0 ||
+       (buflen & (ARMV7M_DCACHE_LINESIZE - 1)) != 0)
+    {
+      /* The read buffer is not cache-line aligned. Read to an internal
+       * buffer instead.
+       */
+
+      up_invalidate_dcache((uintptr_t)priv->rxbuffer,
+                           (uintptr_t)priv->rxbuffer + priv->blocksize);
+
+      priv->unaligned_rx = true;
+    }
+  else
+    {
+      up_invalidate_dcache((uintptr_t)buffer,
+                           (uintptr_t)buffer + buflen);
+
+      priv->unaligned_rx = false;
+    }
+#endif
+
   /* Save the destination buffer information for use by the interrupt
    * handler
    */
 
   priv->buffer = (uint32_t *)buffer;
   priv->remaining = buflen;
-  priv->bufferend = (uint32_t *)(buffer + buflen);
 
   /* Then set up the SDIO data path */
 
@@ -2892,7 +2994,18 @@ static int imxrt_dmarecvsetup(FAR struct sdio_dev_s *dev,
   /* Configure the RX DMA */
 
   imxrt_configxfrints(priv, USDHC_DMADONE_INTS);
-  putreg32((uint32_t) buffer, priv->addr + IMXRT_USDHC_DSADDR_OFFSET);
+#if defined(CONFIG_ARMV7M_DCACHE)
+  if (priv->unaligned_rx)
+    {
+      putreg32((uint32_t) priv->rxbuffer,
+               priv->addr + IMXRT_USDHC_DSADDR_OFFSET);
+    }
+  else
+#endif
+    {
+      putreg32((uint32_t) priv->buffer,
+               priv->addr + IMXRT_USDHC_DSADDR_OFFSET);
+    }
 
   /* Sample the register state */
 
@@ -2921,8 +3034,8 @@ static int imxrt_dmarecvsetup(FAR struct sdio_dev_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_IMXRT_USDHC_DMA
-static int imxrt_dmasendsetup(FAR struct sdio_dev_s *dev,
-                              FAR const uint8_t *buffer, size_t buflen)
+static int imxrt_dmasendsetup(struct sdio_dev_s *dev,
+                              const uint8_t *buffer, size_t buflen)
 {
   struct imxrt_dev_s *priv = (struct imxrt_dev_s *)dev;
   DEBUGASSERT(priv != NULL && buffer != NULL && buflen > 0);
@@ -2935,6 +3048,18 @@ static int imxrt_dmasendsetup(FAR struct sdio_dev_s *dev,
 
   /* Save the source buffer information for use by the interrupt handler */
 
+#if defined(CONFIG_ARMV7M_DCACHE)
+  priv->unaligned_rx = false;
+
+  /* Flush cache to physical memory when not in DTCM memory */
+
+#  if !defined(CONFIG_ARMV7M_DCACHE_WRITETHROUGH)
+    {
+      up_clean_dcache((uintptr_t)buffer, (uintptr_t)buffer + buflen);
+    }
+
+#  endif
+#endif
   priv->buffer    = (uint32_t *) buffer;
   priv->remaining = buflen;
 
@@ -3025,7 +3150,7 @@ static void imxrt_callback(void *arg)
           mcinfo("Queuing callback to %p(%p)\n",
                  priv->callback, priv->cbarg);
 
-          work_queue(HPWORK, &priv->cbwork, (worker_t)priv->callback,
+          work_queue(HPWORK, &priv->cbwork, priv->callback,
                      priv->cbarg, 0);
         }
       else
@@ -3060,7 +3185,7 @@ static void imxrt_callback(void *arg)
  *
  ****************************************************************************/
 
-void imxrt_usdhc_set_sdio_card_isr(FAR struct sdio_dev_s *dev,
+void imxrt_usdhc_set_sdio_card_isr(struct sdio_dev_s *dev,
                                    int (*func)(void *), void *arg)
 {
   irqstate_t flags;
@@ -3108,7 +3233,7 @@ void imxrt_usdhc_set_sdio_card_isr(FAR struct sdio_dev_s *dev,
  *
  ****************************************************************************/
 
-FAR struct sdio_dev_s *imxrt_usdhc_initialize(int slotno)
+struct sdio_dev_s *imxrt_usdhc_initialize(int slotno)
 {
   DEBUGASSERT(slotno < IMXRT_MAX_SDHC_DEV_SLOTS);
   struct imxrt_dev_s *priv = &g_sdhcdev[slotno];

@@ -111,11 +111,14 @@ static void exec_ctors(FAR void *arg)
  *
  ****************************************************************************/
 
-int exec_module(FAR const struct binary_s *binp)
+int exec_module(FAR const struct binary_s *binp,
+                FAR const char *filename, FAR char * const *argv,
+                FAR char * const *envp)
 {
   FAR struct task_tcb_s *tcb;
 #if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_BUILD_KERNEL)
   save_addrenv_t oldenv;
+  FAR void *vheap;
 #endif
   pid_t pid;
   int ret;
@@ -129,7 +132,7 @@ int exec_module(FAR const struct binary_s *binp)
     }
 #endif
 
-  binfo("Executing %s\n", binp->filename);
+  binfo("Executing %s\n", filename);
 
   /* Allocate a TCB for the new task. */
 
@@ -139,6 +142,28 @@ int exec_module(FAR const struct binary_s *binp)
       return -ENOMEM;
     }
 
+  if (argv)
+    {
+      argv = binfmt_copyargv(argv);
+      if (!argv)
+        {
+          ret = -ENOMEM;
+          goto errout_with_tcb;
+        }
+    }
+
+  /* Make a copy of the environment here */
+
+  if (envp || (envp = environ))
+    {
+      envp = binfmt_copyenv(envp);
+      if (!envp)
+        {
+          ret = -ENOMEM;
+          goto errout_with_args;
+        }
+    }
+
 #if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_BUILD_KERNEL)
   /* Instantiate the address environment containing the user heap */
 
@@ -146,8 +171,19 @@ int exec_module(FAR const struct binary_s *binp)
   if (ret < 0)
     {
       berr("ERROR: up_addrenv_select() failed: %d\n", ret);
-      goto errout_with_tcb;
+      goto errout_with_envp;
     }
+
+  ret = up_addrenv_vheap(&binp->addrenv, &vheap);
+  if (ret < 0)
+    {
+      berr("ERROR: up_addrenv_vheap() failed: %d\n", ret);
+      goto errout_with_addrenv;
+    }
+
+  binfo("Initialize the user heap (heapsize=%zu)\n",
+        up_addrenv_heapsize(&binp->addrenv));
+  umm_initialize(vheap, up_addrenv_heapsize(&binp->addrenv));
 #endif
 
   /* Note that tcb->flags are not modified.  0=normal task */
@@ -156,23 +192,29 @@ int exec_module(FAR const struct binary_s *binp)
 
   /* Initialize the task */
 
-  ret = nxtask_init(tcb, binp->filename, binp->priority,
-                    NULL, binp->stacksize, binp->entrypt, binp->argv);
+  if (argv && argv[0])
+    {
+      ret = nxtask_init(tcb, argv[0], binp->priority, NULL,
+                        binp->stacksize, binp->entrypt, &argv[1], envp);
+    }
+  else
+    {
+      ret = nxtask_init(tcb, filename, binp->priority, NULL,
+                        binp->stacksize, binp->entrypt, argv, envp);
+    }
+
   if (ret < 0)
     {
       berr("nxtask_init() failed: %d\n", ret);
       goto errout_with_addrenv;
     }
 
-  /* We can free the argument buffer now.
-   * REVISIT:  It is good to free up memory as soon as possible, but
-   * unfortunately here 'binp' is 'const'.  So to do this properly, we will
-   * have to make some more extensive changes.
-   */
+  /* The copied argv and envp can now be released */
 
-  binfmt_freeargv((FAR struct binary_s *)binp);
+  binfmt_freeargv(argv);
+  binfmt_freeenv(envp);
 
-#if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_BUILD_KERNEL)
+#if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_ARCH_KERNEL_STACK)
   /* Allocate the kernel stack */
 
   ret = up_addrenv_kstackalloc(&tcb->cmn);
@@ -264,9 +306,12 @@ errout_with_tcbinit:
 errout_with_addrenv:
 #if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_BUILD_KERNEL)
   up_addrenv_restore(&oldenv);
-
-errout_with_tcb:
+errout_with_envp:
 #endif
+  binfmt_freeenv(envp);
+errout_with_args:
+  binfmt_freeargv(argv);
+errout_with_tcb:
   kmm_free(tcb);
   return ret;
 }

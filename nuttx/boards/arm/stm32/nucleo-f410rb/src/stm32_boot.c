@@ -30,7 +30,7 @@
 #include <nuttx/board.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "nucleo-f410rb.h"
 
 /****************************************************************************
@@ -88,7 +88,7 @@ void stm32_boardinitialize(void)
 #ifdef CONFIG_BOARD_LATE_INITIALIZE
 void board_late_initialize(void)
 {
-#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_LIB_BOARDCTL)
+#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_BOARDCTL)
   /* Perform board-specific initialization */
 
   stm32_bringup();

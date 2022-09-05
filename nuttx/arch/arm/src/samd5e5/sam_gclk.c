@@ -29,7 +29,7 @@
 
 #include <nuttx/irq.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam_gclk.h"
 
 /****************************************************************************
@@ -81,7 +81,7 @@ static void sam_gclck_waitsyncbusy(uint8_t gclk)
  *
  ****************************************************************************/
 
-void sam_gclk_configure(int gclk, FAR const struct sam_gclk_config_s *config)
+void sam_gclk_configure(int gclk, const struct sam_gclk_config_s *config)
 {
   irqstate_t flags;
   uintptr_t regaddr;

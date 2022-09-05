@@ -40,16 +40,19 @@
 
 /* Ioctl commands */
 
+/* Note, the following ioctl existed in the past and was removed:
+ * #define MTDIOC_XIPBASE    _MTDIOC(0x0002)
+ * #define MTDIOC_FLUSH      _MTDIOC(0x0009)
+ * #define MTDIOC_PARTINFO   _MTDIOC(0x000b)
+ * try to avoid adding a new ioctl with the same ioctl number and
+ * replace with BIOC_XIPBASE, BIOC_FLUSH and BIOC_PARTINFO instead.
+ */
+
 #define MTDIOC_GEOMETRY   _MTDIOC(0x0001) /* IN:  Pointer to write-able struct
                                            *      mtd_geometry_s in which to receive
                                            *      receive geometry data (see mtd.h)
                                            * OUT: Geometry structure is populated
                                            *      with data for the MTD */
-#define MTDIOC_XIPBASE    _MTDIOC(0x0002) /* IN:  Pointer to pointer to void in
-                                           *      which to received the XIP base.
-                                           * OUT: If media is directly accessible,
-                                           *      return (void *) base address
-                                           *      of device memory */
 #define MTDIOC_BULKERASE  _MTDIOC(0x0003) /* IN:  None
                                            * OUT: None */
 #define MTDIOC_PROTECT    _MTDIOC(0x0004) /* IN:  Pointer to read-able struct
@@ -68,6 +71,9 @@
                                            * OUT: None */
 #define MTDIOC_ECCSTATUS  _MTDIOC(0x0008) /* IN:  Pointer to uint8_t
                                            * OUT: ECC status */
+#define MTDIOC_ERASESTATE _MTDIOC(0x000a) /* IN:  Pointer to uint8_t
+                                           * OUT: Byte value that represents the
+                                           *      erased state of the MTD cell */
 
 /* Macros to hide implementation */
 
@@ -90,7 +96,7 @@
  * Public Types
  ****************************************************************************/
 
-struct qspi_dev_s; /* Forward reference */
+struct qspi_dev_s;    /* Forward reference */
 
 /* The following defines the geometry for the device.  It treats the device
  * as though it were just an array of fixed size blocks.  That is most likely
@@ -487,7 +493,8 @@ FAR struct mtd_dev_s *sst25xx_initialize(FAR struct spi_dev_s *dev);
  *
  ****************************************************************************/
 
-FAR struct mtd_dev_s *sst26_initialize_spi(FAR struct spi_dev_s *dev);
+FAR struct mtd_dev_s *sst26_initialize_spi(FAR struct spi_dev_s *dev,
+                                           uint16_t spi_devid);
 
 /****************************************************************************
  * Name: sst39vf_initialize
@@ -663,6 +670,22 @@ void filemtd_teardown(FAR struct mtd_dev_s *dev);
  ****************************************************************************/
 
 bool filemtd_isfilemtd(FAR struct mtd_dev_s *mtd);
+
+/****************************************************************************
+ * Name: nullmtd_initialize
+ *
+ * Description:
+ *   Create and initialize a MTD null device instance.
+ *
+ * Input Parameters:
+ *   mtdlen    - Total length of a size in bytes of the MTD null device
+ *   sectsize  - Sector size of the MTD null device
+ *   erasesize - Erase block size of the MTD null device
+ *
+ ****************************************************************************/
+
+FAR struct mtd_dev_s *nullmtd_initialize(size_t mtdlen, int16_t sectsize,
+                                         int32_t erasesize);
 
 #undef EXTERN
 #ifdef __cplusplus

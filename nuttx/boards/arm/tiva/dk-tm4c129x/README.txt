@@ -673,7 +673,7 @@ Where <subdir> is one of the following:
 
        CONFIG_HOST_WINDOWS=y                   : Windows
        :CONFIG_WINDOWS_CYGWIN=y                : Cygwin under Windows
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
        CONFIG_RAW_BINARY=y                     : Output formats: ELF and raw binary
 
     3. Default stack sizes are large and should really be tuned to reduce
@@ -681,7 +681,7 @@ Where <subdir> is one of the following:
 
          CONFIG_SCHED_HPWORKSTACKSIZE=2048
          CONFIG_IDLETHREAD_STACKSIZE=1024
-         CONFIG_USERMAIN_STACKSIZE=2048
+         CONFIG_INIT_STACKSIZE=2048
          CONFIG_PTHREAD_STACK_DEFAULT=2048
          CONFIG_POSIX_SPAWN_PROXY_STACKSIZE=1024
          CONFIG_TASK_SPAWN_DEFAULT_STACKSIZE=2048

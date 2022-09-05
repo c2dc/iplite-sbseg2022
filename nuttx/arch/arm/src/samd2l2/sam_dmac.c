@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
@@ -34,7 +35,6 @@
 #include <nuttx/arch.h>
 #include <nuttx/semaphore.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "sched/sched.h"
 #include "chip.h"
@@ -105,7 +105,7 @@ static void   sam_takedsem(void);
 static inline void sam_givedsem(void);
 #endif
 static void   sam_dmaterminate(struct sam_dmach_s *dmach, int result);
-static int    sam_dmainterrupt(int irq, void *context, FAR void *arg);
+static int    sam_dmainterrupt(int irq, void *context, void *arg);
 static struct dma_desc_s *sam_alloc_desc(struct sam_dmach_s *dmach);
 static struct dma_desc_s *sam_append_desc(struct sam_dmach_s *dmach,
                 uint16_t btctrl, uint16_t btcnt,
@@ -142,9 +142,9 @@ static struct sam_dmach_s g_dmach[SAMD2L2_NDMACHAN];
  */
 
 static struct dma_desc_s g_base_desc[SAMD2L2_NDMACHAN]
-  __attribute__ ((section(".lpram"), aligned(16)));
+  locate_data(".lpram"), aligned(16);
 static struct dma_desc_s g_writeback_desc[SAMD2L2_NDMACHAN]
-  __attribute__ ((section(".lpram"), aligned(16)));
+  locate_data(".lpram"), aligned(16);
 
 #if CONFIG_SAMD2L2_DMAC_NDESC > 0
 /* Additional DMA descriptors for (optional) multi-block transfer support.
@@ -152,7 +152,7 @@ static struct dma_desc_s g_writeback_desc[SAMD2L2_NDMACHAN]
  */
 
 static struct dma_desc_s g_dma_desc[CONFIG_SAMD2L2_DMAC_NDESC]
-  __attribute__ ((section(".lpram"), aligned(16)));
+  locate_data(".lpram"), aligned(16);
 #endif
 
 /****************************************************************************
@@ -248,7 +248,7 @@ static void sam_dmaterminate(struct sam_dmach_s *dmach, int result)
  *
  ****************************************************************************/
 
-static int sam_dmainterrupt(int irq, void *context, FAR void *arg)
+static int sam_dmainterrupt(int irq, void *context, void *arg)
 {
   struct sam_dmach_s *dmach;
   unsigned int chndx;

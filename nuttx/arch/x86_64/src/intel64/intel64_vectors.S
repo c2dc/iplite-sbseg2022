@@ -269,7 +269,6 @@ isr_common:
     leaq -512(%rsp), %rsp
     fxsaveq (%rsp)
 
-
 	/* The current value of the SP points to the beginning of the state save
 	 * structure.  Save that in RDI as the input parameter to isr_handler.
 	 */
@@ -338,7 +337,7 @@ irq_common:
 	/* The common return point for both isr_handler and irq_handler */
 
 .Lreturn:
-	/* EAX may possibly hold a pointer to a different regiser save area on
+	/* EAX may possibly hold a pointer to a different register save area on
 	 * return.  Are we switching to a new context?
 	 */
 
@@ -393,5 +392,4 @@ irq_common:
 	iretq						/* Pops 5 things at once: CS, RIP, RFLAGS and SS and RSP */
 	.size	irq_common, . - irq_common
 	.end
-
 

@@ -67,7 +67,7 @@
 #include "barriers.h"
 
 #include "hardware/stm32_flash.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -150,12 +150,12 @@
 #define FLASH_KEY2           0xcdef89ab
 #define FLASH_OPTKEY1        0x08192a3b
 #define FLASH_OPTKEY2        0x4c5d6e7f
-#define FLASH_ERASEDVALUE    0xff
+#define FLASH_ERASEDVALUE    0xffu
 #define FLASH_ERASEDVALUE_DW 0xffffffff
-#define PROGMEM_NBLOCKS STM32_FLASH_NBLOCKS
-#define FLASH_NPAGES (STM32_FLASH_SIZE / FLASH_PAGE_SIZE)
+#define PROGMEM_NBLOCKS      STM32_FLASH_NBLOCKS
+#define FLASH_NPAGES         (STM32_FLASH_SIZE / FLASH_PAGE_SIZE)
 
-#define FLASH_TIMEOUT_VALUE 500000  /* 5s */
+#define FLASH_TIMEOUT_VALUE 5000000  /* 5s */
 
 /****************************************************************************
  * Private Types
@@ -205,7 +205,7 @@ static struct stm32h7_flash_priv_s stm32h7_flash_bank2_priv =
  *
  ****************************************************************************/
 
-static inline uint32_t stm32h7_flash_getreg32(FAR struct stm32h7_flash_priv_s
+static inline uint32_t stm32h7_flash_getreg32(struct stm32h7_flash_priv_s
                                             *priv, uint32_t offset)
 {
   return getreg32(priv->ifbase + offset);
@@ -219,7 +219,7 @@ static inline uint32_t stm32h7_flash_getreg32(FAR struct stm32h7_flash_priv_s
  *
  ****************************************************************************/
 
-static inline void stm32h7_flash_putreg32(FAR struct stm32h7_flash_priv_s
+static inline void stm32h7_flash_putreg32(struct stm32h7_flash_priv_s
                                           *priv, uint32_t offset,
                                           uint32_t value)
 {
@@ -234,7 +234,7 @@ static inline void stm32h7_flash_putreg32(FAR struct stm32h7_flash_priv_s
  *
  ****************************************************************************/
 
-static inline void stm32h7_flash_modifyreg32(FAR struct stm32h7_flash_priv_s
+static inline void stm32h7_flash_modifyreg32(struct stm32h7_flash_priv_s
                                              *priv, uint32_t offset,
                                              uint32_t clearbits,
                                              uint32_t setbits)
@@ -250,7 +250,7 @@ static inline void stm32h7_flash_modifyreg32(FAR struct stm32h7_flash_priv_s
  *
  ****************************************************************************/
 
-static int stm32h7_flash_sem_lock(FAR struct stm32h7_flash_priv_s *priv)
+static int stm32h7_flash_sem_lock(struct stm32h7_flash_priv_s *priv)
 {
   return nxsem_wait_uninterruptible(&priv->sem);
 }
@@ -263,7 +263,7 @@ static int stm32h7_flash_sem_lock(FAR struct stm32h7_flash_priv_s *priv)
  *
  ****************************************************************************/
 
-static inline void stm32h7_flash_sem_unlock(FAR struct stm32h7_flash_priv_s
+static inline void stm32h7_flash_sem_unlock(struct stm32h7_flash_priv_s
                                             *priv)
 {
   nxsem_post(&priv->sem);
@@ -277,7 +277,7 @@ static inline void stm32h7_flash_sem_unlock(FAR struct stm32h7_flash_priv_s
  *
  ****************************************************************************/
 
-static void stm32h7_unlock_flash(FAR struct stm32h7_flash_priv_s *priv)
+static void stm32h7_unlock_flash(struct stm32h7_flash_priv_s *priv)
 {
   while (stm32h7_flash_getreg32(priv, STM32_FLASH_SR1_OFFSET) & FLASH_SR_BSY)
     {
@@ -300,7 +300,7 @@ static void stm32h7_unlock_flash(FAR struct stm32h7_flash_priv_s *priv)
  *
  ****************************************************************************/
 
-static void stm32h7_lock_flash(FAR struct stm32h7_flash_priv_s *priv)
+static void stm32h7_lock_flash(struct stm32h7_flash_priv_s *priv)
 {
   stm32h7_flash_modifyreg32(priv, STM32_FLASH_CR1_OFFSET, 0, FLASH_CR_LOCK);
 }
@@ -314,7 +314,7 @@ static void stm32h7_lock_flash(FAR struct stm32h7_flash_priv_s *priv)
  ****************************************************************************/
 
 static inline uint32_t stm32h7_flash_size(
-    FAR struct stm32h7_flash_priv_s *priv)
+    struct stm32h7_flash_priv_s *priv)
 {
   return FLASH_SECTOR_SIZE * PROGMEM_NBLOCKS;
 }
@@ -328,7 +328,7 @@ static inline uint32_t stm32h7_flash_size(
  ****************************************************************************/
 
 static inline
-FAR struct stm32h7_flash_priv_s * stm32h7_flash_bank(size_t address)
+struct stm32h7_flash_priv_s * stm32h7_flash_bank(size_t address)
 {
   struct stm32h7_flash_priv_s *priv = &stm32h7_flash_bank1_priv;
   if (address < priv->base || address >=
@@ -412,7 +412,7 @@ static int stm32h7_israngeerased(size_t startaddress, size_t size)
  *
  ****************************************************************************/
 
-static int stm32h7_wait_for_last_operation(FAR struct stm32h7_flash_priv_s
+static int stm32h7_wait_for_last_operation(struct stm32h7_flash_priv_s
                                            *priv)
 {
   int i;
@@ -429,7 +429,7 @@ static int stm32h7_wait_for_last_operation(FAR struct stm32h7_flash_priv_s
           break;
         }
 
-      usleep(1000);
+      up_udelay(1);
     }
 
   if (timeout)
@@ -449,7 +449,7 @@ static int stm32h7_wait_for_last_operation(FAR struct stm32h7_flash_priv_s
  *
  ****************************************************************************/
 
-static bool stm32h7_unlock_flashopt(FAR struct stm32h7_flash_priv_s *priv)
+static bool stm32h7_unlock_flashopt(struct stm32h7_flash_priv_s *priv)
 {
   bool ret = false;
 
@@ -483,7 +483,7 @@ static bool stm32h7_unlock_flashopt(FAR struct stm32h7_flash_priv_s *priv)
  *
  ****************************************************************************/
 
-static void stm32h7_lock_flashopt(FAR struct stm32h7_flash_priv_s *priv)
+static void stm32h7_lock_flashopt(struct stm32h7_flash_priv_s *priv)
 {
   stm32h7_flash_modifyreg32(priv, STM32_FLASH_OPTCR_OFFSET, 0,
                             FLASH_OPTCR_OPTLOCK);
@@ -497,7 +497,7 @@ static void stm32h7_lock_flashopt(FAR struct stm32h7_flash_priv_s *priv)
  *
  ****************************************************************************/
 
-static void stm32h7_save_flashopt(FAR struct stm32h7_flash_priv_s *priv)
+static void stm32h7_save_flashopt(struct stm32h7_flash_priv_s *priv)
 {
   while (stm32h7_flash_getreg32(priv, STM32_FLASH_SR1_OFFSET) &
         (FLASH_SR_BSY | FLASH_SR_CRCBUSY))
@@ -787,7 +787,8 @@ ssize_t up_progmem_eraseblock(size_t block)
 
   if (stm32h7_wait_for_last_operation(priv))
     {
-      return -EIO;
+      ret = -EIO;
+      goto exit_with_sem;
     }
 
   /* Get flash ready and begin erasing single block */
@@ -804,27 +805,34 @@ ssize_t up_progmem_eraseblock(size_t block)
 
   if (stm32h7_wait_for_last_operation(priv))
     {
-      return -EIO;
+      ret = -EIO;
+      goto exit_with_lock_sem;
     }
 
   stm32h7_flash_modifyreg32(priv, STM32_FLASH_CR1_OFFSET, FLASH_CR_SER, 0);
   stm32h7_flash_modifyreg32(priv, STM32_FLASH_CR1_OFFSET, FLASH_CR_SNB_MASK,
                             0);
+  ret = 0;
 
+exit_with_lock_sem:
   stm32h7_lock_flash(priv);
 
+exit_with_sem:
   stm32h7_flash_sem_unlock(priv);
 
   /* Verify */
 
-  if (stm32h7_israngeerased(block_address, up_progmem_erasesize(block)) == 0)
+  if (ret == 0 &&
+      stm32h7_israngeerased(block_address, up_progmem_erasesize(block)) == 0)
     {
-      return up_progmem_erasesize(block); /* success */
+      ret = up_progmem_erasesize(block); /* success */
     }
   else
     {
-      return -EIO; /* failure */
+      ret = -EIO; /* failure */
     }
+
+  return ret;
 }
 
 ssize_t up_progmem_write(size_t addr, const void *buf, size_t count)
@@ -869,7 +877,8 @@ ssize_t up_progmem_write(size_t addr, const void *buf, size_t count)
 
   if (stm32h7_wait_for_last_operation(priv))
     {
-      return -EIO;
+      written = -EIO;
+      goto exit_with_sem;
     }
 
   /* Get flash ready and begin flashing */
@@ -911,7 +920,8 @@ ssize_t up_progmem_write(size_t addr, const void *buf, size_t count)
 
       if (stm32h7_wait_for_last_operation(priv))
         {
-          return -EIO;
+          written = -EIO;
+          goto exit_with_lock_sem;
         }
 
       sr = stm32h7_flash_getreg32(priv, STM32_FLASH_SR1_OFFSET);
@@ -923,9 +933,8 @@ ssize_t up_progmem_write(size_t addr, const void *buf, size_t count)
 
           stm32h7_flash_modifyreg32(priv, STM32_FLASH_CCR1_OFFSET,
                                     0, ~0);
-          stm32h7_lock_flash(priv);
-          stm32h7_flash_sem_unlock(priv);
-          return -EIO;
+          ret = -EIO;
+          goto exit_with_lock_sem;
         }
     }
 
@@ -933,41 +942,52 @@ ssize_t up_progmem_write(size_t addr, const void *buf, size_t count)
 
   stm32h7_flash_modifyreg32(priv, STM32_FLASH_CCR1_OFFSET,
                             0, ~0);
+exit_with_lock_sem:
   stm32h7_lock_flash(priv);
 
   /* Verify */
 
-  for (ll = (uint32_t *) buf, faddr = addr, pcount = count / pagesize;
-      pcount; pcount -= 1, ll += llperpage, faddr += pagesize)
+  if (written > 0)
     {
-      fp = (uint32_t *) faddr;
-      rp = ll;
+      for (ll = (uint32_t *) buf, faddr = addr, pcount = count / pagesize;
+          pcount; pcount -= 1, ll += llperpage, faddr += pagesize)
+        {
+          fp = (uint32_t *) faddr;
+          rp = ll;
+
+          stm32h7_flash_modifyreg32(priv, STM32_FLASH_CCR1_OFFSET,
+                                    0, ~0);
+          if ((*fp++ != *rp++) ||
+              (*fp++ != *rp++) ||
+              (*fp++ != *rp++) ||
+              (*fp++ != *rp++) ||
+              (*fp++ != *rp++) ||
+              (*fp++ != *rp++) ||
+              (*fp++ != *rp++) ||
+              (*fp++ != *rp++))
+            {
+              written = -EIO;
+              break;
+            }
+
+          sr = stm32h7_flash_getreg32(priv, STM32_FLASH_SR1_OFFSET);
+          if (sr & (FLASH_SR_SNECCERR | FLASH_SR_DBECCERR))
+            {
+              written = -EIO;
+              break;
+            }
+        }
 
       stm32h7_flash_modifyreg32(priv, STM32_FLASH_CCR1_OFFSET,
                                 0, ~0);
-      if ((*fp++ != *rp++) ||
-          (*fp++ != *rp++) ||
-          (*fp++ != *rp++) ||
-          (*fp++ != *rp++) ||
-          (*fp++ != *rp++) ||
-          (*fp++ != *rp++) ||
-          (*fp++ != *rp++) ||
-          (*fp++ != *rp++))
-        {
-          written = -EIO;
-          break;
-        }
-
-      sr = stm32h7_flash_getreg32(priv, STM32_FLASH_SR1_OFFSET);
-      if (sr & (FLASH_SR_SNECCERR | FLASH_SR_DBECCERR))
-        {
-          written = -EIO;
-          break;
-        }
     }
 
-  stm32h7_flash_modifyreg32(priv, STM32_FLASH_CCR1_OFFSET,
-                            0, ~0);
+exit_with_sem:
   stm32h7_flash_sem_unlock(priv);
   return written;
+}
+
+uint8_t up_progmem_erasestate(void)
+{
+  return FLASH_ERASEDVALUE;
 }

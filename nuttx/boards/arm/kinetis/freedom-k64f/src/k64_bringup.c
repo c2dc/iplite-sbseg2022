@@ -38,7 +38,7 @@
 
 #include "freedom-k64f.h"
 
-#if defined(CONFIG_LIB_BOARDCTL) || defined(CONFIG_BOARD_LATE_INITIALIZE)
+#if defined(CONFIG_BOARDCTL) || defined(CONFIG_BOARD_LATE_INITIALIZE)
 
 /****************************************************************************
  * Public Functions
@@ -56,7 +56,7 @@ int k64_bringup(void)
 {
   int ret;
 #ifdef HAVE_RTC_DRIVER
-  FAR struct rtc_lowerhalf_s *lower;
+  struct rtc_lowerhalf_s *lower;
 #endif
 
 #ifdef HAVE_PROC
@@ -153,4 +153,4 @@ int k64_bringup(void)
   return OK;
 }
 
-#endif /* CONFIG_LIB_BOARDCTL CONFIG_BOARD_LATE_INITIALIZE */
+#endif /* CONFIG_BOARDCTL CONFIG_BOARD_LATE_INITIALIZE */

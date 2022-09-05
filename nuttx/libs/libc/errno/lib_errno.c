@@ -24,10 +24,13 @@
 
 #include <nuttx/config.h>
 
-#include <sched.h>
-#include <errno.h>
+#include <nuttx/tls.h>
 
-#include <arch/tls.h>
+/****************************************************************************
+ * Private Data
+ ****************************************************************************/
+
+static int g_errno;
 
 /****************************************************************************
  * Public Functions
@@ -53,9 +56,9 @@ FAR int *__errno(void)
 {
   /* Get the TLS tls_info_s structure instance for this thread */
 
-  FAR struct tls_info_s *tlsinfo = up_tls_info();
+  FAR struct tls_info_s *tlsinfo = tls_get_info();
 
-  /* And return the return refernce to the error number */
+  /* And return the return reference to the error number */
 
-  return &tlsinfo->tl_errno;
+  return tlsinfo ? &tlsinfo->tl_errno : &g_errno;
 }

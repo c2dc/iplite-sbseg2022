@@ -440,6 +440,15 @@ struct clock_configuration_s
   struct pmc_config_s pmc;             /* PMC Clock configuration */
 };
 
+enum scg_system_clock_mode_e
+{
+  SCG_SYSTEM_CLOCK_MODE_CURRENT = 0,  /* Current mode. */
+  SCG_SYSTEM_CLOCK_MODE_RUN     = 1,  /* Run mode. */
+  SCG_SYSTEM_CLOCK_MODE_VLPR    = 2,  /* Very Low Power Run mode. */
+  SCG_SYSTEM_CLOCK_MODE_HSRUN   = 3,  /* High Speed Run mode. */
+  SCG_SYSTEM_CLOCK_MODE_NONE          /* MAX value. */
+};
+
 /****************************************************************************
  * Inline Functions
  ****************************************************************************/
@@ -464,6 +473,39 @@ extern "C"
  ****************************************************************************/
 
 /****************************************************************************
+ * Name: s32k1xx_get_runmode
+ *
+ * Description:
+ *   Get the current running mode.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   The current running mode.
+ *
+ ****************************************************************************/
+
+enum scg_system_clock_mode_e s32k1xx_get_runmode(void);
+
+/****************************************************************************
+ * Name: s32k1xx_set_runmode
+ *
+ * Description:
+ *   Set the running mode.
+ *
+ * Input Parameters:
+ *   next_run_mode - The next running mode.
+ *
+ * Returned Value:
+ *   The current running mode.
+ *
+ ****************************************************************************/
+
+enum scg_system_clock_mode_e s32k1xx_set_runmode(enum scg_system_clock_mode_e
+  next_run_mode);
+
+/****************************************************************************
  * Name: s32k1xx_clockconfig
  *
  * Description:
@@ -481,7 +523,25 @@ extern "C"
  *
  ****************************************************************************/
 
-int s32k1xx_clockconfig(FAR const struct clock_configuration_s *clkcfg);
+int s32k1xx_clockconfig(const struct clock_configuration_s *clkcfg);
+
+/****************************************************************************
+ * Name: s32k1xx_clock_pm_register
+ *
+ * Description:
+ *   This function is called after OS and PM init in order to register to
+ *   receive power management event callbacks.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Values:
+ *   None
+ *
+ ****************************************************************************/
+#ifdef CONFIG_PM
+void s32k1xx_clock_pm_register(void);
+#endif
 
 /****************************************************************************
  * Name: s32k1xx_get_coreclk

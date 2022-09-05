@@ -1,10 +1,24 @@
 /****************************************************************************
  * arch/sim/src/sim/up_netdriver.c
  *
- *   Copyright (C) 2007, 2009-2012, 2015-2016 Gregory Nutt.
- *   All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ *
+ ****************************************************************************/
+
+/****************************************************************************
  * Based on code from uIP which also has a BSD-like license:
  *
  *   Copyright (c) 2001, Adam Dunkels.
@@ -53,10 +67,7 @@
 #include <nuttx/net/net.h>
 #include <nuttx/net/netdev.h>
 #include <nuttx/net/arp.h>
-
-#ifdef CONFIG_NET_PKT
-#  include <nuttx/net/pkt.h>
-#endif
+#include <nuttx/net/pkt.h>
 
 #include "up_internal.h"
 
@@ -66,7 +77,6 @@
 
 /* Net driver worker */
 
-static struct work_s g_timer_work;
 static struct work_s g_avail_work;
 static struct work_s g_recv_work;
 
@@ -78,7 +88,7 @@ static struct net_driver_s g_sim_dev;
  * Private Functions
  ****************************************************************************/
 
-static void netdriver_reply(FAR struct net_driver_s *dev)
+static void netdriver_reply(struct net_driver_s *dev)
 {
   /* If the receiving resulted in data that should be sent out on
    * the network, the field d_len is set to a value > 0.
@@ -116,112 +126,120 @@ static void netdriver_reply(FAR struct net_driver_s *dev)
     }
 }
 
-static void netdriver_recv_work(FAR void *arg)
+static void netdriver_recv_work(void *arg)
 {
-  FAR struct net_driver_s *dev = arg;
-  FAR struct eth_hdr_s *eth;
+  struct net_driver_s *dev = arg;
+  struct eth_hdr_s *eth;
 
   net_lock();
 
-  /* netdev_read will return 0 on a timeout event and > 0
-   * on a data received event
+  /* Retrieve all the queued RX frames from the network device
+   * to prevent RX data stream congestion.
    */
 
-  dev->d_len = netdev_read((FAR unsigned char *)dev->d_buf,
-                           dev->d_pktsize);
-  if (dev->d_len > 0)
+  while (netdev_avail())
     {
-      NETDEV_RXPACKETS(dev);
-
-      /* Data received event.  Check for valid Ethernet header with
-       * destination == our MAC address
+      /* netdev_read will return 0 on a timeout event and > 0
+       * on a data received event
        */
 
-      eth = (FAR struct eth_hdr_s *)dev->d_buf;
-      if (dev->d_len > ETH_HDRLEN)
+      dev->d_len = netdev_read((unsigned char *)dev->d_buf,
+                               dev->d_pktsize);
+      if (dev->d_len > 0)
         {
-#ifdef CONFIG_NET_PKT
-          /* When packet sockets are enabled, feed the frame into the packet
-           * tap.
+          NETDEV_RXPACKETS(dev);
+
+          /* Data received event.  Check for valid Ethernet header with
+           * destination == our MAC address
            */
 
-          pkt_input(dev);
+          eth = (struct eth_hdr_s *)dev->d_buf;
+          if (dev->d_len > ETH_HDRLEN)
+            {
+#ifdef CONFIG_NET_PKT
+              /* When packet sockets are enabled, feed the frame into
+               * the packet tap.
+               */
+
+              pkt_input(dev);
 #endif /* CONFIG_NET_PKT */
 
-          /* We only accept IP packets of the configured type
-           * and ARP packets
-           */
+              /* We only accept IP packets of the configured type
+               * and ARP packets
+               */
 
 #ifdef CONFIG_NET_IPv4
-          if (eth->type == HTONS(ETHTYPE_IP))
-            {
-              ninfo("IPv4 frame\n");
-              NETDEV_RXIPV4(dev);
+              if (eth->type == HTONS(ETHTYPE_IP))
+                {
+                  ninfo("IPv4 frame\n");
+                  NETDEV_RXIPV4(dev);
 
-              /* Handle ARP on input then give the IPv4 packet to the network
-               * layer
-               */
+                  /* Handle ARP on input then give the IPv4 packet to
+                   * the network layer
+                   */
 
-              arp_ipin(dev);
-              ipv4_input(dev);
+                  arp_ipin(dev);
+                  ipv4_input(dev);
 
-              /* Check for a reply to the IPv4 packet */
+                  /* Check for a reply to the IPv4 packet */
 
-              netdriver_reply(dev);
-            }
-          else
+                  netdriver_reply(dev);
+                }
+              else
 #endif /* CONFIG_NET_IPv4 */
 #ifdef CONFIG_NET_IPv6
-          if (eth->type == HTONS(ETHTYPE_IP6))
-            {
-              ninfo("IPv6 frame\n");
-              NETDEV_RXIPV6(dev);
+              if (eth->type == HTONS(ETHTYPE_IP6))
+                {
+                  ninfo("IPv6 frame\n");
+                  NETDEV_RXIPV6(dev);
 
-              /* Give the IPv6 packet to the network layer */
+                  /* Give the IPv6 packet to the network layer */
 
-              ipv6_input(dev);
+                  ipv6_input(dev);
 
-              /* Check for a reply to the IPv6 packet */
+                  /* Check for a reply to the IPv6 packet */
 
-              netdriver_reply(dev);
-            }
-          else
+                  netdriver_reply(dev);
+                }
+              else
 #endif/* CONFIG_NET_IPv6 */
 #ifdef CONFIG_NET_ARP
-          if (eth->type == htons(ETHTYPE_ARP))
-            {
-              ninfo("ARP frame\n");
-              NETDEV_RXARP(dev);
-
-              arp_arpin(dev);
-
-              /* If the above function invocation resulted in data that
-               * should be sent out on the network, the global variable
-               * d_len is set to a value > 0.
-               */
-
-              if (dev->d_len > 0)
+              if (eth->type == HTONS(ETHTYPE_ARP))
                 {
-                  netdev_send(dev->d_buf, dev->d_len);
+                  ninfo("ARP frame\n");
+                  NETDEV_RXARP(dev);
+
+                  arp_arpin(dev);
+
+                  /* If the above function invocation resulted in data that
+                   * should be sent out on the network, the global variable
+                   * d_len is set to a value > 0.
+                   */
+
+                  if (dev->d_len > 0)
+                    {
+                      netdev_send(dev->d_buf, dev->d_len);
+                    }
+                }
+              else
+#endif
+                {
+                  NETDEV_RXDROPPED(dev);
+                  nwarn("WARNING: Unsupported Ethernet type %u\n",
+                        eth->type);
                 }
             }
           else
-#endif
             {
-              NETDEV_RXDROPPED(dev);
-              nwarn("WARNING: Unsupported Ethernet type %u\n", eth->type);
+              NETDEV_RXERRORS(dev);
             }
-        }
-      else
-        {
-          NETDEV_RXERRORS(dev);
         }
     }
 
   net_unlock();
 }
 
-static int netdriver_txpoll(FAR struct net_driver_s *dev)
+static int netdriver_txpoll(struct net_driver_s *dev)
 {
   /* If the polling resulted in data that should be sent out on the network,
    * the field d_len is set to a value > 0.
@@ -268,48 +286,34 @@ static int netdriver_txpoll(FAR struct net_driver_s *dev)
   return 0;
 }
 
-static void netdriver_timer_work(FAR void *arg)
-{
-  FAR struct net_driver_s *dev = arg;
-
-  net_lock();
-  if (IFF_IS_UP(dev->d_flags))
-    {
-      work_queue(LPWORK, &g_timer_work, netdriver_timer_work, dev, CLK_TCK);
-      devif_timer(dev, CLK_TCK, netdriver_txpoll);
-    }
-
-  net_unlock();
-}
-
-static int netdriver_ifup(FAR struct net_driver_s *dev)
+static int netdriver_ifup(struct net_driver_s *dev)
 {
   netdev_ifup(dev->d_ipaddr);
-  work_queue(LPWORK, &g_timer_work, netdriver_timer_work, dev, CLK_TCK);
+  netdev_carrier_on(dev);
   return OK;
 }
 
-static int netdriver_ifdown(FAR struct net_driver_s *dev)
+static int netdriver_ifdown(struct net_driver_s *dev)
 {
-  work_cancel(LPWORK, &g_timer_work);
+  netdev_carrier_off(dev);
   netdev_ifdown();
   return OK;
 }
 
-static void netdriver_txavail_work(FAR void *arg)
+static void netdriver_txavail_work(void *arg)
 {
-  FAR struct net_driver_s *dev = arg;
+  struct net_driver_s *dev = arg;
 
   net_lock();
   if (IFF_IS_UP(dev->d_flags))
     {
-      devif_timer(dev, 0, netdriver_txpoll);
+      devif_poll(dev, netdriver_txpoll);
     }
 
   net_unlock();
 }
 
-static int netdriver_txavail(FAR struct net_driver_s *dev)
+static int netdriver_txavail(struct net_driver_s *dev)
 {
   if (work_available(&g_avail_work))
     {
@@ -319,19 +323,39 @@ static int netdriver_txavail(FAR struct net_driver_s *dev)
   return OK;
 }
 
+static void netdriver_txdone_interrupt(void *priv)
+{
+  if (work_available(&g_avail_work))
+    {
+      struct net_driver_s *dev = (struct net_driver_s *)priv;
+      work_queue(LPWORK, &g_avail_work, netdriver_txavail_work, dev, 0);
+    }
+}
+
+static void netdriver_rxready_interrupt(void *priv)
+{
+  if (work_available(&g_recv_work))
+    {
+      struct net_driver_s *dev = (struct net_driver_s *)priv;
+      work_queue(LPWORK, &g_recv_work, netdriver_recv_work, dev, 0);
+    }
+}
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
 
 int netdriver_init(void)
 {
-  FAR struct net_driver_s *dev = &g_sim_dev;
+  struct net_driver_s *dev = &g_sim_dev;
   void *pktbuf;
   int pktsize;
 
   /* Internal initialization */
 
-  netdev_init();
+  netdev_init(dev,
+              netdriver_txdone_interrupt,
+              netdriver_rxready_interrupt);
 
   /* Update the buffer size */
 

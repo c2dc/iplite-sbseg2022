@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -48,7 +49,6 @@
 #include "stm32_uart.h"
 #include "stm32_dma.h"
 #include "stm32_rcc.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
 
 /****************************************************************************
@@ -375,9 +375,6 @@
 #if defined(CONFIG_PM) && !defined(CONFIG_STM32_PM_SERIAL_ACTIVITY)
 #  define CONFIG_STM32_PM_SERIAL_ACTIVITY 10
 #endif
-#if defined(CONFIG_PM)
-#  define PM_IDLE_DOMAIN             0 /* Revisit */
-#endif
 
 /* Since RX DMA or TX DMA or both may be enabled for a given U[S]ART.
  * We need runtime detection in up_dma_setup and up_dma_shutdown
@@ -507,7 +504,8 @@ static bool up_rxflowcontrol(struct uart_dev_s *dev, unsigned int nbuffered,
                              bool upper);
 #endif
 static void up_send(struct uart_dev_s *dev, int ch);
-#if defined(SERIAL_HAVE_RXDMA_OPS) || defined(SERIAL_HAVE_NODMA_OPS)
+#if defined(SERIAL_HAVE_RXDMA_OPS) || defined(SERIAL_HAVE_NODMA_OPS) || \
+    defined(CONFIG_STM32_SERIALBRK_BSDCOMPAT)
 static void up_txint(struct uart_dev_s *dev, bool enable);
 #endif
 static bool up_txready(struct uart_dev_s *dev);
@@ -2227,7 +2225,7 @@ static int up_ioctl(struct file *filep, int cmd, unsigned long arg)
 #if defined(CONFIG_SERIAL_TERMIOS) || defined(CONFIG_STM32_SERIALBRK_BSDCOMPAT)
   struct up_dev_s   *priv  = (struct up_dev_s *)dev->priv;
 #endif
-  int                ret    = OK;
+  int                ret   = OK;
 
   switch (cmd)
     {
@@ -2918,7 +2916,8 @@ static void up_dma_txint(struct uart_dev_s *dev, bool enable)
  *
  ****************************************************************************/
 
-#if defined(SERIAL_HAVE_RXDMA_OPS) || defined(SERIAL_HAVE_NODMA_OPS)
+#if defined(SERIAL_HAVE_RXDMA_OPS) || defined(SERIAL_HAVE_NODMA_OPS) || \
+    defined(CONFIG_STM32_SERIALBRK_BSDCOMPAT)
 static void up_txint(struct uart_dev_s *dev, bool enable)
 {
   struct up_dev_s *priv = (struct up_dev_s *)dev->priv;
@@ -2955,12 +2954,14 @@ static void up_txint(struct uart_dev_s *dev, bool enable)
 #  ifdef CONFIG_STM32_SERIALBRK_BSDCOMPAT
       if (priv->ie & USART_CR1_IE_BREAK_INPROGRESS)
         {
+          leave_critical_section(flags);
           return;
         }
 #  endif
 
       up_restoreusartint(priv, ie);
 
+#else
       /* Fake a TX interrupt here by just calling uart_xmitchars() with
        * interrupts disabled (note this may recurse).
        */
@@ -3136,7 +3137,7 @@ static int up_pm_prepare(struct pm_callback_s *cb, int domain,
  ****************************************************************************/
 
 #ifdef HAVE_SERIALDRIVER
-FAR uart_dev_t *stm32_serial_get_uart(int uart_num)
+uart_dev_t *stm32_serial_get_uart(int uart_num)
 {
   int uart_idx = uart_num - 1;
 

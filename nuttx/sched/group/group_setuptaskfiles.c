@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <sched.h>
+#include <assert.h>
 
 #include <nuttx/fs/fs.h>
 
@@ -66,10 +67,6 @@ int group_setuptaskfiles(FAR struct task_tcb_s *tcb)
   DEBUGASSERT((tcb->cmn.flags & TCB_FLAG_TTYPE_MASK) !=
               TCB_FLAG_TTYPE_PTHREAD);
 #endif
-
-  /* Initialize file descriptors for the TCB */
-
-  files_initlist(&group->tg_filelist);
 
 #ifndef CONFIG_FDCLONE_DISABLE
   DEBUGASSERT(rtcb->group);

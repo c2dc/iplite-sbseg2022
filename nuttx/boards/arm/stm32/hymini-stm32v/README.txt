@@ -269,7 +269,7 @@ HY-Mini specific Configuration Options
     CONFIG_STM32_SPI_INTERRUPTS - Select to enable interrupt driven SPI
       support. Non-interrupt-driven, poll-waiting is recommended if the
       interrupt rate would be to high in the interrupt driven case.
-    CONFIG_STM32_SPI_DMA - Use DMA to improve SPI transfer performance.
+    CONFIG_STM32_SPIx_DMA - Use DMA to improve SPIx transfer performance.
       Cannot be used with CONFIG_STM32_SPI_INTERRUPT.
 
     CONFIG_SDIO_DMA - Support DMA data transfers.  Requires CONFIG_STM32_SDIO
@@ -465,7 +465,6 @@ Where <subdir> is one of the following:
        CONFIG_USBMONITOR_TRACECONTROLLER=y
        CONFIG_USBMONITOR_TRACEINTERRUPTS=y
 
-
     Using the Prolifics PL2303 Emulation
     ------------------------------------
     You could also use the non-standard PL2303 serial device instead of
@@ -483,7 +482,7 @@ Where <subdir> is one of the following:
     more information.
 
       CONFIG_HOST_LINUX=y                      : Linux host
-      CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL=y      : GNU EABI toolchain for Linux
+      CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y       : GNU EABI toolchain for Linux
 
     USB debug output can be enabled as by changing the following
     settings in the configuration file:

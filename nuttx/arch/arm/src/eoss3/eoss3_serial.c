@@ -38,7 +38,6 @@
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 #include <nuttx/init.h>
-#include <nuttx/power/pm.h>
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/serial/serial.h>
 #include <nuttx/wqueue.h>
@@ -46,9 +45,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "hardware/eoss3_uart.h"
 #include "hardware/eoss3_intr.h"
 #include "eoss3_lowputc.h"
@@ -78,7 +75,7 @@ static int  eoss3_setup(struct uart_dev_s *dev);
 static void eoss3_shutdown(struct uart_dev_s *dev);
 static int  eoss3_attach(struct uart_dev_s *dev);
 static void eoss3_detach(struct uart_dev_s *dev);
-static int  eoss3_interrupt(int irq, void *context, FAR void *arg);
+static int  eoss3_interrupt(int irq, void *context, void *arg);
 static int  eoss3_ioctl(struct file *filep, int cmd, unsigned long arg);
 static int  eoss3_receive(struct uart_dev_s *dev, unsigned int *status);
 static void eoss3_rxint(struct uart_dev_s *dev, bool enable);
@@ -195,7 +192,7 @@ static void eoss3_tx_work(void *arg)
   if (dev->xmit.head != dev->xmit.tail)
     {
       work_queue(HPWORK, &priv->work, eoss3_tx_work,
-                 (FAR void *)arg, 0);
+                 (void *)arg, 0);
     }
 
   leave_critical_section(flags);
@@ -321,7 +318,7 @@ static void eoss3_detach(struct uart_dev_s *dev)
  *
  ****************************************************************************/
 
-static int eoss3_interrupt(int irq, void *context, FAR void *arg)
+static int eoss3_interrupt(int irq, void *context, void *arg)
 {
   struct uart_dev_s *dev = (struct uart_dev_s *)arg;
   uint32_t status;
@@ -478,8 +475,8 @@ static void eoss3_send(struct uart_dev_s *dev, int ch)
  * Name: eoss3_txint
  *
  * Description:
- *   Normally would turn on and off the tx empty interrupt instead we are
- *   enableing a kernel worker because there is no interrupt. This worker
+ *   Normally would turn on and off the tx empty interrupt; instead, we are
+ *   enabling a kernel worker because there is no interrupt. This worker
  *   will requeue and dequeue itself as needed.
  *
  ****************************************************************************/
@@ -493,7 +490,7 @@ static void eoss3_txint(struct uart_dev_s *dev, bool enable)
       if (work_available(&priv->work))
         {
           work_queue(HPWORK, &priv->work, eoss3_tx_work,
-                     (FAR void *)dev, 0);
+                     (void *)dev, 0);
         }
     }
 }

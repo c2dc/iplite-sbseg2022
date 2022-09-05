@@ -136,6 +136,10 @@ config MTD_PROGMEM
 		using the interfaces defined in include/nuttx/progmem.  Those
 		interfaces must be exported by chip-specific logic.
 
+if MTD_PROGMEM
+		
+endif #MTD_PROGMEM
+
 config MTD_CONFIG
 	bool "Enable Dev Config (MTD based) device"
 	default n
@@ -194,6 +198,7 @@ comment "MTD Device Drivers"
 
 menuconfig MTD_NAND
 	bool "MTD NAND support"
+	depends on ALLOW_BSD_COMPONENTS
 	default n
 	---help---
 		Enable support for NAND FLASH devices.
@@ -304,11 +309,11 @@ config FILEMTD
 if FILEMTD
 
 config FILEMTD_BLOCKSIZE
-	int "File MTD block size"
+	int "File MTD default block size"
 	default 512
 
 config FILEMTD_ERASESIZE
-	int "File MTD erase block size"
+	int "File MTD default erase block size"
 	default 4096
 
 config FILEMTD_ERASESTATE
@@ -316,6 +321,29 @@ config FILEMTD_ERASESTATE
 	default 0xff
 
 endif # FILEMTD
+
+config NULLMTD
+	bool "MTD null driver"
+	default n
+	---help---
+		Build support for a MTD null driver.  It simulates an always erased
+		MTD device.
+
+if NULLMTD
+
+config NULLMTD_BLOCKSIZE
+	int "MTD null default block size"
+	default 512
+
+config NULLMTD_ERASESIZE
+	int "MTD null detault erase block size"
+	default 4096
+
+config NULLMTD_ERASESTATE
+	hex "Simulated erase state"
+	default 0xff
+
+endif # NULLMTD
 
 config MTD_AT24XX
 	bool "I2C-based AT24xx eeprom"
@@ -688,6 +716,14 @@ config MX25RXX_SECTOR512
 	bool "Simulate 512 byte Erase Blocks"
 	default n
 
+config MX25RXX_PAGE128
+	bool "128 byte size pages"
+	default n
+	
+config MX25RXX_LXX
+	bool "Run MX25RXX driver in MX25LXX mode"
+	default n
+	
 endif # MTD_MX25RXX
 
 config MTD_SMART
@@ -865,22 +901,6 @@ config MTD_RAMTRON
 		SPI-based RAMTRON NVRAM Devices FM25V10
 
 if MTD_RAMTRON
-
-config RAMTRON_WRITEWAIT
-	bool "Wait after write"
-	default n
-	---help---
-		Wait after performing a RAMTRON write operation to assure that the
-		write completed error-free.  The default behavior is to wait for the
-		previous write to complete BEFORE starting the next write.  This
-		option, if selected, forces the driver to wait for the write to
-		complete AFTER each write.  This is a tradoeff:  Selecting this
-		option will significantly reduce RAMTRON performance but has the
-		advantage that it will correctly associate a write failure with a
-		specific write operation.
-
-		One RAMTRON read operations, this option also enables some additional
-		status checking to check for device failures during the read.
 
 config RAMTRON_SETSPEED
 	bool "Adjustable bus speed"

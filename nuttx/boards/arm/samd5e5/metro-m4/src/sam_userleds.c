@@ -40,12 +40,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/board.h>
 #include <nuttx/power/pm.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam_port.h"
 
 #include "metro-m4.h"

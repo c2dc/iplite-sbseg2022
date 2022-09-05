@@ -21,6 +21,9 @@
 # Tools
 # CFLAGS, CPPFLAGS, ASFLAGS, LDFLAGS are set in $(TOPDIR)/Make.defs
 
+ARCH_SRCDIR = $(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src
+
+CFLAGS += ${shell $(INCDIR) "$(CC)" $(ARCH_SRCDIR)$(DELIM)}
 CFLAGS += ${shell $(INCDIR) "$(CC)" $(ARCH_SRCDIR)$(DELIM)chip}
 CFLAGS += ${shell $(INCDIR) "$(CC)" $(ARCH_SRCDIR)$(DELIM)common}
 CFLAGS += ${shell $(INCDIR) "$(CC)" $(TOPDIR)$(DELIM)sched}
@@ -182,7 +185,7 @@ endif
 
 # This is part of the top-level export target
 
-export_startup: board/libboard$(LIBEXT) $(STARTUP_OBJS)
+export_startup: $(STARTUP_OBJS)
 	$(Q) if [ -d "$(EXPORT_DIR)/startup" ]; then \
 		cp -f $(STARTUP_OBJS) "$(EXPORT_DIR)/startup"; \
 	 else \
@@ -203,8 +206,6 @@ depend: .depend
 
 context::
 
-clean_context::
-
 clean:
 	$(Q) if [ -e board/Makefile ]; then \
 		$(MAKE) -C board clean ; \
@@ -214,7 +215,7 @@ clean:
 	$(call DELFILE, libarch$(LIBEXT))
 	$(call CLEAN)
 
-distclean: clean
+distclean:: clean
 	$(Q) if [ -e board/Makefile ]; then \
 		$(MAKE) -C board distclean ; \
 	fi

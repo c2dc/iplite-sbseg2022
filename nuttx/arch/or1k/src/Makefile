@@ -19,7 +19,7 @@
 ############################################################################
 
 include $(TOPDIR)/Make.defs
--include chip/Make.defs
+include chip/Make.defs
 
 ifeq ($(CONFIG_ARCH_MOR1KX),y)          # OpenRISC mor1kx
 ARCH_SUBDIR = mor1kx
@@ -39,11 +39,7 @@ CFLAGS += $(INCLUDES)
 CXXFLAGS += $(INCLUDES)
 AFLAGS += $(INCLUDES)
 
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  NUTTX = "${shell cygpath -w $(TOPDIR)$(DELIM)nuttx$(EXEEXT)}"
-else
-  NUTTX = "$(TOPDIR)$(DELIM)nuttx$(EXEEXT)"
-endif
+NUTTX = $(call CONVERT_PATH,$(TOPDIR)$(DELIM)nuttx$(EXEEXT))
 
 # The "head" object
 
@@ -75,27 +71,17 @@ UOBJS = $(UAOBJS) $(UCOBJS)
 KBIN = libkarch$(LIBEXT)
 BIN  = libarch$(LIBEXT)
 
-LDFLAGS += $(ARCHSCRIPT)
-
 # Override in Make.defs if linker is not 'ld'
 
 LDSTARTGROUP ?= --start-group
 LDENDGROUP ?= --end-group
+LDFLAGS += $(addprefix -T,$(call CONVERT_PATH,$(ARCHSCRIPT)))
 
 BOARDMAKE = $(if $(wildcard board$(DELIM)Makefile),y,)
 
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  LIBPATHS += -L"${shell cygpath -w "$(TOPDIR)$(DELIM)staging"}"
+LIBPATHS += -L $(call CONVERT_PATH,$(TOPDIR)$(DELIM)staging)
 ifeq ($(BOARDMAKE),y)
-  LIBPATHS += -L"${shell cygpath -w "$(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)board"}"
-endif
-
-else
-  LIBPATHS += -L"$(TOPDIR)$(DELIM)staging"
-ifeq ($(BOARDMAKE),y)
-  LIBPATHS += -L"$(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)board"
-endif
-
+  LIBPATHS += -L $(call CONVERT_PATH,$(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)board)
 endif
 
 LDLIBS = $(patsubst %.a,%,$(patsubst lib%,-l%,$(LINKLIBS)))
@@ -139,7 +125,7 @@ $(KBIN): $(OBJS)
 board$(DELIM)libboard$(LIBEXT):
 	$(Q) $(MAKE) -C board libboard$(LIBEXT) EXTRAFLAGS="$(EXTRAFLAGS)"
 
-nuttx$(EXEEXT): $(HEAD_OBJ) board$(DELIM)libboard$(LIBEXT)
+nuttx$(EXEEXT): $(HEAD_OBJ) board$(DELIM)libboard$(LIBEXT) $(ARCHSCRIPT)
 	$(Q) echo "LD: nuttx"
 	$(Q) $(LD) --entry=0x100 $(LDFLAGS) $(LIBPATHS) $(EXTRA_LIBPATHS) \
 		-o $(NUTTX) $(HEAD_OBJ) $(EXTRA_OBJS) \
@@ -154,7 +140,7 @@ endif
 # Note that there may not be a head object if layout is handled
 # by the linker configuration.
 
-export_startup: board$(DELIM)libboard$(LIBEXT) $(STARTUP_OBJS)
+export_startup: $(STARTUP_OBJS)
 ifneq ($(STARTUP_OBJS),)
 	$(Q) if [ -d "$(EXPORT_DIR)$(DELIM)startup" ]; then \
 		cp -f $(STARTUP_OBJS) "$(EXPORT_DIR)$(DELIM)startup$(DELIM)."; \
@@ -181,8 +167,6 @@ depend: .depend
 
 context::
 
-clean_context::
-
 clean:
 ifeq ($(BOARDMAKE),y)
 	$(Q) $(MAKE) -C board clean
@@ -191,7 +175,7 @@ endif
 	$(call DELFILE, $(BIN))
 	$(call CLEAN)
 
-distclean: clean
+distclean:: clean
 ifeq ($(BOARDMAKE),y)
 	$(Q) $(MAKE) -C board distclean
 endif

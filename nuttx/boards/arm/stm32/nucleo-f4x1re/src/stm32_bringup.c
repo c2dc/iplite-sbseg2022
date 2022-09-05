@@ -37,12 +37,27 @@
 
 #include <arch/board/board.h>
 
+#ifdef CONFIG_USERLED
+#  include <nuttx/leds/userled.h>
+#endif
+
 #include "nucleo-f4x1re.h"
 
 #include <nuttx/board.h>
 
 #ifdef CONFIG_SENSORS_QENCODER
 #include "board_qencoder.h"
+#endif
+
+#undef HAVE_LEDS
+#if !defined(CONFIG_ARCH_LEDS) && defined(CONFIG_USERLED_LOWER)
+#  define HAVE_LEDS 1
+#endif
+
+#ifdef CONFIG_EXAMPLES_LEDS_DEVPATH
+#  define LED_DRIVER_PATH CONFIG_EXAMPLES_LEDS_DEVPATH
+#else
+#  define LED_DRIVER_PATH "/dev/userleds"
 #endif
 
 /****************************************************************************
@@ -58,7 +73,7 @@
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -66,6 +81,17 @@
 int stm32_bringup(void)
 {
   int ret = OK;
+
+#ifdef HAVE_LEDS
+  /* Register the LED driver */
+
+  ret = userled_lower_initialize(LED_DRIVER_PATH);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: userled_lower_initialize() failed: %d\n", ret);
+      return ret;
+    }
+#endif
 
   /* Configure SPI-based devices */
 
@@ -80,6 +106,18 @@ int stm32_bringup(void)
       syslog(LOG_ERR, "ERROR: Failed to initialize SPI port 1\n");
       return -ENODEV;
     }
+
+#if defined(CONFIG_LCD_SSD1306_SPI) && !defined(CONFIG_VIDEO_FB)
+  board_lcd_initialize();
+#endif
+
+#ifdef CONFIG_VIDEO_FB
+  ret = fb_register(0, 0);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: fb_register() failed: %d\n", ret);
+    }
+#endif
 
 #ifdef CONFIG_CAN_MCP2515
 #ifdef CONFIG_STM32_SPI1

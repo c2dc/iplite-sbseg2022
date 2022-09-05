@@ -1,10 +1,6 @@
 /****************************************************************************
  * arch/arm/src/samd5e5/sam_tickless.c
  *
- *   Copyright 2020 Falker Automacao Agricola LTDA.
- *   Author: Leomar Mateus Radke <leomar@falker.com.br>
- *   Author: Ricardo Wartchow <wartchow@gmail.com>
- *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.  The
@@ -31,10 +27,10 @@
  *
  *   void arm_timer_initialize(void): Initializes the timer facilities.
  *    Calledearly in the initialization sequence (by up_intialize()).
- *   int up_timer_gettime(FAR struct timespec *ts):  Returns the current
+ *   int up_timer_gettime(struct timespec *ts):  Returns the current
  *     time from the platform specific time source.
  *   int up_timer_cancel(void):  Cancels the interval timer.
- *   int up_timer_start(FAR const struct timespec *ts): Start (or re-starts)
+ *   int up_timer_start(const struct timespec *ts): Start (or re-starts)
  *     the interval timer.
  *
  * The RTOS will provide the following interfaces for use by the platform-
@@ -75,9 +71,10 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 
 #include <nuttx/arch.h>
 
@@ -296,7 +293,7 @@ void up_timer_initialize(void)
  *   arm_timer_initialize() was called).  This function is functionally
  *   equivalent to:
  *
- *      int clock_gettime(clockid_t clockid, FAR struct timespec *ts);
+ *      int clock_gettime(clockid_t clockid, struct timespec *ts);
  *
  *   when clockid is CLOCK_MONOTONIC.
  *
@@ -321,7 +318,7 @@ void up_timer_initialize(void)
  *
  ****************************************************************************/
 
-int up_timer_gettime(FAR struct timespec *ts)
+int up_timer_gettime(struct timespec *ts)
 {
   return FREERUN_INITIALIZED(&g_tickless.freerun) ?
          sam_freerun_counter(&g_tickless.freerun, ts) :
@@ -364,7 +361,7 @@ int up_timer_gettime(FAR struct timespec *ts)
  *
  ****************************************************************************/
 
-int up_timer_cancel(FAR struct timespec *ts)
+int up_timer_cancel(struct timespec *ts)
 {
   return ONESHOT_INITIALIZED(&g_tickless.oneshot) &&
          FREERUN_INITIALIZED(&g_tickless.freerun) ?
@@ -397,7 +394,7 @@ int up_timer_cancel(FAR struct timespec *ts)
  *
  ****************************************************************************/
 
-int up_timer_start(FAR const struct timespec *ts)
+int up_timer_start(const struct timespec *ts)
 {
   tmrinfo("ts=(%lu, %lu)\n", (unsigned long)ts->tv_sec,
                              (unsigned long)ts->tv_nsec);

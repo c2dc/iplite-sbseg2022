@@ -35,9 +35,7 @@
 #include <nuttx/irq.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "tms570_gio.h"
 #include "hardware/tms570_gio.h"
 
@@ -55,7 +53,7 @@
  *
  ****************************************************************************/
 
-static int tms3570_gio_interrupt(int irq, void *context, FAR void *arg)
+static int tms3570_gio_interrupt(int irq, void *context, void *arg)
 {
   uint32_t off1;
   int irq2;

@@ -1,42 +1,20 @@
 /****************************************************************************
  * boards/arm/stm32/mikroe-stm32f4/src/stm32_mio283qt9a.c
  *
- * Interface definition for the MI0283QT-9A LCD from Multi-Inno Technology
- * Co., Ltd.
- * LCD is based on the Ilitek ILI9341 LCD controller.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- *   Copyright (C) 2012-2014 Gregory Nutt. All rights reserved.
- *   Authors: Gregory Nutt <gnutt@nuttx.org>
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *   Modified: 2013-2014 by Ken Pettit to support Mikroe-STM32F4 board.
- *   Adapted by Tobias Duckworth <toby@orogenic.net> for the MI0283QT-9A
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -49,6 +27,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -59,7 +38,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32.h"
 #include "stm32_gpio.h"
 #include "mikroe-stm32f4.h"
@@ -112,10 +91,10 @@
 
 struct stm32f4_dev_s
 {
-  struct mio283qt9a_lcd_s dev;      /* The externally visible part of the driver */
-  bool                   grammode;  /* true=Writing to GRAM (16-bit write vs 8-bit) */
-  bool                   firstread; /* First GRAM read? */
-  FAR struct lcd_dev_s  *drvr;      /* The saved instance of the LCD driver */
+  struct mio283qt9a_lcd_s dev;       /* The externally visible part of the driver */
+  bool                    grammode;  /* true=Writing to GRAM (16-bit write vs 8-bit) */
+  bool                    firstread; /* First GRAM read? */
+  struct lcd_dev_s       *drvr;      /* The saved instance of the LCD driver */
 };
 
 /****************************************************************************
@@ -124,14 +103,14 @@ struct stm32f4_dev_s
 
 /* Low Level LCD access */
 
-static void stm32_select(FAR struct mio283qt9a_lcd_s *dev);
-static void stm32_deselect(FAR struct mio283qt9a_lcd_s *dev);
-static void stm32_index(FAR struct mio283qt9a_lcd_s *dev, uint8_t index);
+static void stm32_select(struct mio283qt9a_lcd_s *dev);
+static void stm32_deselect(struct mio283qt9a_lcd_s *dev);
+static void stm32_index(struct mio283qt9a_lcd_s *dev, uint8_t index);
 #if !defined(CONFIG_MIO283QT2_WRONLY) && !defined(CONFIG_LCD_NOGETRUN)
-static uint16_t stm32_read(FAR struct mio283qt9a_lcd_s *dev);
+static uint16_t stm32_read(struct mio283qt9a_lcd_s *dev);
 #endif
-static void stm32_write(FAR struct mio283qt9a_lcd_s *dev, uint16_t data);
-static void stm32_backlight(FAR struct mio283qt9a_lcd_s *dev, int power);
+static void stm32_write(struct mio283qt9a_lcd_s *dev, uint16_t data);
+static void stm32_backlight(struct mio283qt9a_lcd_s *dev, int power);
 
 /****************************************************************************
  * Private Data
@@ -217,7 +196,7 @@ static inline void stm32_data(void)
  *
  ****************************************************************************/
 
-static void stm32_select(FAR struct mio283qt9a_lcd_s *dev)
+static void stm32_select(struct mio283qt9a_lcd_s *dev)
 {
   /* CS low selects */
 
@@ -232,7 +211,7 @@ static void stm32_select(FAR struct mio283qt9a_lcd_s *dev)
  *
  ****************************************************************************/
 
-static void stm32_deselect(FAR struct mio283qt9a_lcd_s *dev)
+static void stm32_deselect(struct mio283qt9a_lcd_s *dev)
 {
   /* CS high de-selects */
 
@@ -247,9 +226,9 @@ static void stm32_deselect(FAR struct mio283qt9a_lcd_s *dev)
  *
  ****************************************************************************/
 
-static void stm32_index(FAR struct mio283qt9a_lcd_s *dev, uint8_t index)
+static void stm32_index(struct mio283qt9a_lcd_s *dev, uint8_t index)
 {
-  FAR struct stm32f4_dev_s *priv = (FAR struct stm32f4_dev_s *)dev;
+  struct stm32f4_dev_s *priv = (struct stm32f4_dev_s *)dev;
 
   /* Setup to write in command mode (vs data mode) */
 
@@ -292,9 +271,9 @@ static void stm32_index(FAR struct mio283qt9a_lcd_s *dev, uint8_t index)
  ****************************************************************************/
 
 #if !defined(CONFIG_MIO283QT2_WRONLY) && !defined(CONFIG_LCD_NOGETRUN)
-static uint16_t stm32_read(FAR struct mio283qt9a_lcd_s *dev)
+static uint16_t stm32_read(struct mio283qt9a_lcd_s *dev)
 {
-  FAR struct stm32f4_dev_s *priv = (FAR struct stm32f4_dev_s *)dev;
+  struct stm32f4_dev_s *priv = (struct stm32f4_dev_s *)dev;
   uint32_t  * volatile portsetreset = (uint32_t *) STM32_GPIOE_BSRR;
   uint32_t  * volatile portmode = (uint32_t *) STM32_GPIOE_MODER;
   uint32_t  * volatile portinput = (uint32_t *) STM32_GPIOE_IDR;
@@ -368,9 +347,9 @@ static uint16_t stm32_read(FAR struct mio283qt9a_lcd_s *dev)
  *
  ****************************************************************************/
 
-static void stm32_write(FAR struct mio283qt9a_lcd_s *dev, uint16_t data)
+static void stm32_write(struct mio283qt9a_lcd_s *dev, uint16_t data)
 {
-  FAR struct stm32f4_dev_s *priv = (FAR struct stm32f4_dev_s *)dev;
+  struct stm32f4_dev_s *priv = (struct stm32f4_dev_s *)dev;
 
   /* Write the data register to the 8-bit GPIO pin bus.  We are violating the
    * datasheet here a little by driving the WR pin low at the same time as
@@ -407,7 +386,7 @@ static void stm32_write(FAR struct mio283qt9a_lcd_s *dev, uint16_t data)
  *
  ****************************************************************************/
 
-static void stm32_backlight(FAR struct mio283qt9a_lcd_s *dev, int power)
+static void stm32_backlight(struct mio283qt9a_lcd_s *dev, int power)
 {
   /* For now, we just control the backlight as a discrete.  Pulse width
    * modulation would be required to vary the backlight level.  A low value
@@ -524,7 +503,7 @@ int board_lcd_initialize(void)
  *
  ****************************************************************************/
 
-FAR struct lcd_dev_s *board_lcd_getdev(int lcddev)
+struct lcd_dev_s *board_lcd_getdev(int lcddev)
 {
   DEBUGASSERT(lcddev == 0);
   return g_stm32f4_lcd.drvr;

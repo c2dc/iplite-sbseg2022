@@ -23,6 +23,8 @@
 
 wd=`pwd`
 workingdir=$wd/img
+rcsysinitfile=rc.sysinit
+rcsysinittemplate=$rcsysinitfile.template
 rcsfile=rcS
 rcstemplate=$rcsfile.template
 romfsimg=romfs.img
@@ -33,7 +35,9 @@ headerfile=nsh_romfsimg.h
 nofat=$1
 usefat=true
 topdir=$2
-usage="USAGE: $0 [-nofat] <topdir>"
+rcsysinit_fname=$3
+rcs_fname=$4
+usage="USAGE: $0 [-nofat] <topdir> [rcsysinitfile] [<rcsfile>]"
 
 # Verify if we have the optional "-nofat"
 
@@ -42,12 +46,26 @@ if [ "$nofat" == "-nofat" ]; then
   usefat=false
 else
   topdir=$1
+  rcsysinit_fname=$2
+  rcs_fname=$3
 fi
 
 if [ -z "$topdir" -o ! -d "$topdir" ]; then
   echo "The full path to the NuttX base directory must be provided on the command line"
   echo $usage
   exit 1
+fi
+
+# Verify if we have the optional "rcsysinit_fname" and "rcs_fname"
+
+if [ ! -z "$rcsysinit_fname" ]; then
+  rcsysinittemplate=$rcsysinit_fname
+  echo "Target template is $rcsysinittemplate"
+fi
+
+if [ ! -z "$rcs_fname" ]; then
+  rcstemplate=$rcs_fname
+  echo "Target template is $rcstemplate"
 fi
 
 # Extract all values from the .config in the $topdir that contains all of the NuttX
@@ -68,6 +86,7 @@ devconsole=`grep CONFIG_DEV_CONSOLE= $topdir/.config | cut -d'=' -f2`
 romfs=`grep CONFIG_FS_ROMFS= $topdir/.config | cut -d'=' -f2`
 romfsmpt=`grep CONFIG_NSH_ROMFSMOUNTPT= $topdir/.config | cut -d'=' -f2`
 initscript=`grep CONFIG_NSH_INITSCRIPT= $topdir/.config | cut -d'=' -f2`
+sysinitscript=`grep CONFIG_NSH_SYSINITSCRIPT= $topdir/.config | cut -d'=' -f2`
 romfsdevno=`grep CONFIG_NSH_ROMFSDEVNO= $topdir/.config | cut -d'=' -f2`
 romfssectsize=`grep CONFIG_NSH_ROMFSSECTSIZE= $topdir/.config | cut -d'=' -f2`
 
@@ -126,10 +145,13 @@ genromfs -h 1>/dev/null 2>&1 || { \
 # Supply defaults for all un-defined ROMFS settings
 
 if [ -z "$romfsmpt" ]; then
-  romfsmpt="/etc"
+  romfsmpt=\"/etc\"
 fi
 if [ -z "$initscript" ]; then
-  initscript="init.d/rcS"
+  initscript=\"init.d/rcS\"
+fi
+if [ -z "$sysinitscript" ]; then
+  sysinitscript=\"init.d/rc.sysinit\"
 fi
 if [ -z "$romfsdevno" ]; then
   romfsdevno=0
@@ -154,7 +176,7 @@ if [ "$usefat" = true ]; then
     fatnsectors=1024
   fi
   if [ -z "$fatmpt" ]; then
-   fatmpt="/tmp"
+   fatmpt=\"/tmp\"
   fi
 fi
 
@@ -208,10 +230,50 @@ if [ "X$uinitscript" = "."  -o ${uinitscript:0:2} = "./" -o \
   exit 1
 fi
 
+if [ ${sysinitscript:0:1} != "\"" ]; then
+  echo "CONFIG_NSH_SYSINITSCRIPT must be a string"
+  echo "Change it so that it is enclosed in quotes."
+  exit 1
+fi
+
+usysinitscript=`echo $sysinitscript | sed -e "s/\"//g"`
+
+if [ ${usysinitscript:0:1} == "/" ]; then
+  echo "CONFIG_NSH_SYSINITSCRIPT must be an relative path in under $romfsmpt"
+  echo "Change it so that it begins with the character '/'.  Eg. init.d/rc.sysinit. "
+  exit 1
+fi
+
+if [ "X$usysinitscript" = "."  -o ${usysinitscript:0:2} = "./" -o \
+     "X$usysinitscript" = ".." -o ${usysinitscript:0:3} = "../" ]; then
+  echo "Invalid CONFIG_NSH_SYSINITSCRIPT selection.  Must not begin with . or .."
+  exit 1
+fi
+
 # Create a working directory
 
 rm -rf $workingdir || { echo "Failed to remove the old $workingdir"; exit 1; }
 mkdir -p $workingdir || { echo "Failed to created the new $workingdir"; exit 1; }
+
+# Create the rc.sysinit file from the rc.sysinit.template
+
+if [ ! -r $rcsysinittemplate ]; then
+  echo "$rcsysinittemplate does not exist"
+  rmdir $workingdir
+  exit 1
+fi
+
+# If we are using FAT FS with RAMDISK we need to setup it
+
+if [ "$usefat" = true ]; then
+  cat $rcsysinittemplate | \
+      sed -e "s,XXXMKRDMINORXXX,$fatdevno,g" | \
+      sed -e "s,XXMKRDSECTORSIZEXXX,$fatsectsize,g" | \
+      sed -e "s,XXMKRDBLOCKSXXX,$fatnsectors,g" | \
+      sed -e "s,XXXRDMOUNTPOINTXXX,$fatmpt,g" >$rcsysinitfile
+else
+  cp $rcsysinittemplate $rcsysinitfile
+fi
 
 # Create the rcS file from the rcS.template
 
@@ -221,23 +283,17 @@ if [ ! -r $rcstemplate ]; then
   exit 1
 fi
 
-# If we are using FAT FS with RAMDISK we need to setup it
-
-if [ "$usefat" = true ]; then
-  cat $rcstemplate | \
-      sed -e "s,XXXMKRDMINORXXX,$fatdevno,g" | \
-      sed -e "s,XXMKRDSECTORSIZEXXX,$fatsectsize,g" | \
-      sed -e "s,XXMKRDBLOCKSXXX,$fatnsectors,g" | \
-      sed -e "s,XXXRDMOUNTPOINTXXX,$fatmpt,g" >$rcsfile
-else
-  cp $rcstemplate $rcsfile
-fi
+cp $rcstemplate $rcsfile
 
 # And install it at the specified relative location
 
 # Fix for BSD install without -D option
 mkdir -p $workingdir/$uinitscript
 rmdir $workingdir/$uinitscript
+
+install -m 0755 $rcsysinitfile $workingdir/$usysinitscript || \
+    { echo "Failed to install $rcsysinitfile at $workingdir/$usysinitscript"; rm -f $rcsysinitfile; exit 1; }
+rm -f $rcsysinitfile
 
 install -m 0755 $rcsfile $workingdir/$uinitscript || \
     { echo "Failed to install $rcsfile at $workingdir/$uinitscript"; rm -f $rcsfile; exit 1; }
@@ -250,6 +306,7 @@ rm -rf $workingdir || { echo "Failed to remove the old $workingdir"; exit 1; }
 
 # And, finally, create the header file
 
-xxd -i ${romfsimg} | sed 's/unsigned/const unsigned/' >${headerfile} || \
+echo '#include <nuttx/compiler.h>' >${headerfile}
+xxd -i ${romfsimg} | sed 's/^unsigned char/const unsigned char aligned_data(4)/g' >>${headerfile} || \
   { echo "ERROR: xxd of $< failed" ; rm -f $romfsimg; exit 1 ; }
 rm -f $romfsimg

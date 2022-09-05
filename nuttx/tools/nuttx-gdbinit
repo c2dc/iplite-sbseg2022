@@ -35,15 +35,23 @@ define _examine_arch
   python if (_target_arch.name() == 'armv7e-m') : \
   gdb.execute("set $_target_arch = \"armv7e-m\"")
 
-  # TODO: qemu (need to distinguish cortex-m and cortex-a)
   python if (_target_arch.name() == 'armv7') : \
   gdb.execute("set $_target_arch = \"armv7e-m\"")
+
+  # TODO: need more smart way to detect armv7-a
+  python if (type(gdb.lookup_global_symbol("arm_gic_initialize")) is gdb.Symbol) : \
+  gdb.execute("set $_target_arch = \"armv7-a\"")
 
   python if (_target_arch.name() == 'i386:x86-64') : \
   gdb.execute("set $_target_arch = \"i386:x86-64\"")
 
   # NOTE: we assume that sim has sim_bringup function
-  python if (type(gdb.lookup_global_symbol("sim_bringup")) is gdb.Symbol) : \
+  python if (type(gdb.lookup_static_symbol("sim_start")) is gdb.Symbol \
+             and _target_arch.name() == 'i386') : \
+  gdb.execute("set $_target_arch=\"sim:x86\"")
+
+  python if (type(gdb.lookup_static_symbol("sim_start")) is gdb.Symbol \
+             and _target_arch.name() == 'i386:x86-64') : \
   gdb.execute("set $_target_arch=\"sim:x86-64\"")
 end
 
@@ -51,7 +59,7 @@ define _examine_target
   if ($_target_examined == 0x0)
     _examine_arch
 
-    set $_tcb0 = g_pidhash[0].tcb
+    set $_tcb0 = g_pidhash[0]
     set $_xcp_nregs = sizeof($_tcb0->xcp.regs) / sizeof($_tcb0->xcp.regs[0])
     set $_target_has_fpu = 0
 
@@ -61,23 +69,29 @@ define _examine_target
       end
     end
 
+    if ($_streq($_target_arch, "armv7-a") == 1)
+      if ($_xcp_nregs != 17)
+        set $_target_has_fpu = 1
+      end
+    end
+
     python gdb.execute("set $_target_has_smp = 0")
     python if (type(gdb.lookup_global_symbol("g_assignedtasks")) is gdb.Symbol) : \
     gdb.execute("set $_target_has_smp = 1")
 
-    set $_target_max_tasks = sizeof(g_pidhash) / sizeof(struct pidhash_s)
+    set $_target_max_tasks = g_npidhash
 
     python if (type(gdb.lookup_global_symbol("up_check_tcbstack")) is gdb.Symbol) : \
     gdb.execute("set $_target_has_stack_coloration = 1")
 
-    printf "target examined \n"
+    printf "target examined\n"
     python print("_target_arch.name=" + _target_arch.name())
 
     # NOTE: i386:x86-64 (qemu) does not work
-    #printf "$_target_arch : %s \n", $_target_arch
+    #printf "$_target_arch : %s\n", $_target_arch
 
-    printf "$_target_has_fpu : %d \n", $_target_has_fpu
-    printf "$_target_has_smp : %d \n", $_target_has_smp
+    printf "$_target_has_fpu : %d\n", $_target_has_fpu
+    printf "$_target_has_smp : %d\n", $_target_has_smp
     set $_target_examined = 1
   end
 end
@@ -108,6 +122,9 @@ define _save_tcb
   _examine_target
 
   set $tcb = $arg0
+  if ($_streq($_target_arch, "armv7-a") == 1)
+    _save_tcb_armv7-a $tcb
+  end
   if ($_streq($_target_arch, "armv7e-m") == 1)
     if ($_target_has_fpu == 0)
       _save_tcb_armv7e-m $tcb
@@ -120,6 +137,9 @@ define _save_tcb
   end
   if ($_streq($_target_arch, "sim:x86-64") == 1)
     _save_tcb_simx86-64 $tcb
+  end
+  if ($_streq($_target_arch, "sim:x86") == 1)
+    _save_tcb_simx86 $tcb
   end
 end
 
@@ -135,7 +155,7 @@ define _save_current_tcb
       set $tcb = (struct tcb_s *)g_assignedtasks[$cpu]->head
       _save_tcb $tcb
     end
-    printf "saved current_tcb (pid=%d) \n", $tcb->pid
+    printf "saved current_tcb (pid=%d)\n", $tcb->pid
     set $_current_tcb = $tcb
   end
 end
@@ -149,6 +169,9 @@ define _switch_tcb
   gdb.newest_frame().select()
 
   set $tcb = $arg0
+  if ($_streq($_target_arch, "armv7-a") == 1)
+    _switch_tcb_armv7-a $tcb
+  end
   if ($_streq($_target_arch, "armv7e-m") == 1)
     if ($_target_has_fpu == 0)
       _switch_tcb_armv7e-m $tcb
@@ -162,9 +185,57 @@ define _switch_tcb
   if ($_streq($_target_arch, "sim:x86-64") == 1)
     _switch_tcb_simx86-64 $tcb
   end
+  if ($_streq($_target_arch, "sim:x86") == 1)
+    _switch_tcb_simx86 $tcb
+  end
 
   # update _current_tcb
   set $_current_tcb = $tcb
+end
+
+# see nuttx/arch/arm/include/armv7-a/irq.h
+define _save_tcb_armv7-a
+  set $tcb = (struct tcb_s *)$arg0
+  set $tcb.xcp.regs[0] = $r0
+  set $tcb.xcp.regs[1] = $r1
+  set $tcb.xcp.regs[2] = $r2
+  set $tcb.xcp.regs[3] = $r3
+  set $tcb.xcp.regs[4] = $r4
+  set $tcb.xcp.regs[5] = $r5
+  set $tcb.xcp.regs[6] = $r6
+  set $tcb.xcp.regs[7] = $r7
+  set $tcb.xcp.regs[8] = $r8
+  set $tcb.xcp.regs[9] = $r9
+  set $tcb.xcp.regs[10] = $r10
+  set $tcb.xcp.regs[11] = $r11
+  set $tcb.xcp.regs[12] = $r12
+  set $tcb.xcp.regs[13] = $r13
+  set $tcb.xcp.regs[14] = $r14
+  set $tcb.xcp.regs[15] = $r15
+  # TODO: xPSR
+
+  set $_pc_reg_idx = 15
+end
+
+define _switch_tcb_armv7-a
+  set $tcb = (struct tcb_s *)$arg0
+  set $r0 = $tcb.xcp.regs[0]
+  set $r1 = $tcb.xcp.regs[1]
+  set $r2 = $tcb.xcp.regs[2]
+  set $r3 = $tcb.xcp.regs[3]
+  set $r4 = $tcb.xcp.regs[4]
+  set $r5 = $tcb.xcp.regs[5]
+  set $r6 = $tcb.xcp.regs[6]
+  set $r7 = $tcb.xcp.regs[7]
+  set $r8 = $tcb.xcp.regs[8]
+  set $r9 = $tcb.xcp.regs[9]
+  set $r10 = $tcb.xcp.regs[10]
+  set $r11 = $tcb.xcp.regs[11]
+  set $r12 = $tcb.xcp.regs[12]
+  set $r13 = $tcb.xcp.regs[13]
+  set $r14 = $tcb.xcp.regs[14]
+  set $r15 = $tcb.xcp.regs[15]
+  # TODO: xPSR
 end
 
 # see nuttx/arch/arm/include/armv7-m/irq_cmnvector.h
@@ -321,11 +392,34 @@ define _switch_tcb_simx86-64
   set $rip = $tcb.xcp.regs[7]
 end
 
+# see nuttx/arch/sim/src/sim/up_internal.h
+define _save_tcb_simx86
+  set $tcb = (struct tcb_s *)$arg0
+  set $tcb.xcp.regs[0] = $ebx
+  set $tcb.xcp.regs[1] = $esi
+  set $tcb.xcp.regs[2] = $edi
+  set $tcb.xcp.regs[3] = $ebp
+  set $tcb.xcp.regs[4] = $sp
+  set $tcb.xcp.regs[5] = $pc
+
+  set $_pc_reg_idx = 5
+end
+
+define _switch_tcb_simx86
+  set $tcb = (struct tcb_s *)$arg0
+  set $ebx = $tcb.xcp.regs[0]
+  set $esi = $tcb.xcp.regs[1]
+  set $edi = $tcb.xcp.regs[2]
+  set $ebp = $tcb.xcp.regs[3]
+  set $sp  = $tcb.xcp.regs[4]
+  set $pc  = $tcb.xcp.regs[5]
+end
+
 define nxthread
   _examine_target
   _save_current_tcb
   set $hash = ($arg0 & ($_target_max_tasks - 1))
-  set $tcb = g_pidhash[$hash].tcb
+  set $tcb = g_pidhash[$hash]
   if ($tcb != 0x0)
     _print_thread $tcb
     if ($argc == 1)
@@ -361,7 +455,7 @@ define info_nxthreads
 end
 
 define nxcontinue
-  printf "nxcontinue \n"
+  printf "nxcontinue\n"
   # TODO: SMP
   set $tcb = g_readytorun->head
   _switch_tcb $tcb

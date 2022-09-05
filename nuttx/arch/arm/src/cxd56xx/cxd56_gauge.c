@@ -34,7 +34,6 @@
 #include <stdbool.h>
 #include <errno.h>
 #include <debug.h>
-#include <math.h>
 
 #include <nuttx/kmalloc.h>
 #include <nuttx/power/battery_gauge.h>
@@ -50,16 +49,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-/* Debug ********************************************************************/
-
-#ifdef CONFIG_CXD56_GAUGE_DEBUG
-#define baterr(fmt, ...) logerr(fmt, ## __VA_ARGS__)
-#define batdbg(fmt, ...) logdebug(fmt, ## __VA_ARGS__)
-#else
-#define baterr(fmt, ...)
-#define batdbg(fmt, ...)
-#endif
-
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -73,14 +62,12 @@ struct bat_gauge_dev_s
  * Private Function Prototypes
  ****************************************************************************/
 
-static int gauge_open(FAR struct file *filep);
-static int gauge_close(FAR struct file *filep);
-static ssize_t gauge_read(FAR struct file *filep, FAR char *buffer,
+static ssize_t gauge_read(struct file *filep, char *buffer,
                             size_t buflen);
-static ssize_t gauge_write(FAR struct file *filep,
-                             FAR const char *buffer, size_t buflen);
-static int gauge_ioctl(FAR struct file *filep, int cmd,
-                         unsigned long arg);
+static ssize_t gauge_write(struct file *filep,
+                             const char *buffer, size_t buflen);
+static int gauge_ioctl(struct file *filep, int cmd,
+                       unsigned long arg);
 
 /****************************************************************************
  * Private Data
@@ -88,15 +75,13 @@ static int gauge_ioctl(FAR struct file *filep, int cmd,
 
 static const struct file_operations g_gaugeops =
 {
-  gauge_open,   /* open */
-  gauge_close,  /* close */
+  NULL,         /* open */
+  NULL,         /* close */
   gauge_read,   /* read */
   gauge_write,  /* write */
-  0,            /* seek */
-  gauge_ioctl   /* ioctl */
-#ifndef CONFIG_DISABLE_POLL
-  , NULL        /* poll */
-#endif
+  NULL,         /* seek */
+  gauge_ioctl,  /* ioctl */
+  NULL          /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   , NULL        /* unlink */
 #endif
@@ -112,7 +97,7 @@ static struct bat_gauge_dev_s g_gaugedev;
  * Name: gauge_get_status
  ****************************************************************************/
 
-static int gauge_get_status(FAR enum battery_gauge_status_e *status)
+static int gauge_get_status(enum battery_status_e *status)
 {
   uint8_t state;
   int ret;
@@ -153,7 +138,7 @@ static int gauge_get_status(FAR enum battery_gauge_status_e *status)
         break;
 
       default:
-        _info("Charge state %d\n", state);
+        batinfo("Charge state %d\n", state);
         *status = BATTERY_IDLE;
         break;
     }
@@ -165,7 +150,7 @@ static int gauge_get_status(FAR enum battery_gauge_status_e *status)
  * Name: gauge_get_vol
  ****************************************************************************/
 
-static int gauge_get_vol(FAR b16_t *voltage)
+static int gauge_get_vol(b16_t *voltage)
 {
   struct pmic_gauge_s gauge;
   int ret;
@@ -191,7 +176,7 @@ static int gauge_get_vol(FAR b16_t *voltage)
  * Name: gauge_get_capacity
  ****************************************************************************/
 
-static int gauge_get_capacity(FAR b16_t *capacity)
+static int gauge_get_capacity(b16_t *capacity)
 {
   b16_t vol;
   int lower;
@@ -249,7 +234,7 @@ static int gauge_get_capacity(FAR b16_t *capacity)
  * Name: gauge_online
  ****************************************************************************/
 
-static int gauge_online(FAR bool *online)
+static int gauge_online(bool *online)
 {
   if (online == NULL)
     {
@@ -261,36 +246,10 @@ static int gauge_online(FAR bool *online)
 }
 
 /****************************************************************************
- * Name: gauge_open
- *
- * Description:
- *   This function is called whenever the battery device is opened.
- *
- ****************************************************************************/
-
-static int gauge_open(FAR struct file *filep)
-{
-  return OK;
-}
-
-/****************************************************************************
- * Name: gauge_close
- *
- * Description:
- *   This routine is called when the battery device is closed.
- *
- ****************************************************************************/
-
-static int gauge_close(FAR struct file *filep)
-{
-  return OK;
-}
-
-/****************************************************************************
  * Name: gauge_read
  ****************************************************************************/
 
-static ssize_t gauge_read(FAR struct file *filep, FAR char *buffer,
+static ssize_t gauge_read(struct file *filep, char *buffer,
                             size_t buflen)
 {
   /* Return nothing read */
@@ -302,8 +261,8 @@ static ssize_t gauge_read(FAR struct file *filep, FAR char *buffer,
  * Name: gauge_write
  ****************************************************************************/
 
-static ssize_t gauge_write(FAR struct file *filep,
-                             FAR const char *buffer, size_t buflen)
+static ssize_t gauge_write(struct file *filep,
+                             const char *buffer, size_t buflen)
 {
   /* Return nothing written */
 
@@ -314,10 +273,10 @@ static ssize_t gauge_write(FAR struct file *filep,
  * Name: gauge_ioctl
  ****************************************************************************/
 
-static int gauge_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
+static int gauge_ioctl(struct file *filep, int cmd, unsigned long arg)
 {
-  FAR struct inode *inode = filep->f_inode;
-  FAR struct bat_gauge_dev_s *priv  = inode->i_private;
+  struct inode *inode = filep->f_inode;
+  struct bat_gauge_dev_s *priv = inode->i_private;
   int ret = -ENOTTY;
 
   nxsem_wait_uninterruptible(&priv->batsem);
@@ -326,29 +285,29 @@ static int gauge_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
     {
       case BATIOC_STATE:
         {
-          FAR enum battery_gauge_status_e *status =
-            (FAR enum battery_gauge_status_e *)(uintptr_t)arg;
+          enum battery_status_e *status =
+            (enum battery_status_e *)(uintptr_t)arg;
           ret = gauge_get_status(status);
         }
         break;
 
       case BATIOC_VOLTAGE:
         {
-          FAR b16_t *voltage = (FAR b16_t *)(uintptr_t)arg;
+          b16_t *voltage = (b16_t *)(uintptr_t)arg;
           ret = gauge_get_vol(voltage);
         }
         break;
 
       case BATIOC_CAPACITY:
         {
-          FAR b16_t *capacity = (FAR b16_t *)(uintptr_t)arg;
+          b16_t *capacity = (b16_t *)(uintptr_t)arg;
           ret = gauge_get_capacity(capacity);
         }
         break;
 
       case BATIOC_ONLINE:
         {
-          FAR bool *online = (FAR bool *)(uintptr_t)arg;
+          bool *online = (bool *)(uintptr_t)arg;
           ret = gauge_online(online);
         }
         break;
@@ -381,9 +340,9 @@ static int gauge_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
  *
  ****************************************************************************/
 
-int cxd56_gauge_initialize(FAR const char *devpath)
+int cxd56_gauge_initialize(const char *devpath)
 {
-  FAR struct bat_gauge_dev_s *priv = &g_gaugedev;
+  struct bat_gauge_dev_s *priv = &g_gaugedev;
   int ret;
 
   /* Initialize the CXD5247 device structure */
@@ -395,7 +354,7 @@ int cxd56_gauge_initialize(FAR const char *devpath)
   ret = register_driver(devpath, &g_gaugeops, 0666, priv);
   if (ret < 0)
     {
-      _err("ERROR: register_driver failed: %d\n", ret);
+      baterr("ERROR: register_driver failed: %d\n", ret);
       return -EFAULT;
     }
 
@@ -416,7 +375,7 @@ int cxd56_gauge_initialize(FAR const char *devpath)
  *
  ****************************************************************************/
 
-int cxd56_gauge_uninitialize(FAR const char *devpath)
+int cxd56_gauge_uninitialize(const char *devpath)
 {
   unregister_driver(devpath);
   return OK;

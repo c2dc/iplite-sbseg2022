@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef _ARCH_ARM_SRC_LC823450_CHIP_H
-#define _ARCH_ARM_SRC_LC823450_CHIP_H
+#ifndef __ARCH_ARM_SRC_LC823450_CHIP_H
+#define __ARCH_ARM_SRC_LC823450_CHIP_H
 
 /****************************************************************************
  * Included Files
@@ -29,9 +29,6 @@
 #  include <sys/types.h>
 #  include <arch/lc823450/chip.h>
 #  include <arch/lc823450/irq.h>
-#  include "arm_arch.h"
-#  include "lc823450_irq.h"
-#  include "arm_arch.h"
 #endif
 
 /****************************************************************************
@@ -80,4 +77,4 @@
 #endif /* CONFIG_SMP && CONFIG_ARCH_INTERRUPTSTACK > 7 */
 
 #endif /* __ASSEMBLY__  */
-#endif /* _ARCH_ARM_SRC_LC823450_CHIP_H */
+#endif /* __ARCH_ARM_SRC_LC823450_CHIP_H */

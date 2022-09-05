@@ -44,17 +44,16 @@
 #define PRIO_MID      100
 #define PRIO_HIGH1    180
 #define PRIO_HIGH2    170
-#define REPL_INTERVAL 100000000L
+#define REPL_INTERVAL INT32_C(100000000)
 #define MAX_BUDGET    (REPL_INTERVAL / 2)
 #define PRIO_HI_NDX   0
 #define PRIO_LO_NDX   1
 
 #ifndef MIN
-# define MIN(a,b) (((a) < (b)) ? (a) : (b))
+#  define MIN(a,b) ((a) < (b) ? (a) : (b))
 #endif
-
 #ifndef MAX
-# define MAX(a,b) (((a) > (b)) ? (a) : (b))
+#  define MAX(a,b) ((a) > (b) ? (a) : (b))
 #endif
 
 /****************************************************************************

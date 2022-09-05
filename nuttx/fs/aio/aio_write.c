@@ -33,6 +33,8 @@
 #include <errno.h>
 #include <debug.h>
 
+#include <nuttx/fs/fs.h>
+
 #include "aio/aio.h"
 
 #ifdef CONFIG_FS_AIO
@@ -118,7 +120,7 @@ static void aio_write_worker(FAR void *arg)
 
   if (nwritten < 0)
     {
-      ferr("ERROR: write/pwrite/send failed: %d\n", nwritten);
+      ferr("ERROR: write/pwrite/send failed: %zd\n", nwritten);
     }
 
   /* Save the result of the write */
@@ -193,7 +195,7 @@ errout:
  *   The aio_write() function will return the value zero if the I/O operation
  *   is successfully queued; otherwise, the function will return the value
  *   -1 and set errno to indicate the error.  The aio_write() function will
- *   ail if:
+ *   fail if:
  *
  *   EAGAIN - The requested asynchronous I/O operation was not queued due to
  *     system resource limitations.

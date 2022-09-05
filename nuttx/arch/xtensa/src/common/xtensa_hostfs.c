@@ -23,6 +23,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include <nuttx/cache.h>
 #include <nuttx/fs/hostfs.h>
 
 #include <arch/simcall.h>
@@ -96,6 +97,9 @@ int host_open(const char *pathname, int flags, int mode)
       simcall_flags |= SIMCALL_O_EXCL;
     }
 
+#ifdef CONFIG_XTENSA_SEMIHOSTING_HOSTFS_CACHE_COHERENCE
+  up_clean_dcache(pathname, pathname + strlen(pathname) + 1);
+#endif
   return host_call(SIMCALL_SYS_OPEN, (int)pathname, simcall_flags, mode);
 }
 
@@ -106,11 +110,19 @@ int host_close(int fd)
 
 ssize_t host_read(int fd, void *buf, size_t count)
 {
+#ifdef CONFIG_XTENSA_SEMIHOSTING_HOSTFS_CACHE_COHERENCE
+  up_invalidate_dcache(buf, buf + count);
+#endif
+
   return host_call(SIMCALL_SYS_READ, fd, (int)buf, count);
 }
 
 ssize_t host_write(int fd, const void *buf, size_t count)
 {
+#ifdef CONFIG_XTENSA_SEMIHOSTING_HOSTFS_CACHE_COHERENCE
+  up_clean_dcache(buf, buf + count);
+#endif
+
   return host_call(SIMCALL_SYS_WRITE, fd, (int)buf, count);
 }
 
@@ -151,6 +163,11 @@ int host_fstat(int fd, struct stat *buf)
   buf->st_mode = S_IFREG | 0777;
   buf->st_size = size;
   return 0;
+}
+
+int host_fchstat(int fd, const struct stat *buf, int flags)
+{
+  return -ENOSYS;
 }
 
 int host_ftruncate(int fd, off_t length)
@@ -224,4 +241,9 @@ int host_stat(const char *path, struct stat *buf)
     }
 
   return ret;
+}
+
+int host_chstat(const char *path, const struct stat *buf, int flags)
+{
+  return -ENOSYS;
 }

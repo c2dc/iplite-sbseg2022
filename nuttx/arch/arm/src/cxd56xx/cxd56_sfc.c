@@ -30,6 +30,7 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <string.h>
+#include <debug.h>
 #include <errno.h>
 
 /* Prototypes for Remote API */
@@ -75,13 +76,14 @@ static struct flash_controller_s g_sfc;
  * Name: cxd56_erase
  ****************************************************************************/
 
-static int cxd56_erase(FAR struct mtd_dev_s *dev, off_t startblock,
+static int cxd56_erase(struct mtd_dev_s *dev, off_t startblock,
                        size_t nblocks)
 {
   int ret;
   size_t i;
 
-  finfo("erase: %08lx (%u blocks)\n", startblock << PAGE_SHIFT, nblocks);
+  finfo("erase: %" PRIxOFF " (%u blocks)\n",
+        startblock << PAGE_SHIFT, nblocks);
 
   for (i = 0; i < nblocks; i++)
     {
@@ -95,12 +97,13 @@ static int cxd56_erase(FAR struct mtd_dev_s *dev, off_t startblock,
   return OK;
 }
 
-static ssize_t cxd56_bread(FAR struct mtd_dev_s *dev, off_t startblock,
-                           size_t nblocks, FAR uint8_t *buffer)
+static ssize_t cxd56_bread(struct mtd_dev_s *dev, off_t startblock,
+                           size_t nblocks, uint8_t *buffer)
 {
   int ret;
 
-  finfo("bread: %08lx (%u blocks)\n", startblock << PAGE_SHIFT, nblocks);
+  finfo("bread: %" PRIxOFF " (%u blocks)\n",
+        startblock << PAGE_SHIFT, nblocks);
 
   ret = fw_fm_rawread(startblock << PAGE_SHIFT, buffer,
                       nblocks << PAGE_SHIFT);
@@ -112,12 +115,13 @@ static ssize_t cxd56_bread(FAR struct mtd_dev_s *dev, off_t startblock,
   return nblocks;
 }
 
-static ssize_t cxd56_bwrite(FAR struct mtd_dev_s *dev, off_t startblock,
-                            size_t nblocks, FAR const uint8_t *buffer)
+static ssize_t cxd56_bwrite(struct mtd_dev_s *dev, off_t startblock,
+                            size_t nblocks, const uint8_t *buffer)
 {
   int ret;
 
-  finfo("bwrite: %08lx (%u blocks)\n", startblock << PAGE_SHIFT, nblocks);
+  finfo("bwrite: %" PRIxOFF " (%u blocks)\n",
+        startblock << PAGE_SHIFT, nblocks);
 
 #ifdef CONFIG_CXD56_SFC_VERIFY_WRITE
   ret = fw_fm_rawverifywrite(startblock << PAGE_SHIFT, buffer,
@@ -134,12 +138,12 @@ static ssize_t cxd56_bwrite(FAR struct mtd_dev_s *dev, off_t startblock,
   return nblocks;
 }
 
-static ssize_t cxd56_read(FAR struct mtd_dev_s *dev, off_t offset,
-                          size_t nbytes, FAR uint8_t *buffer)
+static ssize_t cxd56_read(struct mtd_dev_s *dev, off_t offset,
+                          size_t nbytes, uint8_t *buffer)
 {
   int ret;
 
-  finfo("read: %08lx (%u bytes)\n", offset, nbytes);
+  finfo("read: %" PRIxOFF " (%u bytes)\n", offset, nbytes);
 
   ret = fw_fm_rawread(offset, buffer, nbytes);
   if (ret < 0)
@@ -151,12 +155,12 @@ static ssize_t cxd56_read(FAR struct mtd_dev_s *dev, off_t offset,
 }
 
 #ifdef CONFIG_MTD_BYTE_WRITE
-static ssize_t cxd56_write(FAR struct mtd_dev_s *dev, off_t offset,
-                           size_t nbytes, FAR const uint8_t *buffer)
+static ssize_t cxd56_write(struct mtd_dev_s *dev, off_t offset,
+                           size_t nbytes, const uint8_t *buffer)
 {
   int ret;
 
-  finfo("write: %08lx (%u bytes)\n", offset, nbytes);
+  finfo("write: %" PRIxOFF " (%u bytes)\n", offset, nbytes);
 
 #ifdef CONFIG_CXD56_SFC_VERIFY_WRITE
   ret = fw_fm_rawverifywrite(offset, buffer, nbytes);
@@ -172,7 +176,7 @@ static ssize_t cxd56_write(FAR struct mtd_dev_s *dev, off_t offset,
 }
 #endif
 
-static int cxd56_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
+static int cxd56_ioctl(struct mtd_dev_s *dev, int cmd, unsigned long arg)
 {
   struct flash_controller_s *priv = (struct flash_controller_s *)dev;
   int ret                         = OK;
@@ -181,8 +185,8 @@ static int cxd56_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
     {
       case MTDIOC_GEOMETRY:
         {
-          FAR struct mtd_geometry_s *geo =
-            (FAR struct mtd_geometry_s *)((uintptr_t)arg);
+          struct mtd_geometry_s *geo =
+            (struct mtd_geometry_s *)((uintptr_t)arg);
           finfo("cmd: GEOM\n");
           if (geo)
             {
@@ -208,6 +212,20 @@ static int cxd56_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
         }
         break;
 
+      case BIOC_PARTINFO:
+        {
+          struct partition_info_s *info =
+            (struct partition_info_s *)arg;
+          if (info != NULL)
+            {
+              info->numsectors  = priv->density / PAGE_SIZE;
+              info->sectorsize  = PAGE_SIZE;
+              info->startsector = 0;
+              info->parent[0]   = '\0';
+            }
+        }
+        break;
+
       case MTDIOC_BULKERASE:
         {
           /* Erase the entire device */
@@ -225,7 +243,6 @@ static int cxd56_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
         }
         break;
 
-      case MTDIOC_XIPBASE:
       default:
         ret = -ENOTTY; /* Bad command */
         break;
@@ -234,7 +251,7 @@ static int cxd56_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
   return ret;
 }
 
-FAR struct mtd_dev_s *cxd56_sfc_initialize(void)
+struct mtd_dev_s *cxd56_sfc_initialize(void)
 {
   struct flash_controller_s *priv = &g_sfc;
 
@@ -255,7 +272,7 @@ FAR struct mtd_dev_s *cxd56_sfc_initialize(void)
 
   /* Allocate a buffer for the erase block cache */
 
-  priv->cache = (FAR uint8_t *)kmm_malloc(SPIFI_BLKSIZE);
+  priv->cache = (uint8_t *)kmm_malloc(SPIFI_BLKSIZE);
   if (!priv->cache)
     {
       /* Allocation failed! */

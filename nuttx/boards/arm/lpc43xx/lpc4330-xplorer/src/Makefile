@@ -22,12 +22,8 @@ include $(TOPDIR)/Make.defs
 
 CSRCS = lpc43_boot.c
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += lpc43_appinit.c
-endif
-
-ifeq ($(CONFIG_ARCH_FPU),y)
-CSRCS += lpc43_ostest.c
 endif
 
 ifeq ($(CONFIG_ARCH_LEDS),y)

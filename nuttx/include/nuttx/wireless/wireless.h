@@ -142,17 +142,33 @@
 
 /* Country code extension */
 
-#define SIOCSIWCOUNTRY      _WLIOC(0x0037)  /* Country code extension */
+#define SIOCSIWCOUNTRY      _WLIOC(0x0037)  /* Set country code */
+#define SIOCGIWCOUNTRY      _WLIOC(0x0038)  /* Get country code */
+
+/* WIFI / BT coexist type */
+
+#define SIOCSIWPTAPRIO      _WLIOC(0x0039)  /* Set PTA priority type */
+#define SIOCGIWPTAPRIO      _WLIOC(0x003a)  /* Get PTA priority type */
+
+#define WL_IS80211POINTERCMD(cmd) ((cmd) == SIOCGIWSCAN || \
+                                   (cmd) == SIOCSIWSCAN || \
+                                   (cmd) == SIOCSIWCOUNTRY || \
+                                   (cmd) == SIOCGIWCOUNTRY || \
+                                   (cmd) == SIOCGIWRANGE || \
+                                   (cmd) == SIOCSIWENCODEEXT || \
+                                   (cmd) == SIOCGIWENCODEEXT || \
+                                   (cmd) == SIOCGIWESSID || \
+                                   (cmd) == SIOCSIWESSID)
 
 /* Device-specific network IOCTL commands *******************************************/
 
 #define WL_NETFIRST         0x0000          /* First network command */
-#define WL_NNETCMDS         0x0038          /* Number of network commands */
+#define WL_NNETCMDS         0x003b          /* Number of network commands */
 
 /* Reserved for Bluetooth network devices (see bt_ioctls.h) */
 
 #define WL_BLUETOOTHFIRST     (WL_NETFIRST + WL_NNETCMDS)
-#define WL_BLUETOOTHCMDS      (26)
+#define WL_BLUETOOTHCMDS      (28)
 #define WL_IBLUETOOTHCMD(cmd) (_WLIOCVALID(cmd) && \
                               _IOC_NR(cmd) >= WL_BLUETOOTHFIRST && \
                               _IOC_NR(cmd) < (WL_BLUETOOTHFIRST + WL_BLUETOOTHCMDS))
@@ -386,13 +402,20 @@
 #define IW_ENCODE_ALG_PMK            4
 #define IW_ENCODE_ALG_AES_CMAC       5
 
+/* IW_COEX_PTA_PRIORITY values */
+
+#define IW_PTA_PRIORITY_COEX_MAXIMIZED 0
+#define IW_PTA_PRIORITY_COEX_HIGH      1
+#define IW_PTA_PRIORITY_BALANCED       2
+#define IW_PTA_PRIORITY_WLAN_HIGH      3
+#define IW_PTA_PRIORITY_WLAN_MAXIMIZED 4
+
 /************************************************************************************
  * Public Types
  ************************************************************************************/
 
 /* TODO:
  *
- * - Add types for statistics (struct iw_statistics and related)
  * - Add struct iw_range for use with IOCTL commands that need exchange mode data
  *   that could not fit in iwreq.
  * - Private IOCTL data support (struct iw_priv_arg)
@@ -448,6 +471,31 @@ struct iw_quality
   uint8_t   level;          /* signal level (dBm) */
   uint8_t   noise;          /* noise level (dBm) */
   uint8_t   updated;        /* Flags to know if updated */
+};
+
+/* Packet discarded in the wireless adapter due to
+ * "wireless" specific problems...
+ * Note : the list of counter and statistics in net_device_stats
+ * is already pretty exhaustive, and you should use that first.
+ * This is only additional stats...
+ */
+
+struct iw_discarded
+{
+  uint32_t nwid;      /* Rx : Wrong nwid/essid */
+  uint32_t code;      /* Rx : Unable to code/decode (WEP) */
+  uint32_t fragment;  /* Rx : Can't perform MAC reassembly */
+  uint32_t retries;   /* Tx : Max MAC retries num reached */
+  uint32_t misc;      /* Others cases */
+};
+
+/* Packet/Time period missed in the wireless adapter due to
+ * "wireless" specific problems...
+ */
+
+struct iw_missed
+{
+  uint32_t beacon;    /* Missed beacons/superframe */
 };
 
 /* This union defines the data payload of an ioctl, and is used in struct iwreq
@@ -569,6 +617,21 @@ struct  iw_scan_req
   uint32_t max_channel_time; /* in TU */
 
   struct iw_freq  channel_list[IW_MAX_FREQUENCIES];
+};
+
+/* Wireless statistics */
+
+struct iw_statistics
+{
+  uint16_t status;              /* Status
+                                 * - device dependent for now
+                                 */
+
+  struct iw_quality qual;       /* Quality of the link
+                                 * (instant/mean/max)
+                                 */
+  struct iw_discarded discard;  /* Packet discarded counts */
+  struct iw_missed miss;        /* Packet missed counts */
 };
 
 /* A Wireless Event. Contains basically the same data as the ioctl...

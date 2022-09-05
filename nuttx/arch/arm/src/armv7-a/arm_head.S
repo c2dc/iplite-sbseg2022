@@ -172,10 +172,9 @@
 	.type	__start, #function
 
 __start:
-	/* Make sure that we are in SVC mode with IRQs and FIQs disabled */
+	/* Make sure that we are in SYS mode with IRQs and FIQs disabled */
 
-	mov		r0, #(PSR_MODE_SVC | PSR_I_BIT | PSR_F_BIT)
-	msr		cpsr_c, r0
+	cpsid		if, #PSR_MODE_SYS
 
 	/* The MMU and caches should be disabled */
 
@@ -327,11 +326,17 @@ __start:
 	 */
 
 	mov		r0, #0
+#ifdef CONFIG_ARM_HAVE_MPCORE
+	mcr		CP15_TLBIALLIS(r0)	/* Invalidate the entire unified TLB */
+	mcr		CP15_BPIALLIS(r0)	/* Invalidate entire branch prediction array */
+	mcr		CP15_ICIALLUIS(r0)	/* Invalidate I-cache */
+#else
 	mcr		CP15_TLBIALL(r0,c7)	/* Invalidate the entire unified TLB */
 	mcr		CP15_TLBIALL(r0,c6)
 	mcr		CP15_TLBIALL(r0,c5)
 	mcr		CP15_BPIALL(r0)		/* Invalidate entire branch prediction array */
 	mcr		CP15_ICIALLU(r0)	/* Invalidate I-cache */
+#endif
 
 	/* Load the page table address.
 	 *
@@ -632,21 +637,6 @@ __start:
 
 	bl		arm_boot
 
-#ifdef CONFIG_STACK_COLORATION
-	/* Write a known value to the IDLE thread stack to support stack
-	 * monitoring logic
-	 */
-
-	adr		r3, .Lstkinit
-	ldmia		r3, {r0, r1, r2}		/* R0 = start of IDLE stack; R1 = Size of tack; R2 = coloration */
-
-1:							/* Top of the loop */
-	sub		r1, r1, #1			/* R1 = Number of words remaining */
-	cmp		r1, #0				/* Check (nwords == 0) */
-	str		r2, [r0], #4			/* Save stack color word, increment stack address */
-	bne		1b				/* Bottom of the loop */
-#endif
-
 	/* Finally branch to the OS entry point */
 
 	mov		lr, #0				/* LR = return address (none) */
@@ -736,11 +726,11 @@ arm_data_initialize:
 
 .Lstackpointer:
 #ifdef CONFIG_BOOT_SDRAM_DATA
-	.long	IDLE_STACK_VBASE+CONFIG_IDLETHREAD_STACKSIZE-4
+	.long	IDLE_STACK_VBASE+CONFIG_IDLETHREAD_STACKSIZE
 #elif defined(CONFIG_SMP)
-	.long	_enoinit+CONFIG_IDLETHREAD_STACKSIZE-4
+	.long	_enoinit+CONFIG_IDLETHREAD_STACKSIZE
 #else
-	.long	_ebss+CONFIG_IDLETHREAD_STACKSIZE-4
+	.long	_ebss+CONFIG_IDLETHREAD_STACKSIZE
 #endif
 	.size	.Lstackpointer, . -.Lstackpointer
 
@@ -751,21 +741,6 @@ arm_data_initialize:
 	.long	_sdata					/* Where .data needs to reside in SDRAM */
 	.long	_edata
 	.size	.Ldatainit, . -.Ldatainit
-#endif
-
-#ifdef CONFIG_STACK_COLORATION
-	.type	.Lstkinit, %object
-.Lstkinit:
-#ifdef CONFIG_BOOT_SDRAM_DATA
-	.long	IDLE_STACK_VBASE			/* Beginning of the IDLE stack, then words of IDLE stack */
-#elif defined(CONFIG_SMP)
-	.long	_enoinit
-#else
-	.long	_ebss					/* Beginning of the IDLE stack, then words of IDLE stack */
-#endif
-	.long	(CONFIG_IDLETHREAD_STACKSIZE >> 2)
-	.long	STACK_COLOR				/* Stack coloration word */
-	.size	.Lstkinit, . -.Lstkinit
 #endif
 
 /***************************************************************************

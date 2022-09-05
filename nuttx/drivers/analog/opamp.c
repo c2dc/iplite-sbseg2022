@@ -41,10 +41,9 @@
  * Private Function Prototypes
  ****************************************************************************/
 
-static int     opamp_open(FAR struct file *filep);
-static int     opamp_close(FAR struct file *filep);
-static int     opamp_ioctl(FAR struct file *filep, int cmd,
-                           unsigned long arg);
+static int opamp_open(FAR struct file *filep);
+static int opamp_close(FAR struct file *filep);
+static int opamp_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
 
 /****************************************************************************
  * Private Data
@@ -214,7 +213,7 @@ int opamp_register(FAR const char *path, FAR struct opamp_dev_s *dev)
 
   /* Register the OPAMP character driver */
 
-  ret =  register_driver(path, &opamp_fops, 0444, dev);
+  ret = register_driver(path, &opamp_fops, 0444, dev);
   if (ret < 0)
     {
       nxsem_destroy(&dev->ad_closesem);

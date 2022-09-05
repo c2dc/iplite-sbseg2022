@@ -90,7 +90,7 @@ endif
 endif
 endif
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += sam_appinit.c
 endif
 
@@ -118,10 +118,6 @@ endif
 
 ifeq ($(CONFIG_USBMSC),y)
 CSRCS += sam_usbmsc.c
-endif
-
-ifeq ($(CONFIG_ARCH_FPU),y)
-CSRCS += sam_ostest.c
 endif
 
 ifeq ($(CONFIG_SAMA5_TSD),y)

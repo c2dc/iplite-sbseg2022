@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_COMMON_ARMV6_M_NVIC_H
-#define __ARCH_ARM_SRC_COMMON_ARMV6_M_NVIC_H
+#ifndef __ARCH_ARM_SRC_ARMV6_M_NVIC_H
+#define __ARCH_ARM_SRC_ARMV6_M_NVIC_H
 
 /****************************************************************************
  * Included Files
@@ -378,7 +378,7 @@ extern "C"
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG_FEATURES
-void arm_dumpnvic(FAR const char *msg);
+void arm_dumpnvic(const char *msg);
 #else
 #  define arm_dumpnvic(m)
 #endif
@@ -388,4 +388,4 @@ void arm_dumpnvic(FAR const char *msg);
 }
 #endif
 #endif /* __ASSEMBLY__ */
-#endif /* __ARCH_ARM_SRC_COMMON_ARMV6_M_NVIC_H */
+#endif /* __ARCH_ARM_SRC_ARMV6_M_NVIC_H */

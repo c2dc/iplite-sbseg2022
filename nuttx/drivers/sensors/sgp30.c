@@ -1,36 +1,20 @@
 /****************************************************************************
  * drivers/sensors/sgp30.c
- * Driver for the Sensirion SGP30 Gas Platform sensor
  *
- *   Copyright (C) 2019 Haltian Ltd. All rights reserved.
- *   Author: Jussi Kivilinna <jussi.kivilinna@haltian.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -44,6 +28,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
+#include <assert.h>
 #include <errno.h>
 #include <time.h>
 #include <debug.h>
@@ -568,7 +553,7 @@ static int sgp30_measure_raw(FAR struct sgp30_dev_s *priv,
 static int sgp30_open(FAR struct file *filep)
 {
   FAR struct inode *inode = filep->f_inode;
-  FAR struct sgp30_dev_s *priv  = inode->i_private;
+  FAR struct sgp30_dev_s *priv = inode->i_private;
   int ret = OK;
 
   /* Get exclusive access */
@@ -607,7 +592,7 @@ static int sgp30_open(FAR struct file *filep)
           add_sensor_randomness((buf[0].crc << 24) ^ (serial[0].crc << 16) ^
                                 (serial[1].crc << 8) ^ (serial[2].crc << 0));
 
-          clock_gettime(CLOCK_REALTIME, &start);
+          clock_systime_timespec(&start);
           ret = sgp30_write_cmd(priv, SGP30_CMD_INIT_AIR_QUALITY, NULL, 0);
           if (ret < 0)
             {
@@ -617,7 +602,7 @@ static int sgp30_open(FAR struct file *filep)
           else
             {
               uint32_t repeat = SGP30_INIT_RETRIES;
-              clock_gettime(CLOCK_REALTIME, &curr);
+              clock_systime_timespec(&curr);
               sgp30_dbg("sgp30_write_cmd(SGP30_CMD_INIT_AIR_QUALITY)\n");
               while (repeat-- &&
                      time_has_passed_ms(&curr, &start, SGP30_INIT_LIMIT_MS))
@@ -642,10 +627,10 @@ static int sgp30_open(FAR struct file *filep)
 
                   nxsig_usleep(CONFIG_SGP30_RESET_DELAY_US);
 
-                  clock_gettime(CLOCK_REALTIME, &start);
+                  clock_systime_timespec(&start);
                   ret = sgp30_write_cmd(priv, SGP30_CMD_INIT_AIR_QUALITY,
                                         NULL, 0);
-                  clock_gettime(CLOCK_REALTIME, &curr);
+                  clock_systime_timespec(&curr);
                   if (ret < 0)
                     {
                       sgp30_dbg("sgp30_write_cmd(SGP30_CMD_INIT_AIR_QUALITY)"
@@ -754,7 +739,7 @@ static ssize_t sgp30_read(FAR struct file *filep, FAR char *buffer,
    *       to run measurement command every 1 second.
    */
 
-  clock_gettime(CLOCK_REALTIME, &ts);
+  clock_systime_timespec(&ts);
 
   while (!has_time_passed(&ts, &priv->last_update, 1))
     {
@@ -782,7 +767,7 @@ static ssize_t sgp30_read(FAR struct file *filep, FAR char *buffer,
             }
         }
 
-      clock_gettime(CLOCK_REALTIME, &ts);
+      clock_systime_timespec(&ts);
     }
 
   ret = sgp30_measure_airq(priv, &data);
@@ -912,7 +897,7 @@ static int sgp30_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
         {
           /* Input is absolute humidity in unit "mg/m^3". */
 
-          if (arg < 0 || arg >= 256000)
+          if (arg >= 256000)
             {
               ret = -EINVAL;
               break;

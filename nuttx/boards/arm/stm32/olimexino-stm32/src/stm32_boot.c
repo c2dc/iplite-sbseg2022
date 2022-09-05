@@ -42,7 +42,7 @@
  ****************************************************************************/
 
 #if defined(CONFIG_USBDEV)
-static int vbus_handler(int irq, FAR void *context, FAR void *arg)
+static int vbus_handler(int irq, void *context, void *arg)
 {
   return OK;
 }
@@ -115,7 +115,7 @@ void stm32_boardinitialize(void)
 #ifdef CONFIG_BOARD_LATE_INITIALIZE
 void board_late_initialize(void)
 {
-#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_LIB_BOARDCTL)
+#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_BOARDCTL)
   /* Perform NSH initialization here instead of from the NSH.  This
    * alternative NSH initialization is necessary when NSH is ran in user-
    * space but the initialization function must run in kernel space.

@@ -27,7 +27,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
-#include <sched.h>
+#include <nuttx/sched.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -50,31 +50,18 @@ extern "C"
  ****************************************************************************/
 
 /****************************************************************************
- * Name: nxtask_create
+ * Name: kthread_create_with_stack
  *
  * Description:
- *   This function creates and activates a new user task with a specified
- *   priority and returns its system-assigned ID.
- *
- *   The entry address entry is the address of the "main" function of the
- *   task.  This function will be called once the C environment has been
- *   set up.  The specified function will be called with four arguments.
- *   Should the specified routine return, a call to exit() will
- *   automatically be made.
- *
- *   Note that four (and only four) arguments must be passed for the spawned
- *   functions.
- *
- *   nxtask_create() is identical to the function task_create(), differing
- *   only in its return value:  This function does not modify the errno
- *   variable.  This is a non-standard, internal OS function and is not
- *   intended for use by application logic.  Applications should use
- *   task_create().
+ *   This function creates and activates a kernel thread task with
+ *   kernel-mode privileges. It is identical to kthread_create() except
+ *   that it get the stack memory from caller.
  *
  * Input Parameters:
  *   name       - Name of the new task
  *   priority   - Priority of the new task
- *   stack_size - size (in bytes) of the stack needed
+ *   stack_ptr  - Stack buffer of the new task
+ *   stack_size - Stack size of the new task
  *   entry      - Entry point of a new task
  *   arg        - A pointer to an array of input parameters.  The array
  *                should be terminated with a NULL argv[] value. If no
@@ -87,8 +74,9 @@ extern "C"
  *
  ****************************************************************************/
 
-int nxtask_create(FAR const char *name, int priority,
-                  int stack_size, main_t entry, FAR char * const argv[]);
+int kthread_create_with_stack(FAR const char *name, int priority,
+                              FAR void *stack_ptr, int stack_size,
+                              main_t entry, FAR char * const argv[]);
 
 /****************************************************************************
  * Name: kthread_create
@@ -125,20 +113,19 @@ int kthread_create(FAR const char *name, int priority, int stack_size,
  *   function is equivalent to task_delete.c; the following definition
  *   simply reserves the name in the name space.
  *
- *   Refer to comments with task_delete() for a more detailed description of
- *   the operation of this function.
+ *   Refer to comments with nxtask_delete() for a more detailed description
+ *   of the operation of this function.
  *
  * Input Parameters:
  *   pid - The task ID of the task to delete.  A pid of zero
  *         signifies the calling task.
  *
  * Returned Value:
- *   OK on success; or ERROR on failure with the errno variable set
- *   appropriately.
+ *   OK on success; or negated errno on failure.
  *
  ****************************************************************************/
 
-#define kthread_delete(p) task_delete(p)
+#define kthread_delete(p) nxtask_delete(p)
 
 #undef EXTERN
 #ifdef __cplusplus

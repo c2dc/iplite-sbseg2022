@@ -26,7 +26,7 @@ ifeq ($(CONFIG_ARCH_LEDS),y)
 CSRCS += tm4c_autoleds.c
 endif
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += tm4c_appinit.c
 endif
 
@@ -36,6 +36,10 @@ endif
 
 ifeq ($(CONFIG_TIVA_ADC),y)
 CSRCS += tm4c_adc.c
+endif
+
+ifeq ($(CONFIG_TIVA_CAN),y)
+  CSRCS += tm4c_can.c
 endif
 
 ifeq ($(CONFIG_CAN_MCP2515),y)

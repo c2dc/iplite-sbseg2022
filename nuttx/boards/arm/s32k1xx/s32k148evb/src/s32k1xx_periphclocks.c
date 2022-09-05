@@ -1,39 +1,6 @@
 /****************************************************************************
  * boards/arm/s32k1xx/s32k148evb/src/s32k1xx_periphclocks.c
  *
- *   Copyright (C) 2019 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *  notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *  notice, this list of conditions and the following disclaimer in
- *  the documentation and/or other materials provided with the
- *  distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *  used to endorse or promote products derived from this software
- *  without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * Most of the settings within this file derives from NXP sample code for
- * the S32K1XX MCUs.  That sample code has this licensing information:
- *
  *   Copyright (c) 2013 - 2015, Freescale Semiconductor, Inc.
  *   Copyright 2016-2018 NXP
  *   All rights reserved.
@@ -58,7 +25,9 @@
 
 #include <nuttx/config.h>
 
+#include "s32k14x/s32k14x_clocknames.h"
 #include "s32k1xx_periphclocks.h"
+
 #include "s32k148evb.h"
 
 /****************************************************************************
@@ -84,7 +53,7 @@ const struct peripheral_clock_config_s g_peripheral_clockconfig0[] =
   },
   {
     .clkname = FLEXCAN0_CLK,
-#ifdef CONFIG_S32K1XX_FLEXCAN
+#ifdef CONFIG_S32K1XX_FLEXCAN0
     .clkgate = true,
 #else
     .clkgate = false,
@@ -92,7 +61,7 @@ const struct peripheral_clock_config_s g_peripheral_clockconfig0[] =
   },
   {
     .clkname = FLEXCAN1_CLK,
-#ifdef CONFIG_S32K1XX_FLEXCAN
+#ifdef CONFIG_S32K1XX_FLEXCAN1
     .clkgate = true,
 #else
     .clkgate = false,
@@ -100,7 +69,7 @@ const struct peripheral_clock_config_s g_peripheral_clockconfig0[] =
   },
   {
     .clkname = FLEXCAN2_CLK,
-#ifdef CONFIG_S32K1XX_FLEXCAN
+#ifdef CONFIG_S32K1XX_FLEXCAN2
     .clkgate = true,
 #else
     .clkgate = false,

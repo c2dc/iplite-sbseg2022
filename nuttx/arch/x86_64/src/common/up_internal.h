@@ -31,6 +31,7 @@
 #  include <nuttx/compiler.h>
 #  include <nuttx/sched.h>
 #  include <stdint.h>
+#  include <arch/io.h>
 #endif
 
 /****************************************************************************
@@ -89,6 +90,26 @@
 # define CONFIG_ARCH_INTERRUPTSTACK 0
 #endif
 
+/* The initial stack point is aligned at 16 bytes boundaries. If
+ * necessary frame_size must be rounded up to the next boundary to retain
+ * this alignment.
+ */
+
+#define STACK_ALIGNMENT     16
+
+/* Stack alignment macros */
+
+#define STACK_ALIGN_MASK    (STACK_ALIGNMENT - 1)
+#define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
+#define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
+
+#define getreg8(p)          inb(p)
+#define putreg8(v,p)        outb(v,p)
+#define getreg16(p)         inw(p)
+#define putreg16(v,p)       outw(v,p)
+#define getreg32(p)         inl(p)
+#define putreg32(v,p)       outl(v,p)
+
 /* Macros to handle saving and restore interrupt state.  In the current
  * model, the state is copied from the stack to the TCB, but only a
  * referenced is passed to get the state from the TCB.
@@ -109,23 +130,19 @@ typedef void (*up_vector_t)(void);
  ****************************************************************************/
 
 #ifndef __ASSEMBLY__
-/* This holds a references to the current interrupt level register storage
- * structure.  If is non-NULL only during interrupt processing.
- */
-
-extern volatile uint64_t *g_current_regs;
 
 /* This is the beginning of heap as provided from up_head.S. This is the
  * first address in DRAM after the loaded program+bss+idle stack.  The
  * end of the heap is CONFIG_RAM_END
  */
 
-extern uint64_t g_idle_topstack;
+extern const uintptr_t g_idle_topstack;
 
 /* Address of the saved user stack pointer */
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
-extern uint64_t g_intstackbase;
+extern uint64_t g_intstackalloc;
+extern uint64_t g_intstacktop;
 #endif
 
 /* These 'addresses' of these values are setup by the linker script.  They
@@ -133,10 +150,10 @@ extern uint64_t g_intstackbase;
  * meaningfully in the following way:
  *
  *  - The linker script defines, for example, the symbol_sdata.
- *  - The declareion extern uint32_t _sdata; makes C happy.  C will believe
+ *  - The declaration extern uint32_t _sdata; makes C happy.  C will believe
  *    that the value _sdata is the address of a uint32_t variable _data
  *    (it is not!).
- *  - We can recoved the linker value then by simply taking the address of
+ *  - We can recover the linker value then by simply taking the address of
  *    of _data.  like:  uint32_t *pdata = &_sdata;
  */
 
@@ -158,6 +175,11 @@ extern uint64_t _ebss;            /* End+1 of .bss */
  ****************************************************************************/
 
 #ifndef __ASSEMBLY__
+/* Atomic modification of registers */
+
+void modifyreg8(unsigned int addr, uint8_t clearbits, uint8_t setbits);
+void modifyreg16(unsigned int addr, uint16_t clearbits, uint16_t setbits);
+void modifyreg32(unsigned int addr, uint32_t clearbits, uint32_t setbits);
 
 /****************************************************************************
  * Name: x86_64_boardinitialize
@@ -175,16 +197,13 @@ void x86_64_boardinitialize(void);
 void up_copystate(uint64_t *dest, uint64_t *src);
 void up_savestate(uint64_t *regs);
 void up_decodeirq(uint64_t *regs);
-void up_irqinitialize(void);
 #ifdef CONFIG_ARCH_DMA
 void weak_function up_dmainitialize(void);
 #endif
-int  up_saveusercontext(uint64_t *saveregs);
 void up_fullcontextrestore(uint64_t *restoreregs) noreturn_function;
 void up_switchcontext(uint64_t *saveregs, uint64_t *restoreregs);
 void up_sigdeliver(void);
 void up_lowputc(char ch);
-void up_puts(const char *str);
 void up_lowputs(const char *str);
 void up_restore_auxstate(struct tcb_s *rtcb);
 void up_checktasks(void);
@@ -204,10 +223,6 @@ void up_addregion(void);
 
 void up_earlyserialinit(void);
 void up_serialinit(void);
-
-/* Defined in xyz_watchdog.c */
-
-void up_wdtinit(void);
 
 /* Defined in xyz_timerisr.c */
 

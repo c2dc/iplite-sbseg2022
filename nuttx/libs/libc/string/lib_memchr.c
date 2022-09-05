@@ -44,21 +44,19 @@
  *
  ****************************************************************************/
 
+#undef memchr /* See mm/README.txt */
 FAR void *memchr(FAR const void *s, int c, size_t n)
 {
   FAR const unsigned char *p = (FAR const unsigned char *)s;
 
-  if (s)
+  while (n--)
     {
-      while (n--)
+      if (*p == (unsigned char)c)
         {
-          if (*p == (unsigned char)c)
-            {
-              return (FAR void *)p;
-            }
-
-          p++;
+          return (FAR void *)p;
         }
+
+      p++;
     }
 
   return NULL;

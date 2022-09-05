@@ -41,7 +41,7 @@
 
 /* Configuration ************************************************************/
 
-#ifdef CONFIG_LIB_BOARDCTL
+#ifdef CONFIG_BOARDCTL
 
 /* PORT and SLOT number probably depend on the board configuration */
 
@@ -100,7 +100,7 @@
 
 #else
 #  undef NSH_HAVEMMCSD
-#endif /* CONFIG_LIB_BOARDCTL */
+#endif /* CONFIG_BOARDCTL */
 
 /****************************************************************************
  * Public Functions
@@ -150,7 +150,7 @@ int board_app_initialize(uintptr_t arg)
 #endif
 
 #ifdef NSH_HAVEMMCSD
-  FAR struct spi_dev_s *ssp;
+  struct spi_dev_s *ssp;
 
   /* Get the SSP port */
 

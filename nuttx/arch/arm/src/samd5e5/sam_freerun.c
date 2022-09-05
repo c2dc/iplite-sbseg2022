@@ -1,10 +1,6 @@
 /****************************************************************************
  * arch/arm/src/samd5e5/sam_freerun.c
  *
- *   Copyright 2020 Falker Automacao Agricola LTDA.
- *   Author: Leomar Mateus Radke <leomar@falker.com.br>
- *   Author: Ricardo Wartchow <wartchow@gmail.com>
- *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.  The
@@ -125,8 +121,7 @@ int sam_freerun_initialize(struct sam_freerun_s *freerun, int chan,
 
   /* Set up to receive the callback when the counter overflow occurs */
 
-  (void)sam_tc_attach(freerun->tch, sam_freerun_handler,
-                      freerun, TC_INTFLAG_OVF);
+  sam_tc_attach(freerun->tch, sam_freerun_handler, freerun, TC_INTFLAG_OVF);
 
   /* Start the counter */
 
@@ -245,7 +240,7 @@ int sam_freerun_uninitialize(struct sam_freerun_s *freerun)
 
   /* Now we can disable the timer interrupt and disable the timer. */
 
-  sam_tc_attach(freerun->tch, NULL, NULL, 0);
+  sam_tc_detach(freerun->tch);
   sam_tc_stop(freerun->tch);
 
   /* Free the timer */

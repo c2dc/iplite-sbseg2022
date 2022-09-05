@@ -48,8 +48,7 @@
 #include <stdint.h>
 #include <assert.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "hardware/tms570_esm.h"
 #include "hardware/tms570_sys.h"
 #include "hardware/tms570_sys2.h"
@@ -518,7 +517,7 @@ static void tms570_peripheral_initialize(void)
  *
  ****************************************************************************/
 
-static void tms570_pin_multiplex(FAR const struct tms570_pinmux_s *pinmux)
+static void tms570_pin_multiplex(const struct tms570_pinmux_s *pinmux)
 {
   uintptr_t regaddr;
   uint32_t  regval;

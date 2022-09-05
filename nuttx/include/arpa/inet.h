@@ -32,38 +32,6 @@
 #include <netinet/in.h>
 
 /****************************************************************************
- * Public Type Definitions
- ****************************************************************************/
-
-/* This macro to convert a 16/32-bit constant values quantity from host byte
- * order to network byte order.  The 16-bit version of this macro is required
- * for uIP:
- *
- *   Author Adam Dunkels <adam@dunkels.com>
- *   Copyright (c) 2001-2003, Adam Dunkels.
- *   All rights reserved.
- */
-
-#ifdef CONFIG_ENDIAN_BIG
-# define HTONS(ns) (ns)
-# define HTONL(nl) (nl)
-#else
-# define HTONS(ns) \
-  (unsigned short) \
-    (((((unsigned short)(ns)) & 0x00ff) << 8) | \
-     ((((unsigned short)(ns)) >> 8) & 0x00ff))
-# define HTONL(nl) \
-  (unsigned long) \
-    (((((unsigned long)(nl)) & 0x000000ffUL) << 24) | \
-     ((((unsigned long)(nl)) & 0x0000ff00UL) <<  8) | \
-     ((((unsigned long)(nl)) & 0x00ff0000UL) >>  8) | \
-     ((((unsigned long)(nl)) & 0xff000000UL) >> 24))
-#endif
-
-#define NTOHS(hs) HTONS(hs)
-#define NTOHL(hl) HTONL(hl)
-
-/****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
 
@@ -75,22 +43,6 @@ extern "C"
 #define EXTERN extern
 #endif
 
-/* Functions to convert between host and network byte ordering.
- *
- * REVISIT:  Since network order is defined as big-endian, the following
- * functions are equivalent to functions declared in endian.h:
- *
- *   htonl   htobe32
- *   htons   htobe16
- *   ntohl   be32toh
- *   ntohs   be16toh
- */
-
-uint32_t    ntohl(uint32_t nl);
-uint16_t    ntohs(uint16_t ns);
-uint32_t    htonl(uint32_t hl);
-uint16_t    htons(uint16_t hs);
-
 /* Functions to manipulate address representations */
 
 int         inet_aton(FAR const char *cp, FAR struct in_addr *inp);
@@ -98,6 +50,7 @@ in_addr_t   inet_addr(FAR const char *cp);
 in_addr_t   inet_network(FAR const char *cp);
 
 FAR char   *inet_ntoa(struct in_addr in);
+FAR char   *inet_ntoa_r(struct in_addr in, FAR char *buf, size_t bufflen);
 in_addr_t   inet_lnaof(struct in_addr in);
 in_addr_t   inet_netof(struct in_addr in);
 

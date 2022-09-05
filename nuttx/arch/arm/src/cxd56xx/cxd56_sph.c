@@ -32,10 +32,11 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 
 #include "hardware/cxd56_sph.h"
@@ -75,14 +76,14 @@ struct sph_dev_s
  * Private Function Prototypes
  ****************************************************************************/
 
-static int sph_open(FAR struct file *filep);
-static int sph_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
+static int sph_open(struct file *filep);
+static int sph_ioctl(struct file *filep, int cmd, unsigned long arg);
 static int sph_semtake(sem_t *id);
 static void sph_semgive(sem_t *id);
-static int sph_lock(FAR struct sph_dev_s *priv);
-static int sph_trylock(FAR struct sph_dev_s *priv);
-static inline int sph_unlock(FAR struct sph_dev_s *priv);
-static int cxd56_sphirqhandler(int irq, FAR void *context, FAR void *arg);
+static int sph_lock(struct sph_dev_s *priv);
+static int sph_trylock(struct sph_dev_s *priv);
+static inline int sph_unlock(struct sph_dev_s *priv);
+static int cxd56_sphirqhandler(int irq, void *context, void *arg);
 
 /****************************************************************************
  * Private Data
@@ -91,11 +92,7 @@ static int cxd56_sphirqhandler(int irq, FAR void *context, FAR void *arg);
 static const struct file_operations sph_fops =
 {
   .open  = sph_open,
-  .close = 0,
-  .read  = 0,
-  .write = 0,
-  .seek  = 0,
-  .ioctl = sph_ioctl,
+  .ioctl = sph_ioctl
 };
 
 static struct sph_dev_s g_sphdev[NR_HSEMS];
@@ -105,7 +102,7 @@ static int g_cpuid;
  * Private Functions
  ****************************************************************************/
 
-static int sph_open(FAR struct file *filep)
+static int sph_open(struct file *filep)
 {
   /* Exclusive access */
 
@@ -117,10 +114,10 @@ static int sph_open(FAR struct file *filep)
   return OK;
 }
 
-static int sph_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
+static int sph_ioctl(struct file *filep, int cmd, unsigned long arg)
 {
-  FAR struct sph_dev_s *priv =
-    (FAR struct sph_dev_s *)filep->f_inode->i_private;
+  struct sph_dev_s *priv =
+    (struct sph_dev_s *)filep->f_inode->i_private;
   int ret = -ENOTTY;
 
   hsinfo("cmd = %x\n", cmd);
@@ -161,7 +158,7 @@ static void sph_semgive(sem_t *id)
   nxsem_post(id);
 }
 
-static int sph_lock(FAR struct sph_dev_s *priv)
+static int sph_lock(struct sph_dev_s *priv)
 {
   uint32_t sts;
   int ret;
@@ -204,7 +201,7 @@ static int sph_lock(FAR struct sph_dev_s *priv)
   return OK;
 }
 
-static int sph_trylock(FAR struct sph_dev_s *priv)
+static int sph_trylock(struct sph_dev_s *priv)
 {
   uint32_t sts;
 
@@ -224,22 +221,22 @@ static int sph_trylock(FAR struct sph_dev_s *priv)
   return -EBUSY;
 }
 
-static inline int sph_unlock(FAR struct sph_dev_s *priv)
+static inline int sph_unlock(struct sph_dev_s *priv)
 {
   putreg32(REQ_UNLOCK, CXD56_SPH_REQ(priv->id));
   hsinfo("hsem%d is unlocked.\n", priv->id);
   return OK;
 }
 
-static inline int cxd56_sphdevinit(FAR const char *devname, int num)
+static inline int cxd56_sphdevinit(const char *devname, int num)
 {
-  FAR struct sph_dev_s *priv = &g_sphdev[num];
+  struct sph_dev_s *priv = &g_sphdev[num];
   char fullpath[64];
   int ret;
 
   snprintf(fullpath, sizeof(fullpath), "/dev/%s%d", devname, num);
 
-  ret = register_driver(fullpath, &sph_fops, 0666, (FAR void *)priv);
+  ret = register_driver(fullpath, &sph_fops, 0666, (void *)priv);
   if (ret != 0)
     {
       return ERROR;
@@ -255,7 +252,7 @@ static inline int cxd56_sphdevinit(FAR const char *devname, int num)
   return OK;
 }
 
-static int cxd56_sphirqhandler(int irq, FAR void *context, FAR void *arg)
+static int cxd56_sphirqhandler(int irq, void *context, void *arg)
 {
   int id;
 
@@ -280,7 +277,7 @@ static int cxd56_sphirqhandler(int irq, FAR void *context, FAR void *arg)
  * Public Functions
  ****************************************************************************/
 
-int cxd56_sphinitialize(FAR const char *devname)
+int cxd56_sphinitialize(const char *devname)
 {
   int ret;
   int i;

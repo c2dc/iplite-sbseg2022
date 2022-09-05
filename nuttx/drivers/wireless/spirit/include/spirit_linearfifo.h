@@ -1,13 +1,9 @@
 /******************************************************************************
  * drivers/wireless/spirit/include/spirit_linearfifo.h
- * Configuration and management of SPIRIT Fifo.
  *
  *   Copyright(c) 2015 STMicroelectronics
  *   Author: VMA division - AMS
  *   Version 3.2.2 08-July-2015
- *
- *   Adapted for NuttX by:
- *   Author:  Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -36,8 +32,8 @@
  *
  ******************************************************************************/
 
-#ifndef __DRIVERS_WIRELESS_SPIRIT_INCLUDE_SPIRIT_FIFO_H
-#define __DRIVERS_WIRELESS_SPIRIT_INCLUDE_SPIRIT_FIFO_H
+#ifndef __DRIVERS_WIRELESS_SPIRIT_INCLUDE_SPIRIT_LINEARFIFO_H
+#define __DRIVERS_WIRELESS_SPIRIT_INCLUDE_SPIRIT_LINEARFIFO_H
 
 /******************************************************************************
  * Included Files
@@ -259,4 +255,4 @@ uint8_t spirit_fifo_get_txalmostempty(FAR struct spirit_library_s *spirit);
 }
 #endif
 
-#endif /* __DRIVERS_WIRELESS_SPIRIT_INCLUDE_SPIRIT_FIFO_H */
+#endif /* __DRIVERS_WIRELESS_SPIRIT_INCLUDE_SPIRIT_LINEARFIFO_H */

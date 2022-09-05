@@ -26,6 +26,7 @@
 #include "at32uc3_config.h"
 
 #include <stdint.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -33,7 +34,6 @@
 #include <nuttx/arch.h>
 #include <arch/irq.h>
 
-#include "up_arch.h"
 #include "up_internal.h"
 #include "at32uc3.h"
 

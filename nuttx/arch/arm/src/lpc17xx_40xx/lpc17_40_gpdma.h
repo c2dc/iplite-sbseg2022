@@ -39,7 +39,7 @@
 #ifdef CONFIG_LPC17_40_GPDMA
 /* DMA_HANDLE is an opaque reference to an allocated DMA channel */
 
-typedef FAR void *DMA_HANDLE;
+typedef void *DMA_HANDLE;
 
 /* dma_callback_t a function pointer provided to lpc17_40_dmastart.  This
  * function is called at the completion of the DMA transfer.  'arg' is the
@@ -149,9 +149,9 @@ void lpc17_40_dmaconfigure(uint8_t dmarequest, bool alternate);
  *   gives the caller exclusive access to the DMA channel.
  *
  * Returned Value:
- *   One success, this function returns a non-NULL, void* DMA channel
- *   handle.  NULL is returned on any failure.  This function can fail only
- *   if no DMA channel is available.
+ *   On success, this function returns a non-NULL, void* DMA channel handle.
+ *   NULL is returned on any failure.  This function can fail only if no DMA
+ *   channel is available.
  *
  ****************************************************************************/
 

@@ -59,9 +59,9 @@
  ****************************************************************************/
 
 #define IPv6BUF \
-  ((struct ipv6_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
+  ((FAR struct ipv6_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
 #define ICMPv6BUF \
-  ((struct icmpv6_echo_request_s *)&dev->d_buf[NET_LL_HDRLEN(dev) + IPv6_HDRLEN])
+  ((FAR struct icmpv6_echo_request_s *)&dev->d_buf[NET_LL_HDRLEN(dev) + IPv6_HDRLEN])
 
 /****************************************************************************
  * Private Types
@@ -168,7 +168,6 @@ static void sendto_request(FAR struct net_driver_s *dev,
  * Input Parameters:
  *   dev        The structure of the network driver that generated the
  *              event
- *   pvconn     The received packet, cast to (void *)
  *   pvpriv     An instance of struct icmpv6_sendto_s cast to (void *)
  *   flags      Set of events describing why the callback was invoked
  *
@@ -181,10 +180,9 @@ static void sendto_request(FAR struct net_driver_s *dev,
  ****************************************************************************/
 
 static uint16_t sendto_eventhandler(FAR struct net_driver_s *dev,
-                                    FAR void *pvconn,
                                     FAR void *pvpriv, uint16_t flags)
 {
-  FAR struct icmpv6_sendto_s *pstate = (struct icmpv6_sendto_s *)pvpriv;
+  FAR struct icmpv6_sendto_s *pstate = pvpriv;
 
   ninfo("flags: %04x\n", flags);
 
@@ -349,7 +347,7 @@ ssize_t icmpv6_sendmsg(FAR struct socket *psock, FAR struct msghdr *msg,
       conn->nreqs = 0;
       conn->dev   = NULL;
 
-      iob_free_queue(&conn->readahead, IOBUSER_NET_SOCK_ICMPv6);
+      iob_free_queue(&conn->readahead);
     }
 
 #ifdef CONFIG_NET_ICMPv6_NEIGHBOR
@@ -409,7 +407,8 @@ ssize_t icmpv6_sendmsg(FAR struct socket *psock, FAR struct msghdr *msg,
        * net_timedwait will also terminate if a signal is received.
        */
 
-      ret = net_timedwait(&state.snd_sem, _SO_TIMEOUT(psock->s_sndtimeo));
+      ret = net_timedwait(&state.snd_sem,
+                          _SO_TIMEOUT(conn->sconn.s_sndtimeo));
       if (ret < 0)
         {
           if (ret == -ETIMEDOUT)
@@ -428,6 +427,10 @@ ssize_t icmpv6_sendmsg(FAR struct socket *psock, FAR struct msghdr *msg,
                    */
 
                   ret = -ENETUNREACH;
+                }
+              else
+                {
+                  ret = -EAGAIN;
                 }
             }
 
@@ -457,7 +460,7 @@ errout:
   conn->nreqs = 0;
   conn->dev   = NULL;
 
-  iob_free_queue(&conn->readahead, IOBUSER_NET_SOCK_ICMPv6);
+  iob_free_queue(&conn->readahead);
   return ret;
 }
 

@@ -1,36 +1,20 @@
 /****************************************************************************
  * crypto/random_pool.c
  *
- *   Copyright (C) 2015-2017 Haltian Ltd. All rights reserved.
- *   Authors: Juha Niskanen <juha.niskanen@haltian.com>
- *            Jussi Kivilinna <jussi.kivilinna@haltian.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -43,15 +27,14 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <unistd.h>
 #include <debug.h>
 #include <assert.h>
 #include <errno.h>
 
-#include <nuttx/arch.h>
 #include <nuttx/random.h>
 #include <nuttx/board.h>
-
+#include <nuttx/clock.h>
+#include <nuttx/semaphore.h>
 #include <nuttx/crypto/blake2s.h>
 
 /****************************************************************************
@@ -175,7 +158,7 @@ static void addentropy(FAR const uint32_t *buf, size_t n, bool inc_new)
       uint32_t i;
 
       rotate = g_rng.rd_rotate;
-      w = ROTL_32(*buf, rotate);
+      w = rotate ? ROTL_32(*buf, rotate) : *buf;
       i = g_rng.rd_addptr = (g_rng.rd_addptr - 1) & POOL_MASK;
 
       /* Normal round, we add 7 bits of rotation to the pool.
@@ -323,7 +306,7 @@ static void rng_reseed(void)
   g_rng.output_initialized = true;
 }
 
-static void rng_buf_internal(FAR void *bytes, size_t nbytes)
+static void rng_buf_internal(FAR uint8_t *bytes, size_t nbytes)
 {
   if (!g_rng.output_initialized)
     {
@@ -462,8 +445,8 @@ void up_rngaddentropy(enum rnd_source_t kindof, FAR const uint32_t *buf,
    * reseeding too fast.
    */
 
-  clock_gettime(CLOCK_REALTIME, &ts);
-  tbuf[0] = ROTL_32(ts.tv_nsec, 17) ^ ROTL_32(ts.tv_sec, 3);
+  clock_systime_timespec(&ts);
+  tbuf[0] = ROTL_32((uint32_t)ts.tv_nsec, 17) ^ ROTL_32(ts.tv_sec, 3);
   tbuf[0] += ROTL_32(kindof, 27);
   tbuf[0] += ROTL_32((uintptr_t)&tbuf[0], 11);
 

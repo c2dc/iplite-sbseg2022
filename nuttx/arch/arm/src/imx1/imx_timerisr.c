@@ -31,7 +31,6 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "clock/clock.h"
 #include "arm_internal.h"
 
@@ -48,7 +47,7 @@
  *
  ****************************************************************************/
 
-static int imx_timerisr(int irq, uint32_t *regs, FAR void *arg)
+static int imx_timerisr(int irq, uint32_t *regs, void *arg)
 {
   uint32_t tstat;
   int    ret = -EIO;

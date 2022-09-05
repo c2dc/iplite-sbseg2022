@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_S32K1XX_LOWPUTC_H
-#define __ARCH_ARM_SRC_S32K1XX_LOWPUTC_H
+#ifndef __ARCH_ARM_SRC_S32K1XX_S32K1XX_LOWPUTC_H
+#define __ARCH_ARM_SRC_S32K1XX_S32K1XX_LOWPUTC_H
 
 /****************************************************************************
  * Included Files
@@ -82,7 +82,7 @@ void s32k1xx_lowsetup(void);
 
 #ifdef HAVE_LPUART_DEVICE
 int s32k1xx_lpuart_configure(uint32_t base,
-                             FAR const struct uart_config_s *config);
+                             const struct uart_config_s *config);
 #endif
 
 /****************************************************************************
@@ -101,4 +101,4 @@ void s32k1xx_lowputc(int ch);
 #  define s32k1xx_lowputc(ch)
 #endif
 
-#endif /* __ARCH_ARM_SRC_S32K1XX_LOWPUTC_H */
+#endif /* __ARCH_ARM_SRC_S32K1XX_S32K1XX_LOWPUTC_H */

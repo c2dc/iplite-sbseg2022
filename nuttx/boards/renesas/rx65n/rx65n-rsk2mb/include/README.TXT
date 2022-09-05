@@ -3,10 +3,10 @@ README
 
   Overview
   --------
-  This directory contains logic to support a custom ROMFS start-up script.
-  This startup script is used by by the NSH when it starts provided that
-  CONFIG_NSH_ARCHROMFS=y.  The script provides a ROMFS volume that will be
-  mounted at /etc and will look like this at run-time:
+  This directory contains logic to support a custom ROMFS system-init script
+  and start-up script.  These scripts are used by by the NSH when it starts
+  provided that CONFIG_NSH_ARCHROMFS=y.  These scripts provide a ROMFS volume
+  that will be mounted at /etc and will look like this at run-time:
 
     NuttShell (NSH) NuttX-8.2
     nsh> ls -l /etc
@@ -18,13 +18,14 @@ README
     /etc/init.d:
      dr-xr-xr-x       0 ..
      -r--r--r--     110 rcS
+     -r--r--r--     110 rc.sysinit
     nsh>
 
-  /etc/init.d/rcS is the start-up script; /etc/passwd is a the password
-  file.  It supports a single user:
+  /etc/init.d/rc.sysinit is system init script; /etc/init.d/rcS is the start-up
+  script; /etc/passwd is a the password file.  It supports a single user:
 
     USERNAME:  admin
-    PASSWORD:  Adminstrator
+    PASSWORD:  Administrator
 
     nsh> cat /etc/passwd
     admin:8Tv+Hbmr3pLddSjtzL0kwC:0:0:/
@@ -64,7 +65,6 @@ README
   ------------------------------
   The content on the nsh_romfsimg.h header file is generated from a sample
   directory structure.  That directory structure is contained in the etc/ directory and can be modified per the following steps:
-
 
     1. Change directory to etc/:
 

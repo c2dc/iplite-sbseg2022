@@ -36,9 +36,7 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/drivers/drivers.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "sam_periphclks.h"
 #include "sam_trng.h"
 
@@ -51,7 +49,7 @@
 
 /* Interrupts */
 
-static int sam_interrupt(int irq, void *context, FAR void *arg);
+static int sam_interrupt(int irq, void *context, void *arg);
 
 /* Character driver methods */
 
@@ -86,6 +84,9 @@ static const struct file_operations g_trngops =
   NULL,            /* seek */
   NULL,            /* ioctl */
   NULL             /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL           /* unlink */
+#endif
 };
 
 /****************************************************************************
@@ -105,7 +106,7 @@ static const struct file_operations g_trngops =
  *
  ****************************************************************************/
 
-static int sam_interrupt(int irq, void *context, FAR void *arg)
+static int sam_interrupt(int irq, void *context, void *arg)
 {
   uint32_t odata;
 
@@ -402,7 +403,7 @@ void devrandom_register(void)
   ret = sam_rng_initialize();
   if (ret >= 0)
     {
-      ret = register_driver("/dev/random", &g_trngops, 0644, NULL);
+      ret = register_driver("/dev/random", &g_trngops, 0444, NULL);
       if (ret < 0)
         {
           ferr("ERROR: Failed to register /dev/random\n");
@@ -435,7 +436,7 @@ void devurandom_register(void)
   if (ret >= 0)
 #endif
     {
-      ret = register_driver("/dev/urandom", &g_trngops, 0644, NULL);
+      ret = register_driver("/dev/urandom", &g_trngops, 0444, NULL);
       if (ret < 0)
         {
           ferr("ERROR: Failed to register /dev/urandom\n");

@@ -52,7 +52,7 @@ extern "C"
  * Public Types
  ****************************************************************************/
 
-typedef FAR void *DMA_HANDLE;
+typedef void *DMA_HANDLE;
 typedef void (*dma_callback_t)(DMA_HANDLE handle, void *arg, int result);
 
 /* The following is used for sampling DMA registers when CONFIG DEBUG_DMA
@@ -111,9 +111,9 @@ void kl_dmainitilaize(void);
  *   gives the caller exclusive access to the DMA channel.
  *
  * Returned Value:
- *   One success, this function returns a non-NULL, void* DMA channel
- *   handle.  NULL is returned on any failure.  This function can fail only
- *   if no DMA channel is available.
+ *   On success, this function returns a non-NULL, void* DMA channel handle.
+ *   NULL is returned on any failure.  This function can fail only if no DMA
+ *   channel is available.
  *
  ****************************************************************************/
 

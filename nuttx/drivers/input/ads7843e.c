@@ -1,37 +1,20 @@
 /****************************************************************************
  * drivers/input/ads7843e.c
  *
- *   Copyright (C) 2011-2012, 2014, 2016-2017 Gregory Nutt. All rights
- *     reserved.
- *   Authors: Gregory Nutt <gnutt@nuttx.org>
- *            Diego Sanchez <dsanchez@nx-engineering.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -102,15 +85,15 @@ static void ads7843e_lock(FAR struct spi_dev_s *spi);
 static void ads7843e_unlock(FAR struct spi_dev_s *spi);
 
 static uint16_t ads7843e_sendcmd(FAR struct ads7843e_dev_s *priv,
-              uint8_t cmd);
+                                 uint8_t cmd);
 
 /* Interrupts and data sampling */
 
 static void ads7843e_notify(FAR struct ads7843e_dev_s *priv);
 static int  ads7843e_sample(FAR struct ads7843e_dev_s *priv,
-                           FAR struct ads7843e_sample_s *sample);
+                            FAR struct ads7843e_sample_s *sample);
 static int  ads7843e_waitsample(FAR struct ads7843e_dev_s *priv,
-                               FAR struct ads7843e_sample_s *sample);
+                                FAR struct ads7843e_sample_s *sample);
 static void ads7843e_worker(FAR void *arg);
 static int  ads7843e_interrupt(int irq, FAR void *context, FAR void *arg);
 
@@ -119,11 +102,11 @@ static int  ads7843e_interrupt(int irq, FAR void *context, FAR void *arg);
 static int  ads7843e_open(FAR struct file *filep);
 static int  ads7843e_close(FAR struct file *filep);
 static ssize_t ads7843e_read(FAR struct file *filep, FAR char *buffer,
-              size_t len);
+                             size_t len);
 static int  ads7843e_ioctl(FAR struct file *filep, int cmd,
-              unsigned long arg);
+                           unsigned long arg);
 static int  ads7843e_poll(FAR struct file *filep, struct pollfd *fds,
-              bool setup);
+                          bool setup);
 
 /****************************************************************************
  * Private Data
@@ -136,10 +119,13 @@ static const struct file_operations ads7843e_fops =
   ads7843e_open,    /* open */
   ads7843e_close,   /* close */
   ads7843e_read,    /* read */
-  0,                /* write */
-  0,                /* seek */
+  NULL,             /* write */
+  NULL,             /* seek */
   ads7843e_ioctl,   /* ioctl */
   ads7843e_poll     /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL            /* unlink */
+#endif
 };
 
 /* If only a single ADS7843E device is supported, then the driver state
@@ -307,7 +293,7 @@ static void ads7843e_notify(FAR struct ads7843e_dev_s *priv)
       if (fds)
         {
           fds->revents |= POLLIN;
-          iinfo("Report events: %02x\n", fds->revents);
+          iinfo("Report events: %08" PRIx32 "\n", fds->revents);
           nxsem_post(fds->sem);
         }
     }
@@ -331,7 +317,7 @@ static void ads7843e_notify(FAR struct ads7843e_dev_s *priv)
  ****************************************************************************/
 
 static int ads7843e_sample(FAR struct ads7843e_dev_s *priv,
-                          FAR struct ads7843e_sample_s *sample)
+                           FAR struct ads7843e_sample_s *sample)
 {
   irqstate_t flags;
   int ret = -EAGAIN;
@@ -1032,7 +1018,7 @@ static int ads7843e_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
  ****************************************************************************/
 
 static int ads7843e_poll(FAR struct file *filep, FAR struct pollfd *fds,
-                        bool setup)
+                         bool setup)
 {
   FAR struct inode *inode;
   FAR struct ads7843e_dev_s *priv;
@@ -1217,7 +1203,7 @@ int ads7843e_register(FAR struct spi_dev_s *spi,
 
   /* Register the device as an input device */
 
-  snprintf(devname, DEV_NAMELEN, DEV_FORMAT, minor);
+  snprintf(devname, sizeof(devname), DEV_FORMAT, minor);
   iinfo("Registering %s\n", devname);
 
   ret = register_driver(devname, &ads7843e_fops, 0666, priv);
@@ -1233,6 +1219,7 @@ int ads7843e_register(FAR struct spi_dev_s *spi,
    */
 
 #ifdef CONFIG_ADS7843E_MULTIPLE
+  flags = enter_critical_section();
   priv->flink    = g_ads7843elist;
   g_ads7843elist = priv;
   leave_critical_section(flags);

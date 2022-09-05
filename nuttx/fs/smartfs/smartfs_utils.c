@@ -1,35 +1,20 @@
 /****************************************************************************
  * fs/smartfs/smartfs_utils.c
  *
- *   Copyright (C) 2013-2014 Ken Pettit. All rights reserved.
- *   Author: Ken Pettit <pettitkd@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -544,8 +529,7 @@ int smartfs_finddirentry(struct smartfs_mountpt_s *fs,
           goto errout;
         }
 
-      strncpy(fs->fs_workbuffer, segment, seglen);
-      fs->fs_workbuffer[seglen] = '\0';
+      strlcpy(fs->fs_workbuffer, segment, seglen + 1);
 
       /* Search for "." and ".." as segment names */
 
@@ -684,10 +668,8 @@ int smartfs_finddirentry(struct smartfs_mountpt_s *fs,
                                 kmm_malloc(fs->fs_llformat.namesize + 1);
                             }
 
-                          memset(direntry->name, 0,
-                                 fs->fs_llformat.namesize + 1);
-                          strncpy(direntry->name, entry->name,
-                                  fs->fs_llformat.namesize);
+                          strlcpy(direntry->name, entry->name,
+                                  fs->fs_llformat.namesize + 1);
                           direntry->datlen = 0;
 
                           /* Scan the file's sectors to calculate the length
@@ -698,13 +680,15 @@ int smartfs_finddirentry(struct smartfs_mountpt_s *fs,
                           if ((smartfs_rdle16(&entry->flags) &
                                 SMARTFS_DIRENT_TYPE) ==
                               SMARTFS_DIRENT_TYPE_FILE)
-                            {
-                              dirsector =
-                                smartfs_rdle16(&entry->firstsector);
 #else
                           if ((entry->flags & SMARTFS_DIRENT_TYPE) ==
                               SMARTFS_DIRENT_TYPE_FILE)
+#endif
                             {
+#ifdef CONFIG_SMARTFS_ALIGNED_ACCESS
+                              dirsector =
+                                smartfs_rdle16(&entry->firstsector);
+#else
                               dirsector = entry->firstsector;
 #endif
                               readwrite.count =
@@ -730,11 +714,11 @@ int smartfs_finddirentry(struct smartfs_mountpt_s *fs,
                                    * to next sector
                                    */
 
-                                  if (*((FAR uint16_t *)header->used) !=
+                                  if (SMARTFS_USED(header) !=
                                       SMARTFS_ERASEDSTATE_16BIT)
                                     {
                                       direntry->datlen +=
-                                        *((uint16_t *)header->used);
+                                        SMARTFS_USED(header);
                                     }
 
                                   dirsector = SMARTFS_NEXTSECTOR(header);
@@ -1069,7 +1053,7 @@ int smartfs_createentry(FAR struct smartfs_mountpt_s *fs,
   entry->utc = time(NULL);
 #endif
   memset(entry->name, 0, fs->fs_llformat.namesize);
-  strncpy(entry->name, filename, fs->fs_llformat.namesize);
+  strlcpy(entry->name, filename, fs->fs_llformat.namesize);
 
   /* Now write the new entry to the parent directory sector */
 
@@ -1115,7 +1099,7 @@ int smartfs_createentry(FAR struct smartfs_mountpt_s *fs,
     }
 
   memset(direntry->name, 0, fs->fs_llformat.namesize + 1);
-  strncpy(direntry->name, filename, fs->fs_llformat.namesize);
+  strlcpy(direntry->name, filename, fs->fs_llformat.namesize);
 
   ret = OK;
 
@@ -1309,7 +1293,7 @@ int smartfs_deleteentry(struct smartfs_mountpt_s *fs,
                 {
                   /* We found ourselves in the chain.  Update the chain. */
 
-                  SMARTFS_NEXTSECTOR(header) = nextsector;
+                  SMARTFS_SET_NEXTSECTOR(header, nextsector);
                   readwrite.offset = offsetof(struct smartfs_chain_header_s,
                                               nextsector);
                   readwrite.count  = sizeof(uint16_t);
@@ -1465,13 +1449,15 @@ int smartfs_sync_internal(FAR struct smartfs_mountpt_s *fs,
       /* Update the header with the number of bytes written */
 
       header = (struct smartfs_chain_header_s *)sf->buffer;
-      if (*((uint16_t *)header->used) == SMARTFS_ERASEDSTATE_16BIT)
+
+      if (SMARTFS_USED(header) == SMARTFS_ERASEDSTATE_16BIT)
         {
-          *((uint16_t *)header->used) = sf->byteswritten;
+          SMARTFS_SET_USED(header, sf->byteswritten);
         }
       else
         {
-          *((uint16_t *)header->used) += sf->byteswritten;
+          SMARTFS_SET_USED(header, SMARTFS_USED(header)
+                                   + sf->byteswritten);
         }
 
       /* Write the entire sector to FLASH */
@@ -1520,13 +1506,15 @@ int smartfs_sync_internal(FAR struct smartfs_mountpt_s *fs,
       /* Add new byteswritten to existing value */
 
       header = (struct smartfs_chain_header_s *) fs->fs_rwbuffer;
-      if (*((uint16_t *) header->used) == SMARTFS_ERASEDSTATE_16BIT)
+
+      if (SMARTFS_USED(header) == SMARTFS_ERASEDSTATE_16BIT)
         {
-          *((uint16_t *) header->used) = sf->byteswritten;
+          SMARTFS_SET_USED(header, sf->byteswritten);
         }
       else
         {
-          *((uint16_t *) header->used) += sf->byteswritten;
+          SMARTFS_SET_USED(header, SMARTFS_USED(header)
+                                   + sf->byteswritten);
         }
 
       readwrite.offset = offsetof(struct smartfs_chain_header_s, used);
@@ -1778,8 +1766,8 @@ int smartfs_shrinkfile(FAR struct smartfs_mountpt_s *fs,
               remaining = 0;
             }
         }
-      else
 #endif
+
       /* Are we retaining the sector it its entirety? */
 
       if (remaining >= available)
@@ -1829,9 +1817,8 @@ int smartfs_shrinkfile(FAR struct smartfs_mountpt_s *fs,
               dest       = (FAR uint8_t *)&fs->fs_rwbuffer[offset];
               destsize   = fs->fs_llformat.availbytes - offset;
 
-              *((uint16_t *)header->used)       = remaining;
-              *((uint16_t *)header->nextsector) = SMARTFS_ERASEDSTATE_16BIT;
-
+              SMARTFS_SET_USED(header, remaining);
+              SMARTFS_SET_NEXTSECTOR(header, SMARTFS_ERASEDSTATE_16BIT);
               remaining  = 0;
             }
 
@@ -1895,8 +1882,9 @@ int smartfs_shrinkfile(FAR struct smartfs_mountpt_s *fs,
           destsize   = fs->fs_llformat.availbytes - offset;
 
           header     = (struct smartfs_chain_header_s *)sf->buffer;
-          *((uint16_t *)header->used)       = length;
-          *((uint16_t *)header->nextsector) = SMARTFS_ERASEDSTATE_16BIT;
+
+          SMARTFS_SET_USED(header, length);
+          SMARTFS_SET_NEXTSECTOR(header, SMARTFS_ERASEDSTATE_16BIT);
         }
 
       memset(dest, CONFIG_SMARTFS_ERASEDSTATE, destsize);
@@ -2043,7 +2031,7 @@ int smartfs_extendfile(FAR struct smartfs_mountpt_s *fs,
           /* Copy the new sector to the old one and chain it */
 
           header = (struct smartfs_chain_header_s *) sf->buffer;
-          *((uint16_t *)header->nextsector) = (uint16_t)ret;
+          SMARTFS_SET_NEXTSECTOR(header, (uint16_t)ret);
 
           /* Now sync the file to write this sector out */
 
@@ -2099,7 +2087,7 @@ int smartfs_extendfile(FAR struct smartfs_mountpt_s *fs,
               /* Copy the new sector to the old one and chain it */
 
               header = (struct smartfs_chain_header_s *)fs->fs_rwbuffer;
-              *((FAR uint16_t *)header->nextsector) = (uint16_t)ret;
+              SMARTFS_SET_NEXTSECTOR(header, (uint16_t)ret);
 
               readwrite.offset = offsetof(struct smartfs_chain_header_s,
                                           nextsector);

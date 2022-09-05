@@ -30,31 +30,14 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#ifndef __ASSEMBLY__
+#  include <stddef.h>
+#  include <stdint.h>
+#endif
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
-
-/****************************************************************************
- * Inline functions
- ****************************************************************************/
-
-/****************************************************************************
- * Name: xtensa_getsp
- ****************************************************************************/
-
-static inline uint32_t xtensa_getsp(void)
-{
-  register uint32_t sp;
-
-  __asm__ __volatile__
-  (
-    "mov %0, sp\n"
-    : "=r" (sp)
-  );
-
-  return sp;
-}
 
 /****************************************************************************
  * Public Types
@@ -138,7 +121,7 @@ void *xtensa_imm_zalloc(size_t size);
  *
  ****************************************************************************/
 
-void xtensa_imm_free(FAR void *mem);
+void xtensa_imm_free(void *mem);
 
 /****************************************************************************
  * Name: xtensa_imm_memalign
@@ -169,7 +152,7 @@ void *xtensa_imm_memalign(size_t alignment, size_t size);
  *
  ****************************************************************************/
 
-bool xtensa_imm_heapmember(FAR void *mem);
+bool xtensa_imm_heapmember(void *mem);
 
 /****************************************************************************
  * Name: xtensa_imm_mallinfo
@@ -180,7 +163,7 @@ bool xtensa_imm_heapmember(FAR void *mem);
  *
  ****************************************************************************/
 
-int xtensa_imm_mallinfo(FAR struct mallinfo *info);
+int xtensa_imm_mallinfo(struct mallinfo *info);
 #endif
 
 #undef EXTERN

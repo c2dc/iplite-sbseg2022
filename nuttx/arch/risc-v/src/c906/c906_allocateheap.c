@@ -28,8 +28,6 @@
 #include <nuttx/userspace.h>
 
 #include <nuttx/arch.h>
-#include <nuttx/board.h>
-#include <arch/board/board.h>
 
 #include "c906.h"
 
@@ -76,7 +74,7 @@
  *
  ****************************************************************************/
 
-void up_allocate_heap(FAR void **heap_start, size_t *heap_size)
+void up_allocate_heap(void **heap_start, size_t *heap_size)
 {
 #if defined(CONFIG_BUILD_PROTECTED) && defined(CONFIG_MM_KERNEL_HEAP)
   /* Get the size and position of the user-space heap.
@@ -88,7 +86,7 @@ void up_allocate_heap(FAR void **heap_start, size_t *heap_size)
 
   /* Return the user-space heap settings */
 
-  *heap_start = (FAR void *)ubase;
+  *heap_start = (void *)ubase;
   *heap_size  = usize;
 
   /* Allow user-mode access to the user heap memory in PMP
@@ -98,7 +96,7 @@ void up_allocate_heap(FAR void **heap_start, size_t *heap_size)
 #else
   /* Return the heap settings */
 
-  *heap_start = (FAR void *)g_idle_topstack;
+  *heap_start = (void *)g_idle_topstack;
   *heap_size = KRAM_END - g_idle_topstack;
 #endif
 }
@@ -114,11 +112,11 @@ void up_allocate_heap(FAR void **heap_start, size_t *heap_size)
  ****************************************************************************/
 
 #if defined(CONFIG_BUILD_PROTECTED) && defined(CONFIG_MM_KERNEL_HEAP)
-void up_allocate_kheap(FAR void **heap_start, size_t *heap_size)
+void up_allocate_kheap(void **heap_start, size_t *heap_size)
 {
   /* Return the kernel heap settings. */
 
-  *heap_start = (FAR void *)g_idle_topstack;
+  *heap_start = (void *)g_idle_topstack;
   *heap_size = KRAM_END - g_idle_topstack;
 }
 #endif

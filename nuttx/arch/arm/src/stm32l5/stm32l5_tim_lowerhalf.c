@@ -1,45 +1,20 @@
 /****************************************************************************
  * arch/arm/src/stm32l5/stm32l5_tim_lowerhalf.c
  *
- *   Copyright (C) 2020 Gregory Nutt. All rights reserverd.
- *   Author: Michael Jung <mijung@gmx.net>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Based on arch/arm/src/stm32l4/stm32l4_tim_lowerhalf.c
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *   Copyright (C) 2015 Wail Khemir. All rights reserved.
- *   Copyright (C) 2015 Omni Hoverboards Inc. All rights reserved.
- *   Copyright (C) 2016 Sebastien Lorquet All rights reserved.
- *   Authors: Wail Khemir <khemirwail@gmail.com>
- *            Paul Alexander Patience <paul-a.patience@polymtl.ca>
- *            dev@ziggurat29.com
- *            Sebastien Lorquet <sebastien@lorquet.fr>
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -53,6 +28,7 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/irq.h>
@@ -97,12 +73,12 @@
 
 struct stm32l5_lowerhalf_s
 {
-  FAR const struct timer_ops_s *ops;        /* Lower half operations */
-  FAR struct stm32l5_tim_dev_s *tim;        /* stm32 timer driver */
-  tccb_t                        callback;   /* Current upper half interrupt callback */
-  FAR void                     *arg;        /* Argument passed to upper half callback */
-  bool                          started;    /* True: Timer has been started */
-  const uint8_t                 resolution; /* Number of bits in the timer (16 or 32 bits) */
+  const struct timer_ops_s *ops;        /* Lower half operations */
+  struct stm32l5_tim_dev_s *tim;        /* stm32 timer driver */
+  tccb_t                    callback;   /* Current upper half interrupt callback */
+  void                     *arg;        /* Argument passed to upper half callback */
+  bool                      started;    /* True: Timer has been started */
+  const uint8_t             resolution; /* Number of bits in the timer (16 or 32 bits) */
 };
 
 /****************************************************************************
@@ -115,14 +91,14 @@ static int stm32l5_timer_handler(int irq, void *context, void *arg);
 
 /* "Lower half" driver methods **********************************************/
 
-static int stm32l5_start(FAR struct timer_lowerhalf_s *lower);
-static int stm32l5_stop(FAR struct timer_lowerhalf_s *lower);
-static int stm32l5_getstatus(FAR struct timer_lowerhalf_s *lower,
-                             FAR struct timer_status_s *status);
-static int stm32l5_settimeout(FAR struct timer_lowerhalf_s *lower,
+static int stm32l5_start(struct timer_lowerhalf_s *lower);
+static int stm32l5_stop(struct timer_lowerhalf_s *lower);
+static int stm32l5_getstatus(struct timer_lowerhalf_s *lower,
+                             struct timer_status_s *status);
+static int stm32l5_settimeout(struct timer_lowerhalf_s *lower,
                               uint32_t timeout);
-static void stm32l5_setcallback(FAR struct timer_lowerhalf_s *lower,
-                                tccb_t callback, FAR void *arg);
+static void stm32l5_setcallback(struct timer_lowerhalf_s *lower,
+                                tccb_t callback, void *arg);
 
 /****************************************************************************
  * Private Data
@@ -246,8 +222,8 @@ static struct stm32l5_lowerhalf_s g_tim17_lowerhalf =
 
 static int stm32l5_timer_handler(int irq, void *context, void *arg)
 {
-  FAR struct stm32l5_lowerhalf_s *lower =
-    (FAR struct stm32l5_lowerhalf_s *)arg;
+  struct stm32l5_lowerhalf_s *lower =
+    (struct stm32l5_lowerhalf_s *)arg;
   uint32_t next_interval_us = 0;
 
   STM32L5_TIM_ACKINT(lower->tim, 0);
@@ -282,10 +258,10 @@ static int stm32l5_timer_handler(int irq, void *context, void *arg)
  *
  ****************************************************************************/
 
-static int stm32l5_start(FAR struct timer_lowerhalf_s *lower)
+static int stm32l5_start(struct timer_lowerhalf_s *lower)
 {
-  FAR struct stm32l5_lowerhalf_s *priv =
-    (FAR struct stm32l5_lowerhalf_s *)lower;
+  struct stm32l5_lowerhalf_s *priv =
+    (struct stm32l5_lowerhalf_s *)lower;
 
   if (!priv->started)
     {
@@ -321,10 +297,10 @@ static int stm32l5_start(FAR struct timer_lowerhalf_s *lower)
  *
  ****************************************************************************/
 
-static int stm32l5_stop(FAR struct timer_lowerhalf_s *lower)
+static int stm32l5_stop(struct timer_lowerhalf_s *lower)
 {
-  FAR struct stm32l5_lowerhalf_s *priv =
-    (FAR struct stm32l5_lowerhalf_s *)lower;
+  struct stm32l5_lowerhalf_s *priv =
+    (struct stm32l5_lowerhalf_s *)lower;
 
   if (priv->started)
     {
@@ -356,11 +332,11 @@ static int stm32l5_stop(FAR struct timer_lowerhalf_s *lower)
  *
  ****************************************************************************/
 
-static int stm32l5_getstatus(FAR struct timer_lowerhalf_s *lower,
-                             FAR struct timer_status_s *status)
+static int stm32l5_getstatus(struct timer_lowerhalf_s *lower,
+                             struct timer_status_s *status)
 {
-  FAR struct stm32l5_lowerhalf_s *priv =
-    (FAR struct stm32l5_lowerhalf_s *)lower;
+  struct stm32l5_lowerhalf_s *priv =
+    (struct stm32l5_lowerhalf_s *)lower;
   uint64_t maxtimeout;
   uint32_t timeout;
   uint32_t clock;
@@ -401,7 +377,7 @@ static int stm32l5_getstatus(FAR struct timer_lowerhalf_s *lower,
 
   /* Get the time remaining until the timer expires (in microseconds) */
 
-  clock_factor     = (clock == 1000000)? 1: (clock / 1000000);
+  clock_factor     = (clock == 1000000) ? 1 : (clock / 1000000);
   status->timeleft = (timeout - STM32L5_TIM_GETCOUNTER(priv->tim)) *
                      clock_factor;
   return OK;
@@ -423,11 +399,11 @@ static int stm32l5_getstatus(FAR struct timer_lowerhalf_s *lower,
  *
  ****************************************************************************/
 
-static int stm32l5_settimeout(FAR struct timer_lowerhalf_s *lower,
+static int stm32l5_settimeout(struct timer_lowerhalf_s *lower,
                               uint32_t timeout)
 {
-  FAR struct stm32l5_lowerhalf_s *priv =
-    (FAR struct stm32l5_lowerhalf_s *)lower;
+  struct stm32l5_lowerhalf_s *priv =
+    (struct stm32l5_lowerhalf_s *)lower;
   uint64_t maxtimeout;
 
   if (priv->started)
@@ -471,11 +447,11 @@ static int stm32l5_settimeout(FAR struct timer_lowerhalf_s *lower,
  *
  ****************************************************************************/
 
-static void stm32l5_setcallback(FAR struct timer_lowerhalf_s *lower,
-                                tccb_t callback, FAR void *arg)
+static void stm32l5_setcallback(struct timer_lowerhalf_s *lower,
+                                tccb_t callback, void *arg)
 {
-  FAR struct stm32l5_lowerhalf_s *priv =
-    (FAR struct stm32l5_lowerhalf_s *)lower;
+  struct stm32l5_lowerhalf_s *priv =
+    (struct stm32l5_lowerhalf_s *)lower;
   irqstate_t flags = enter_critical_section();
 
   /* Save the new callback */
@@ -519,9 +495,9 @@ static void stm32l5_setcallback(FAR struct timer_lowerhalf_s *lower,
  *
  ****************************************************************************/
 
-int stm32l5_timer_initialize(FAR const char *devpath, int timer)
+int stm32l5_timer_initialize(const char *devpath, int timer)
 {
-  FAR struct stm32l5_lowerhalf_s *lower;
+  struct stm32l5_lowerhalf_s *lower;
 
   switch (timer)
     {
@@ -610,8 +586,8 @@ int stm32l5_timer_initialize(FAR const char *devpath, int timer)
    * REVISIT: The returned handle is discard here.
    */
 
-  FAR void *drvr = timer_register(devpath,
-                                  (FAR struct timer_lowerhalf_s *)lower);
+  void *drvr = timer_register(devpath,
+                              (struct timer_lowerhalf_s *)lower);
   if (drvr == NULL)
     {
       /* The actual cause of the failure may have been a failure to allocate

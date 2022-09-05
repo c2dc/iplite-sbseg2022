@@ -1,5 +1,5 @@
 /****************************************************************************
- * netutils/thttpd/thttpd_alloc.h
+ * apps/netutils/thttpd/thttpd_alloc.h
  *
  *   Copyright (C) 2009 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
@@ -33,8 +33,8 @@
  *
  ****************************************************************************/
 
-#ifndef __NETUTILS_THTTPD_HTTDP_ALLOC_H
-#define __NETUTILS_THTTPD_HTTDP_ALLOC_H
+#ifndef __APPS_NETUTILS_THTTPD_THTTDP_ALLOC_H
+#define __APPS_NETUTILS_THTTPD_THTTDP_ALLOC_H
 
 /****************************************************************************
  * Included Files
@@ -75,4 +75,4 @@ extern FAR char *httpd_strdup(const char *str);
 extern void httpd_realloc_str(char **pstr, size_t *maxsizeP, size_t size);
 
 #endif /* CONFIG_THTTPD */
-#endif /* __NETUTILS_THTTPD_HTTDP_ALLOC_H */
+#endif /* __APPS_NETUTILS_THTTPD_THTTDP_ALLOC_H */

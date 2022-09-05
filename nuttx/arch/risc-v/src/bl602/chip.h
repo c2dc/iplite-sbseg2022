@@ -18,18 +18,21 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_RISCV_INCLUDE_BL602_CHIP_H
-#define __ARCH_RISCV_INCLUDE_BL602_CHIP_H
+#ifndef __ARCH_RISCV_SRC_BL602_CHIP_H
+#define __ARCH_RISCV_SRC_BL602_CHIP_H
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include <nuttx/config.h>
-#include <sys/types.h>
-#include <stdint.h>
-#include <stdbool.h>
+
+#ifndef __ASSEMBLY__
+#  include <sys/types.h>
+#  include <stdint.h>
+#  include <stdbool.h>
+#endif /* __ASSEMBLY__ */
 
 #include <arch/irq.h>
 
-#endif /* __ARCH_RISCV_INCLUDE_BL602_CHIP_H */
+#endif /* __ARCH_RISCV_SRC_BL602_CHIP_H */

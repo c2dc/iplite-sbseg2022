@@ -74,6 +74,7 @@
 
 #define POLLERR      (0x08)
 #define POLLHUP      (0x10)
+#define POLLRDHUP    (0x10)  /* NuttX does not support shutdown(fd, SHUT_RD) */
 #define POLLNVAL     (0x20)
 
 #define POLLFD       (0x00)
@@ -90,11 +91,11 @@
 typedef unsigned int nfds_t;
 
 /* In the standard poll() definition, the size of the event set is 'short'.
- * Here we pick the smallest storage element that will contain all of the
- * poll events.
+ * Here we pick the uint32_t type to be consistent with the linux to support
+ * EPOLLRDHUP, EPOLLWAKEUP, EPOLLONESHOT...
  */
 
-typedef uint8_t pollevent_t;
+typedef uint32_t pollevent_t;
 
 /* This is the NuttX variant of the standard pollfd structure.  The poll()
  * interfaces receive a variable length array of such structures.

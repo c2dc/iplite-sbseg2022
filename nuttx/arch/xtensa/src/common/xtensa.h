@@ -28,9 +28,11 @@
 #include <nuttx/config.h>
 
 #ifndef __ASSEMBLY__
+#  include <nuttx/arch.h>
 #  include <stdint.h>
 #  include <sys/types.h>
 #  include <stdbool.h>
+#  include <syscall.h>
 #endif
 
 #include <arch/chip/core-isa.h>
@@ -80,6 +82,16 @@
 #  define INTSTACK_SIZE         INTSTACK_ALIGNUP(CONFIG_ARCH_INTERRUPTSTACK)
 #endif
 
+/* XTENSA requires at least a 16-byte stack alignment. */
+
+#define STACK_ALIGNMENT     16
+
+/* Stack alignment macros */
+
+#define STACK_ALIGN_MASK    (STACK_ALIGNMENT - 1)
+#define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
+#define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
+
 /* An IDLE thread stack size for CPU0 must be defined */
 
 #if !defined(CONFIG_IDLETHREAD_STACKSIZE)
@@ -91,15 +103,20 @@
 #define IDLETHREAD_STACKSIZE  ((CONFIG_IDLETHREAD_STACKSIZE + 15) & ~15)
 #define IDLETHREAD_STACKWORDS (IDLETHREAD_STACKSIZE >> 2)
 
-/* In the XTENSA model, the state is copied from the stack to the TCB, but
- * only a referenced is passed to get the state from the TCB.
- *
- * REVISIT: It would not be too difficult to save only a pointer to the
- * state save area in the TCB and thus avoid the copy.
+/* In the Xtensa model, the state is saved in stack,
+ * only a reference stored in TCB.
  */
 
-#define xtensa_savestate(regs)    xtensa_copystate(regs, (uint32_t*)CURRENT_REGS)
-#define xtensa_restorestate(regs) do { CURRENT_REGS = regs; } while (0)
+#define xtensa_savestate(regs)    ((regs) = (uint32_t *)CURRENT_REGS)
+#define xtensa_restorestate(regs) (CURRENT_REGS = (regs))
+
+/* Context switching via system calls ***************************************/
+
+#define xtensa_context_restore(regs)\
+  sys_call1(SYS_restore_context, (uintptr_t)regs)
+
+#define xtensa_switchcontext(saveregs, restoreregs)\
+  sys_call2(SYS_switch_context, (uintptr_t)saveregs, (uintptr_t)restoreregs)
 
 /* Interrupt codes from other CPUs: */
 
@@ -145,33 +162,11 @@
  ****************************************************************************/
 
 #ifndef __ASSEMBLY__
-/* g_current_regs[] holds a references to the current interrupt level
- * register storage structure.  If is non-NULL only during interrupt
- * processing.  Access to g_current_regs[] must be through the macro
- * CURRENT_REGS for portability.
- */
-
-#ifdef CONFIG_SMP
-/* For the case of architectures with multiple CPUs, then there must be one
- * such value for each processor that can receive an interrupt.
- */
-
-int up_cpu_index(void); /* See include/nuttx/arch.h */
-extern volatile uint32_t *g_current_regs[CONFIG_SMP_NCPUS];
-#  define CURRENT_REGS (g_current_regs[up_cpu_index()])
-
-#else
-
-extern volatile uint32_t *g_current_regs[1];
-#  define CURRENT_REGS (g_current_regs[0])
-
-#endif
-
 #if !defined(CONFIG_SMP) && CONFIG_ARCH_INTERRUPTSTACK > 15
 /* The (optional) interrupt stack */
 
 extern uint32_t g_intstackalloc; /* Allocated interrupt stack */
-extern uint32_t g_intstackbase;  /* Initial top of interrupt stack */
+extern uint32_t g_intstacktop;   /* Initial top of interrupt stack */
 #endif
 
 /* Address of the CPU0 IDLE thread */
@@ -186,7 +181,7 @@ extern uint32_t g_idlestack[IDLETHREAD_STACKWORDS];
  *  - The declaration extern uint32_t _sdata; makes C happy.  C will believe
  *    that the value _sdata is the address of a uint32_t variable _data (it
  *    is not!).
- *  - We can recoved the linker value then by simply taking the address of
+ *  - We can recover the linker value then by simply taking the address of
  *    of _data.  like:  uint32_t *pdata = &_sdata;
  */
 
@@ -225,13 +220,8 @@ void modifyreg8(unsigned int addr, uint8_t clearbits, uint8_t setbits);
 void modifyreg16(unsigned int addr, uint16_t clearbits, uint16_t setbits);
 void modifyreg32(unsigned int addr, uint32_t clearbits, uint32_t setbits);
 
-/* Context switching */
-
-void xtensa_copystate(uint32_t *dest, uint32_t *src);
-
 /* Serial output */
 
-void up_puts(const char *str);
 void up_lowputs(const char *str);
 
 /* Debug */
@@ -247,12 +237,20 @@ void xtensa_dumpstate(void);
 /* Initialization */
 
 #if XCHAL_CP_NUM > 0
-struct xtensa_cpstate_s;
-void xtensa_coproc_enable(struct xtensa_cpstate_s *cpstate, int cpset);
-void xtensa_coproc_disable(struct xtensa_cpstate_s *cpstate, int cpset);
+void xtensa_coproc_enable(int cpset);
+void xtensa_coproc_disable(int cpset);
 #endif
 
+/* Window Spill */
+
+void xtensa_window_spill(void);
+
 /* IRQs */
+
+#if defined(CONFIG_SMP) && CONFIG_ARCH_INTERRUPTSTACK > 15
+uintptr_t xtensa_intstack_alloc(void);
+uintptr_t xtensa_intstack_top(void);
+#endif
 
 uint32_t *xtensa_int_decode(uint32_t cpuints, uint32_t *regs);
 uint32_t *xtensa_irq_dispatch(int irq, uint32_t *regs);
@@ -265,25 +263,19 @@ uint32_t *xtensa_user(int exccause, uint32_t *regs);
 /* Software interrupt handler */
 
 #ifdef CONFIG_SMP
-void __cpu1_start(void) noreturn_function;
 int xtensa_intercpu_interrupt(int tocpu, int intcode);
 void xtensa_pause_handler(void);
 #endif
 
-/* Synchronous context switching */
-
-int xtensa_context_save(uint32_t *regs);
-void xtensa_context_restore(uint32_t *regs) noreturn_function;
-
-#if XCHAL_CP_NUM > 0
-void xtensa_coproc_savestate(struct xtensa_cpstate_s *cpstate);
-void xtensa_coproc_restorestate(struct xtensa_cpstate_s *cpstate);
-#endif
-
 /* Signals */
 
-void _xtensa_sig_trampoline(void);
 void xtensa_sig_deliver(void);
+
+#ifdef CONFIG_LIB_SYSCALL
+void xtensa_dispatch_syscall(unsigned int nbr, uintptr_t parm1,
+                             uintptr_t parm2, uintptr_t parm3,
+                             uintptr_t parm4, uintptr_t parm5);
+#endif
 
 /* Chip-specific functions **************************************************/
 
@@ -308,13 +300,16 @@ void xtensa_add_region(void);
 # define xtensa_add_region()
 #endif
 
+/* Watchdog timer ***********************************************************/
+
+struct oneshot_lowerhalf_s *
+xtensa_oneshot_initialize(uint32_t irq, uint32_t freq);
+
 /* Serial output */
 
 void up_lowputc(char ch);
-void xtensa_early_serial_initialize(void);
-void xtensa_serial_initialize(void);
-
-void rpmsg_serialinit(void);
+void xtensa_earlyserialinit(void);
+void xtensa_serialinit(void);
 
 /* Network */
 
@@ -342,14 +337,17 @@ void xtensa_pminitialize(void);
 #  define xtensa_pminitialize()
 #endif
 
+/* Interrupt handling *******************************************************/
+
+/* Exception Handlers */
+
+int xtensa_swint(int irq, void *context, void *arg);
+
 /* Debug ********************************************************************/
 
 #ifdef CONFIG_STACK_COLORATION
-void up_stack_color(FAR void *stackbase, size_t nbytes);
-#endif
-
-#ifdef CONFIG_XTENSA_DUMPBT_ON_ASSERT
-void xtensa_backtrace_start(uint32_t *pc, uint32_t *sp, uint32_t *next_pc);
+size_t xtensa_stack_check(uintptr_t alloc, size_t size);
+void xtensa_stack_color(void *stackbase, size_t nbytes);
 #endif
 
 #endif /* __ASSEMBLY__ */

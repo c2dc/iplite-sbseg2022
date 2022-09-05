@@ -1,12 +1,5 @@
 /****************************************************************************
  * include/nuttx/wireless/bluetooth/bt_buf.h
- * Bluetooth buffer management.
- *
- *   Copyright (C) 2018 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *
- * Ported from the Intel/Zephyr arduino101_firmware_source-v1.tar package
- * where the code was released with a compatible 3-clause BSD license:
  *
  *   Copyright (c) 2016, Intel Corporation
  *   All rights reserved.
@@ -62,6 +55,8 @@ enum bt_buf_type_e
   BT_EVT,             /* HCI event */
   BT_ACL_OUT,         /* Outgoing ACL data */
   BT_ACL_IN,          /* Incoming ACL data */
+  BT_ISO_OUT,         /* Outgoing ISO data */
+  BT_ISO_IN,          /* Incoming ISO data */
   BT_DUMMY = BT_CMD   /* Only used for waking up kernel threads */
 };
 

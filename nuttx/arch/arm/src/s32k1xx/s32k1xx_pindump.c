@@ -25,11 +25,11 @@
 #include <nuttx/config.h>
 
 #include <sys/types.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "hardware/s32k1xx_gpio.h"
 #include "hardware/s32k1xx_port.h"
 #include "s32k1xx_pin.h"
@@ -78,7 +78,7 @@ static const char g_portchar[S32K1XX_NPORTS] =
  *
  * Description:
  *   Dump all GPIO registers associated with the provided pin description
- *   along with a descriptive messasge.
+ *   along with a descriptive message.
  *
  ****************************************************************************/
 

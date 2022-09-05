@@ -33,12 +33,14 @@
 
 /* Clocking *****************************************************************/
 
-#undef STM32_BOARD_XTAL                                    /* Not installed by default */
+#define STM32_BOARD_XTAL               24000000            /* 8MHz */
 
 #define STM32_HSI_FREQUENCY            16000000ul          /* 16MHz */
 #define STM32_LSI_FREQUENCY            32000               /* 32kHz */
-#undef STM32_HSE_FREQUENCY                                 /* Not installed by default */
+#define STM32_HSE_FREQUENCY            STM32_BOARD_XTAL
 #undef STM32_LSE_FREQUENCY                                 /* Not available on this board */
+
+#ifdef CONFIG_BOARD_NUCLEO_G431RB_USE_HSI
 
 /* Main PLL Configuration.
  *
@@ -120,6 +122,140 @@
 #define STM32_RCC_CFGR_PPRE2           RCC_CFGR_PPRE2_HCLK
 #define STM32_PCLK2_FREQUENCY          STM32_HCLK_FREQUENCY
 
+#endif  /* CONFIG_BOARD_NUCLEO_G431RB_USE_HSI */
+
+#ifdef CONFIG_BOARD_NUCLEO_G431RB_USE_HSE
+
+/* Main PLL Configuration.
+ *
+ * PLL source is HSE = 24MHz
+ * PLLN = 86, PLLM = 6, PLLP = 10, PLLQ = 2, PLLR = 2
+ *
+ * f(VCO Clock) = f(PLL Clock Input) x (PLLN / PLLM)
+ * f(PLL_P) = f(VCO Clock) / PLLP
+ * f(PLL_Q) = f(VCO Clock) / PLLQ
+ * f(PLL_R) = f(VCO Clock) / PLLR
+ *
+ * Where:
+ * 8 <= PLLN <= 127
+ * 1 <= PLLM <= 16
+ * PLLP = 2 through 31
+ * PLLQ = 2, 4, 6, or 8
+ * PLLR = 2, 4, 6, or 8
+ *
+ * Do not exceed 170MHz on f(PLL_P), f(PLL_Q), or f(PLL_R).
+ * 64MHz <= f(VCO Clock) <= 344MHz.
+ *
+ * Given the above:
+ *
+ * f(VCO Clock) = HSE   x PLLN / PLLM
+ *              = 24MHz x 86   / 6
+ *              = 340MHz
+ *
+ * PLLPCLK      = f(VCO Clock) / PLLP
+ *              = 340MHz       / 10
+ *              = 34MHz
+ *                (May be used for ADC)
+ *
+ * PLLQCLK      = f(VCO Clock) / PLLQ
+ *              = 340MHz       / 2
+ *              = 170MHz
+ *                (May be used for QUADSPI, FDCAN, SAI1, I2S3. If set to
+ *                48MHz, may be used for USB, RNG.)
+ *
+ * PLLRCLK      = f(VCO Clock) / PLLR
+ *              = 340MHz       / 2
+ *              = 170MHz
+ *                (May be used for SYSCLK and most peripherals.)
+ */
+
+#define STM32_PLLCFGR_PLLSRC           RCC_PLLCFGR_PLLSRC_HSE
+#define STM32_PLLCFGR_PLLCFG           (RCC_PLLCFGR_PLLPEN | \
+                                       RCC_PLLCFGR_PLLQEN | \
+                                       RCC_PLLCFGR_PLLREN)
+
+#define STM32_PLLCFGR_PLLN             RCC_PLLCFGR_PLLN(86)
+#define STM32_PLLCFGR_PLLM             RCC_PLLCFGR_PLLM(6)
+#define STM32_PLLCFGR_PLLP             RCC_PLLCFGR_PLLPDIV(10)
+#define STM32_PLLCFGR_PLLQ             RCC_PLLCFGR_PLLQ_2
+#define STM32_PLLCFGR_PLLR             RCC_PLLCFGR_PLLR_2
+
+#define STM32_VCO_FREQUENCY            ((STM32_HSI_FREQUENCY / 4) * 85)
+#define STM32_PLLP_FREQUENCY           (STM32_VCO_FREQUENCY / 10)
+#define STM32_PLLQ_FREQUENCY           (STM32_VCO_FREQUENCY / 2)
+#define STM32_PLLR_FREQUENCY           (STM32_VCO_FREQUENCY / 2)
+
+/* Use the PLL and set the SYSCLK source to be PLLR (170MHz) */
+
+#define STM32_SYSCLK_SW                RCC_CFGR_SW_PLL
+#define STM32_SYSCLK_SWS               RCC_CFGR_SWS_PLL
+#define STM32_SYSCLK_FREQUENCY         STM32_PLLR_FREQUENCY
+
+/* AHB clock (HCLK) is SYSCLK (170MHz) */
+
+#define STM32_RCC_CFGR_HPRE            RCC_CFGR_HPRE_SYSCLK
+#define STM32_HCLK_FREQUENCY           STM32_SYSCLK_FREQUENCY
+
+/* APB1 clock (PCLK1) is HCLK (170MHz) */
+
+#define STM32_RCC_CFGR_PPRE1           RCC_CFGR_PPRE1_HCLK
+#define STM32_PCLK1_FREQUENCY          STM32_HCLK_FREQUENCY
+
+/* APB2 clock (PCLK2) is HCLK (170MHz) */
+
+#define STM32_RCC_CFGR_PPRE2           RCC_CFGR_PPRE2_HCLK
+#define STM32_PCLK2_FREQUENCY          STM32_HCLK_FREQUENCY
+
+#endif  /* CONFIG_BOARD_NUCLEO_G431RB_USE_HSE */
+
+/* APB2 timers 1, 8, 20 and 15-17 will receive PCLK2. */
+
+/* Timers driven from APB2 will be PCLK2 */
+
+#define STM32_APB2_TIM1_CLKIN   (STM32_PCLK2_FREQUENCY)
+#define STM32_APB2_TIM8_CLKIN   (STM32_PCLK2_FREQUENCY)
+#define STM32_APB1_TIM15_CLKIN  (STM32_PCLK2_FREQUENCY)
+#define STM32_APB1_TIM16_CLKIN  (STM32_PCLK2_FREQUENCY)
+#define STM32_APB1_TIM17_CLKIN  (STM32_PCLK2_FREQUENCY)
+
+/* APB1 timers 2-7 will be twice PCLK1 */
+
+#define STM32_APB1_TIM2_CLKIN   (STM32_PCLK1_FREQUENCY)
+#define STM32_APB1_TIM3_CLKIN   (STM32_PCLK1_FREQUENCY)
+#define STM32_APB1_TIM4_CLKIN   (STM32_PCLK1_FREQUENCY)
+#define STM32_APB1_TIM6_CLKIN   (STM32_PCLK1_FREQUENCY)
+#define STM32_APB1_TIM7_CLKIN   (STM32_PCLK1_FREQUENCY)
+
+/* USB divider -- Divide PLL clock by 1.5 */
+
+#define STM32_CFGR_USBPRE       0
+
+/* Timer Frequencies, if APBx is set to 1, frequency is same to APBx
+ * otherwise frequency is 2xAPBx.
+ */
+
+#define BOARD_TIM1_FREQUENCY   (STM32_PCLK2_FREQUENCY)
+#define BOARD_TIM2_FREQUENCY   (STM32_PCLK1_FREQUENCY)
+#define BOARD_TIM3_FREQUENCY   (STM32_PCLK1_FREQUENCY)
+#define BOARD_TIM4_FREQUENCY   (STM32_PCLK1_FREQUENCY)
+#define BOARD_TIM5_FREQUENCY   (STM32_PCLK1_FREQUENCY)
+#define BOARD_TIM6_FREQUENCY   (STM32_PCLK1_FREQUENCY)
+#define BOARD_TIM7_FREQUENCY   (STM32_PCLK1_FREQUENCY)
+#define BOARD_TIM8_FREQUENCY   (STM32_PCLK2_FREQUENCY)
+#define BOARD_TIM15_FREQUENCY  (STM32_PCLK2_FREQUENCY)
+#define BOARD_TIM16_FREQUENCY  (STM32_PCLK2_FREQUENCY)
+#define BOARD_TIM17_FREQUENCY  (STM32_PCLK2_FREQUENCY)
+#define BOARD_TIM20_FREQUENCY  (STM32_PCLK2_FREQUENCY)
+
+#ifdef CONFIG_STM32_FDCAN
+#  ifdef CONFIG_BOARD_NUCLEO_G431RB_USE_HSE
+#    define STM32_CCIPR_FDCANSRC   (RCC_CCIPR_FDCANSEL_HSE)
+#    define STM32_FDCAN_FREQUENCY  (STM32_HSE_FREQUENCY)
+#  else
+#    error For now FDCAN supported only if HSE enabled
+#  endif
+#endif
+
 /* LED definitions **********************************************************/
 
 /* The NUCLEO-G431RB has four user LEDs.
@@ -180,11 +316,82 @@
 
 /* Alternate function pin selections ****************************************/
 
+/* TIM2 input ***************************************************************/
+
+#define GPIO_TIM2_CH1IN (GPIO_TIM2_CH1IN_3 | GPIO_PULLUP) /* PA15 */
+#define GPIO_TIM2_CH2IN (GPIO_TIM2_CH2IN_2 | GPIO_PULLUP) /* PB3 */
+
 /* USART2 (STLINK Virtual COM Port) */
 
 #define GPIO_USART2_TX     GPIO_USART2_TX_1 /* PA2 */
 #define GPIO_USART2_RX     GPIO_USART2_RX_1 /* PA3 */
 
-/* Pin Multiplexing Disambiguation ******************************************/
+/* PWM configuration ********************************************************/
+
+/* TIM1 PWM */
+
+#define GPIO_TIM1_CH1OUT  GPIO_TIM1_CH1OUT_1  /* PA8 */
+#define GPIO_TIM1_CH1NOUT GPIO_TIM1_CH1NOUT_2 /* PA11 */
+#define GPIO_TIM1_CH2OUT  GPIO_TIM1_CH2OUT_1  /* PA9 */
+#define GPIO_TIM1_CH2NOUT GPIO_TIM1_CH2NOUT_1 /* PA12 */
+#define GPIO_TIM1_CH3OUT  GPIO_TIM1_CH3OUT_1  /* PA10 */
+#define GPIO_TIM1_CH3NOUT GPIO_TIM1_CH3NOUT_1 /* PB1 */
+#define GPIO_TIM1_CH4OUT  GPIO_TIM1_CH4OUT_2  /* PC3 */
+
+/* CAN configuration ********************************************************/
+
+#define GPIO_FDCAN1_RX GPIO_FDCAN1_RX_2 /* PB8 */
+#define GPIO_FDCAN1_TX GPIO_FDCAN1_TX_2 /* PB9 */
+
+/* DMA channels *************************************************************/
+
+/* ADC */
+
+#define ADC1_DMA_CHAN DMAMAP_DMA12_ADC1_0     /* DMA1 */
+
+/* USART2 */
+
+#define DMACHAN_USART2_TX DMAMAP_DMA12_USART2TX_0 /* DMA1 */
+#define DMACHAN_USART2_RX DMAMAP_DMA12_USART2RX_0 /* DMA1 */
+
+#ifdef CONFIG_BOARD_STM32_IHM16M1
+
+/* Configuration specific for the X-NUCLEO-IHM16M1 expansion board with
+ * the STSPIN830 driver.
+ */
+
+/* TIM1 configuration *******************************************************/
+
+#  define GPIO_TIM1_CH1OUT   GPIO_TIM1_CH1OUT_1 /* TIM1 CH1  - PA8  - U high */
+#  define GPIO_TIM1_CH2OUT   GPIO_TIM1_CH2OUT_1 /* TIM1 CH2  - PA9  - V high */
+#  define GPIO_TIM1_CH3OUT   GPIO_TIM1_CH3OUT_1 /* TIM1 CH3  - PA10 - W high */
+#  define GPIO_TIM1_CH4OUT   0                  /* not used as output */
+
+/* UVW ENABLE */
+
+#  define GPIO_FOC_EN_U (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|  \
+                         GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN13)
+#  define GPIO_FOC_EN_V (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|  \
+                         GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN14)
+#  define GPIO_FOC_EN_W (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz|  \
+                         GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN15)
+
+/* EN_FAULT */
+
+#  define GPIO_FOC_ENFAULT (GPIO_OUTPUT|GPIO_OPENDRAIN|GPIO_SPEED_50MHz| \
+                           GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN12)
+
+/* Debug pins */
+
+#  define GPIO_FOC_DEBUG0 (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz| \
+                           GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN8)
+#  define GPIO_FOC_DEBUG1 (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz| \
+                           GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN9)
+#  define GPIO_FOC_DEBUG2 (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz| \
+                           GPIO_OUTPUT_CLEAR|GPIO_PORTC|GPIO_PIN6)
+#  define GPIO_FOC_DEBUG3 (GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_50MHz| \
+                           GPIO_OUTPUT_CLEAR|GPIO_PORTA|GPIO_PIN12)
+
+#endif  /* CONFIG_BOARD_STM32_IHM16M1 */
 
 #endif /* __BOARDS_ARM_STM32_NUCLEO_G431RB_INCLUDE_BOARD_H */

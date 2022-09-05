@@ -28,12 +28,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
 #include <arch/irq.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include "stm32l5_gpio.h"
 #include "stm32l5_exti.h"
@@ -64,7 +65,7 @@ static struct gpio_callback_s g_gpio_handlers[16];
  * Interrupt Service Routine - Dispatcher
  ****************************************************************************/
 
-static int stm32l5_exti0_15_isr(int irq, void *context, FAR void *arg)
+static int stm32l5_exti0_15_isr(int irq, void *context, void *arg)
 {
   int ret = OK;
   int exti;

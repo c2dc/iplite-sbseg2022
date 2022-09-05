@@ -27,6 +27,7 @@
 #ifndef CONFIG_DISABLE_ENVIRON
 
 #include <sched.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/kmalloc.h>
@@ -60,22 +61,28 @@
 
 void env_release(FAR struct task_group_s *group)
 {
-  DEBUGASSERT(group != NULL);
+  int i;
 
-  /* Free any allocate environment strings */
+  DEBUGASSERT(group != NULL);
 
   if (group->tg_envp)
     {
+      /* Free any allocate environment strings */
+
+      for (i = 0; group->tg_envp[i] != NULL; i++)
+        {
+          group_free(group, group->tg_envp[i]);
+        }
+
       /* Free the environment */
 
-      kumm_free(group->tg_envp);
+      group_free(group, group->tg_envp);
     }
 
   /* In any event, make sure that all environment-related variables in the
    * task group structure are reset to initial values.
    */
 
-  group->tg_envsize = 0;
   group->tg_envp = NULL;
 }
 

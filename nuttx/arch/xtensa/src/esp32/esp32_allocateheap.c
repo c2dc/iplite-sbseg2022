@@ -25,13 +25,23 @@
 #include <nuttx/config.h>
 
 #include <sys/types.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/arch.h>
-#include <nuttx/mm/mm.h>
 #include <nuttx/board.h>
+#include <nuttx/mm/mm.h>
+#include <nuttx/userspace.h>
 #include <arch/board/board.h>
+#ifdef CONFIG_MM_KERNEL_HEAP
+#include <arch/board/board_memorymap.h>
+#endif
 #include <arch/esp32/memory_layout.h>
+
+#ifdef CONFIG_ESP32_SPIRAM_BANKSWITCH_ENABLE
+#include <nuttx/himem/himem.h>
+#include "esp32_himem.h"
+#endif
 
 #include "xtensa.h"
 
@@ -49,29 +59,83 @@
  * Description:
  *   This function will be called to dynamically set aside the heap region.
  *
- *   For the kernel build (CONFIG_BUILD_KERNEL=y) with both kernel- and
- *   user-space heaps (CONFIG_MM_KERNEL_HEAP=y), this function provides the
- *   size of the unprotected, user-space heap.
+ *   For the kernel build (CONFIG_BUILD_KERNEL=y) with both kernel and
+ *   userspace heaps (CONFIG_MM_KERNEL_HEAP=y), this function provides the
+ *   size of the unprotected, userspace heap.
  *
- *   If a protected kernel-space heap is provided, the kernel heap must be
+ *   If a protected kernel space heap is provided, the kernel heap must be
  *   allocated (and protected) by an analogous up_allocate_kheap().
  *
  ****************************************************************************/
 
-void up_allocate_heap(FAR void **heap_start, size_t *heap_size)
+void up_allocate_heap(void **heap_start, size_t *heap_size)
 {
+#if defined(CONFIG_BUILD_PROTECTED) && defined(CONFIG_MM_KERNEL_HEAP)
+  uintptr_t ubase = USERSPACE->us_dataend;
+  uintptr_t utop  = USERSPACE->us_heapend;
+  size_t    usize = utop - ubase;
+
+  minfo("Heap: start=%" PRIxPTR " end=%" PRIxPTR " size=%zu\n",
+        ubase, utop, usize);
+
   board_autoled_on(LED_HEAPALLOCATE);
 
-  *heap_start = (FAR void *)&_sheap;
+  /* Return the userspace heap settings */
+
+  *heap_start = (void *)ubase;
+  *heap_size  = usize;
+
+  /* Allow user-mode access to the user heap memory */
+
+#else
+  board_autoled_on(LED_HEAPALLOCATE);
+
+  *heap_start = (void *)&_sheap;
   DEBUGASSERT(HEAP_REGION1_END > (uintptr_t)*heap_start);
   *heap_size = (size_t)(HEAP_REGION1_END - (uintptr_t)*heap_start);
+#endif /* CONFIG_BUILD_PROTECTED && CONFIG_MM_KERNEL_HEAP */
 }
+
+/****************************************************************************
+ * Name: up_allocate_kheap
+ *
+ * Description:
+ *   This function will be called to dynamically set aside the heap region.
+ *
+ *   For the kernel build (CONFIG_BUILD_PROTECTED=y) with both kernel and
+ *   userspace heaps (CONFIG_MM_KERNEL_HEAP=y), this function allocates
+ *   (and protects) the kernel space heap.
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_BUILD_PROTECTED) && defined(CONFIG_MM_KERNEL_HEAP) && \
+    defined(__KERNEL__)
+void up_allocate_kheap(void **heap_start, size_t *heap_size)
+{
+  /* These values come from the linker scripts (kernel-space.ld and
+   * protected.template.ld).
+   * Check boards/xtensa/esp32.
+   */
+
+  uintptr_t kbase = (uintptr_t)&_sheap;
+  uintptr_t ktop  = KDRAM_0_END;
+  size_t    ksize = ktop - kbase;
+
+  minfo("Heap: start=%" PRIxPTR " end=%" PRIxPTR " size=%zu\n",
+        kbase, ktop, ksize);
+
+  board_autoled_on(LED_HEAPALLOCATE);
+
+  *heap_start = (void *)kbase;
+  *heap_size  = ksize;
+}
+#endif /* CONFIG_BUILD_PROTECTED && CONFIG_MM_KERNEL_HEAP */
 
 /****************************************************************************
  * Name: xtensa_add_region
  *
  * Description:
- *   Memory may be added in non-contiguous chunks.  Additional chunks are
+ *   Memory may be added in non-contiguous chunks. Additional chunks are
  *   added by calling this function.
  *
  ****************************************************************************/
@@ -107,41 +171,53 @@ void xtensa_add_region(void)
     }
 
 #ifndef CONFIG_SMP
-  start = (FAR void *)(HEAP_REGION2_START + XTENSA_IMEM_REGION_SIZE);
+  start = (void *)(HEAP_REGION2_START + XTENSA_IMEM_REGION_SIZE);
   size  = (size_t)(uintptr_t)&_eheap - (size_t)start;
-  umm_addregion(start, size);
-
+#ifdef CONFIG_BUILD_PROTECTED
+  kmm_addregion(start, size);
 #else
-#ifdef CONFIG_ESP32_QEMU_IMAGE
-  start = (FAR void *)HEAP_REGION2_START;
-  size  = (size_t)(uintptr_t)&_eheap - (size_t)start;
   umm_addregion(start, size);
+#endif
 #else
-  start = (FAR void *)HEAP_REGION2_START;
+  start = (void *)HEAP_REGION2_START;
   size  = (size_t)(HEAP_REGION2_END - HEAP_REGION2_START);
+#ifdef CONFIG_BUILD_PROTECTED
+  kmm_addregion(start, size);
+#else
   umm_addregion(start, size);
+#endif
 
-  start = (FAR void *)HEAP_REGION3_START + XTENSA_IMEM_REGION_SIZE;
+  start = (void *)HEAP_REGION3_START + XTENSA_IMEM_REGION_SIZE;
   size  = (size_t)(uintptr_t)&_eheap - (size_t)start;
+#ifdef CONFIG_BUILD_PROTECTED
+  kmm_addregion(start, size);
+#else
   umm_addregion(start, size);
 #endif
 #endif
 
-#ifndef CONFIG_ESP32_QEMU_IMAGE
-  start = (FAR void *)HEAP_REGION0_START;
+#ifndef CONFIG_ESP32_BLE
+  start = (void *)HEAP_REGION0_START;
   size  = (size_t)(HEAP_REGION0_END - HEAP_REGION0_START);
+#ifdef CONFIG_BUILD_PROTECTED
+  kmm_addregion(start, size);
+#else
   umm_addregion(start, size);
+#endif
 #endif
 
 #ifdef CONFIG_ESP32_SPIRAM
 #  if defined(CONFIG_HEAP2_BASE) && defined(CONFIG_HEAP2_SIZE)
 #    ifdef CONFIG_XTENSA_EXTMEM_BSS
-      start = (FAR void *)(&_ebss_extmem);
+      start = (void *)(&_ebss_extmem);
       size = CONFIG_HEAP2_SIZE - (size_t)(&_ebss_extmem - &_sbss_extmem);
 #    else
-      start = (FAR void *)CONFIG_HEAP2_BASE;
+      start = (void *)CONFIG_HEAP2_BASE;
       size = CONFIG_HEAP2_SIZE;
 #    endif
+#  ifdef CONFIG_ESP32_SPIRAM_BANKSWITCH_ENABLE
+    size -= esp_himem_reserved_area_size();
+#  endif
     umm_addregion(start, size);
 #  endif
 #endif

@@ -60,7 +60,7 @@
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -68,7 +68,7 @@
 int stm32_bringup(void)
 {
 #ifdef HAVE_I2C_DRIVER
-  FAR struct i2c_master_s *i2c;
+  struct i2c_master_s *i2c;
 #endif
   int ret;
 

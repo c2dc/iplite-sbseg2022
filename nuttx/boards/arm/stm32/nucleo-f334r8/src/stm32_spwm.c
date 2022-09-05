@@ -30,6 +30,7 @@
 #include <strings.h>
 #include <unistd.h>
 #include <math.h>
+#include <assert.h>
 
 #include <nuttx/arch.h>
 #include <nuttx/signal.h>
@@ -198,9 +199,9 @@
 
 struct spwm_s
 {
-  FAR struct pwm_timer_s *pwm;
+  struct pwm_timer_s *pwm;
 #ifdef CONFIG_NUCLEOF334R8_SPWM_USE_TIM1
-  FAR struct stm32_tim_dev_s *tim;
+  struct stm32_tim_dev_s *tim;
 #endif
   float waveform[SAMPLES_NUM];               /* Waveform samples */
   float phase_step;                          /* Waveform phase step */
@@ -230,27 +231,27 @@ static struct spwm_s g_spwm =
  ****************************************************************************/
 
 static float waveform_func(float x);
-static int waveform_init(FAR struct spwm_s *spwm, float (*f)(float));
-static int spwm_start(FAR struct spwm_s *spwm);
-static int spwm_start(FAR struct spwm_s *spwm);
-static int spwm_stop(FAR struct spwm_s *spwm);
+static int waveform_init(struct spwm_s *spwm, float (*f)(float));
+static int spwm_start(struct spwm_s *spwm);
+static int spwm_start(struct spwm_s *spwm);
+static int spwm_stop(struct spwm_s *spwm);
 #ifdef CONFIG_NUCLEOF334R8_SPWM_USE_HRTIM1
-static int master_configure(FAR struct spwm_s *spwm);
-static int slaves_configure(FAR struct spwm_s *spwm);
+static int master_configure(struct spwm_s *spwm);
+static int slaves_configure(struct spwm_s *spwm);
 static void hrtim_master_handler(void);
-static int spwm_hrtim_setup(FAR struct spwm_s *spwm);
-static int spwm_hrtim_start(FAR struct spwm_s *spwm);
-static int spwm_hrtim_stop(FAR struct spwm_s *spwm);
+static int spwm_hrtim_setup(struct spwm_s *spwm);
+static int spwm_hrtim_start(struct spwm_s *spwm);
+static int spwm_hrtim_stop(struct spwm_s *spwm);
 #endif /* CONFIG_NUCLEOF334R8_SPWM_USE_HRTIM1 */
 #ifdef CONFIG_NUCLEOF334R8_SPWM_USE_TIM1
-static int spwm_tim1_setup(FAR struct spwm_s *spwm);
-static int spwm_tim6_setup(FAR struct spwm_s *spwm);
-static int spwm_tim1_start(FAR struct spwm_s *spwm);
-static int spwm_tim6_start(FAR struct spwm_s *spwm);
-static int spwm_tim1_stop(FAR struct spwm_s *spwm);
-static int spwm_tim6_stop(FAR struct spwm_s *spwm);
+static int spwm_tim1_setup(struct spwm_s *spwm);
+static int spwm_tim6_setup(struct spwm_s *spwm);
+static int spwm_tim1_start(struct spwm_s *spwm);
+static int spwm_tim6_start(struct spwm_s *spwm);
+static int spwm_tim1_stop(struct spwm_s *spwm);
+static int spwm_tim6_stop(struct spwm_s *spwm);
 #endif /* CONFIG_NUCLEOF334R8_SPWM_USE_TIM1 */
-static int spwm_setup(FAR struct spwm_s *spwm);
+static int spwm_setup(struct spwm_s *spwm);
 
 /****************************************************************************
  * Private Functions
@@ -281,7 +282,7 @@ static float waveform_func(float x)
  *
  ****************************************************************************/
 
-static int waveform_init(FAR struct spwm_s *spwm, float (*f)(float))
+static int waveform_init(struct spwm_s *spwm, float (*f)(float))
 {
   uint16_t i = 0;
   int ret = 0;
@@ -339,7 +340,7 @@ static int waveform_init(FAR struct spwm_s *spwm, float (*f)(float))
  *
  ****************************************************************************/
 
-static int spwm_start(FAR struct spwm_s *spwm)
+static int spwm_start(struct spwm_s *spwm)
 {
 #if defined(CONFIG_NUCLEOF334R8_SPWM_USE_HRTIM1)
   /* Start HRTIM */
@@ -369,7 +370,7 @@ static int spwm_start(FAR struct spwm_s *spwm)
  *
  ****************************************************************************/
 
-static int spwm_stop(FAR struct spwm_s *spwm)
+static int spwm_stop(struct spwm_s *spwm)
 {
 #if defined(CONFIG_NUCLEOF334R8_SPWM_USE_HRTIM1)
   /* Stop HRTIM */
@@ -397,9 +398,9 @@ static int spwm_stop(FAR struct spwm_s *spwm)
  * Name: master_configure
  ****************************************************************************/
 
-static int master_configure(FAR struct spwm_s *spwm)
+static int master_configure(struct spwm_s *spwm)
 {
-  FAR struct hrtim_dev_s *hrtim = spwm->pwm;
+  struct hrtim_dev_s *hrtim = spwm->pwm;
   uint64_t per = 0;
   uint64_t fclk = 0;
   uint64_t freq = 0;
@@ -439,9 +440,9 @@ errout:
  * Name: slaves_configure
  ****************************************************************************/
 
-static int slaves_configure(FAR struct spwm_s *spwm)
+static int slaves_configure(struct spwm_s *spwm)
 {
-  FAR struct hrtim_dev_s *hrtim = spwm->pwm;
+  struct hrtim_dev_s *hrtim = spwm->pwm;
   uint64_t fclk = 0;
   uint64_t per = 0;
   uint8_t index = 0;
@@ -493,8 +494,8 @@ errout:
 
 static void hrtim_master_handler(void)
 {
-  FAR struct spwm_s *spwm = &g_spwm;
-  FAR struct hrtim_dev_s *hrtim = spwm->pwm;
+  struct spwm_s *spwm = &g_spwm;
+  struct hrtim_dev_s *hrtim = spwm->pwm;
   uint32_t pending = 0;
   uint8_t i = 0;
 
@@ -536,9 +537,9 @@ static void hrtim_master_handler(void)
  * Name: spwm_hrtim_setup
  ****************************************************************************/
 
-static int spwm_hrtim_setup(FAR struct spwm_s *spwm)
+static int spwm_hrtim_setup(struct spwm_s *spwm)
 {
-  FAR struct hrtim_dev_s *pwm = NULL;
+  struct hrtim_dev_s *pwm = NULL;
   int ret = OK;
 
   /* Configure HRTIM */
@@ -607,9 +608,9 @@ errout:
  * Name: spwm_hrtim_start
  ****************************************************************************/
 
-static int spwm_hrtim_start(FAR struct spwm_s *spwm)
+static int spwm_hrtim_start(struct spwm_s *spwm)
 {
-  FAR struct hrtim_dev_s *hrtim = spwm->pwm;
+  struct hrtim_dev_s *hrtim = spwm->pwm;
   uint8_t timers = 0;
   uint16_t outputs = 0;
   int i = 0;
@@ -647,9 +648,9 @@ static int spwm_hrtim_start(FAR struct spwm_s *spwm)
  * Name: spwm_hrtim_stop
  ****************************************************************************/
 
-static int spwm_hrtim_stop(FAR struct spwm_s *spwm)
+static int spwm_hrtim_stop(struct spwm_s *spwm)
 {
-  FAR struct hrtim_dev_s *hrtim = spwm->pwm;
+  struct hrtim_dev_s *hrtim = spwm->pwm;
   uint8_t timers = 0;
   uint16_t outputs = 0;
   int i = 0;
@@ -693,9 +694,9 @@ static int spwm_hrtim_stop(FAR struct spwm_s *spwm)
 
 static void tim6_handler(void)
 {
-  FAR struct spwm_s *spwm = &g_spwm;
-  FAR struct stm32_pwm_dev_s *pwm = spwm->pwm;
-  FAR struct stm32_tim_dev_s *tim = spwm->tim;
+  struct spwm_s *spwm = &g_spwm;
+  struct stm32_pwm_dev_s *pwm = spwm->pwm;
+  struct stm32_tim_dev_s *tim = spwm->tim;
   uint8_t i = 0;
 
   for (i = 0; i < spwm->phases; i += 1)
@@ -723,9 +724,9 @@ static void tim6_handler(void)
  * Name: spwm_tim6_setup
  ****************************************************************************/
 
-static int spwm_tim6_setup(FAR struct spwm_s *spwm)
+static int spwm_tim6_setup(struct spwm_s *spwm)
 {
-  FAR struct stm32_tim_dev_s *tim = NULL;
+  struct stm32_tim_dev_s *tim = NULL;
   uint64_t freq = 0;
   uint32_t per = 0;
   int ret = OK;
@@ -791,9 +792,9 @@ errout:
  * Name: spwm_tim6_start
  ****************************************************************************/
 
-static int spwm_tim6_start(FAR struct spwm_s *spwm)
+static int spwm_tim6_start(struct spwm_s *spwm)
 {
-  FAR struct stm32_tim_dev_s *tim = spwm->tim;
+  struct stm32_tim_dev_s *tim = spwm->tim;
 
   /* Enable the timer interrupt at the NVIC and at TIM6 */
 
@@ -807,9 +808,9 @@ static int spwm_tim6_start(FAR struct spwm_s *spwm)
  * Name: spwm_tim6_stop
  ****************************************************************************/
 
-static int spwm_tim6_stop(FAR struct spwm_s *spwm)
+static int spwm_tim6_stop(struct spwm_s *spwm)
 {
-  FAR struct stm32_tim_dev_s *tim = spwm->tim;
+  struct stm32_tim_dev_s *tim = spwm->tim;
 
   /* Disable the timer interrupt at the NVIC and at TIM6 */
 
@@ -823,14 +824,14 @@ static int spwm_tim6_stop(FAR struct spwm_s *spwm)
  * Name: spwm_tim1_setup
  ****************************************************************************/
 
-static int spwm_tim1_setup(FAR struct spwm_s *spwm)
+static int spwm_tim1_setup(struct spwm_s *spwm)
 {
-  FAR struct stm32_pwm_dev_s *pwm = NULL;
+  struct stm32_pwm_dev_s *pwm = NULL;
   int ret = OK;
 
   /* Get TIM1 PWM interface */
 
-  pwm = (FAR struct stm32_pwm_dev_s *)stm32_pwminitialize(1);
+  pwm = (struct stm32_pwm_dev_s *)stm32_pwminitialize(1);
   if (pwm == NULL)
     {
       printf("ERROR: Failed to get TIM1 PWM interface\n");
@@ -874,9 +875,9 @@ errout:
  * Name: spwm_tim1_start
  ****************************************************************************/
 
-static int spwm_tim1_start(FAR struct spwm_s *spwm)
+static int spwm_tim1_start(struct spwm_s *spwm)
 {
-  FAR struct stm32_pwm_dev_s *pwm = spwm->pwm;
+  struct stm32_pwm_dev_s *pwm = spwm->pwm;
   uint16_t outputs = 0;
   int i = 0;
 
@@ -902,9 +903,9 @@ static int spwm_tim1_start(FAR struct spwm_s *spwm)
  * Name: spwm_tim1_stop
  ****************************************************************************/
 
-static int spwm_tim1_stop(FAR struct spwm_s *spwm)
+static int spwm_tim1_stop(struct spwm_s *spwm)
 {
-  FAR struct stm32_pwm_dev_s *pwm = spwm->pwm;
+  struct stm32_pwm_dev_s *pwm = spwm->pwm;
   uint16_t outputs = 0;
   int i = 0;
 
@@ -932,7 +933,7 @@ static int spwm_tim1_stop(FAR struct spwm_s *spwm)
  * Name: spwm_setup
  ****************************************************************************/
 
-static int spwm_setup(FAR struct spwm_s *spwm)
+static int spwm_setup(struct spwm_s *spwm)
 {
   int ret = OK;
 
@@ -984,7 +985,7 @@ errout:
 
 int spwm_main(int argc, char *argv[])
 {
-  FAR struct spwm_s *spwm = NULL;
+  struct spwm_s *spwm = NULL;
   int ret = OK;
   int i = 0;
 

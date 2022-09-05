@@ -32,7 +32,7 @@
 #include <nuttx/usb/usbdev.h>
 #include <nuttx/usb/usbdev_trace.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "kinetis.h"
 #include "freedom-k66f.h"
 
@@ -67,7 +67,7 @@ void k66_usbinitialize(void)
  *
  ****************************************************************************/
 
-int kinetis_usbpullup(FAR struct usbdev_s *dev, bool enable)
+int kinetis_usbpullup(struct usbdev_s *dev, bool enable)
 {
   usbtrace(TRACE_DEVPULLUP, (uint16_t)enable);
 # warning "Missing logic"
@@ -86,7 +86,7 @@ int kinetis_usbpullup(FAR struct usbdev_s *dev, bool enable)
  *
  ****************************************************************************/
 
-void kinetis_usbsuspend(FAR struct usbdev_s *dev, bool resume)
+void kinetis_usbsuspend(struct usbdev_s *dev, bool resume)
 {
   uinfo("resume: %d\n", resume);
 #warning "Missing logic"

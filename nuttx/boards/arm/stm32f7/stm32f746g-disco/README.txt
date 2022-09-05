@@ -172,7 +172,6 @@ There are two version of the FPU support built into the STM32 port.
    file:
 
      CONFIG_ARCH_FPU=y
-     CONFIG_ARMV7M_LAZYFPU=y
 
 STM32F746G-DISCO-specific Configuration Options
 ===============================================
@@ -409,7 +408,7 @@ STM32F746G-DISCO-specific Configuration Options
     CONFIG_STM32F7_SPI_INTERRUPTS - Select to enable interrupt driven SPI
       support. Non-interrupt-driven, poll-waiting is recommended if the
       interrupt rate would be to high in the interrupt driven case.
-    CONFIG_STM32F7_SPI_DMA - Use DMA to improve SPI transfer performance.
+    CONFIG_STM32F7_SPIx_DMA - Use DMA to improve SPIx transfer performance.
       Cannot be used with CONFIG_STM32F7_SPI_INTERRUPT.
 
   STM32F746G-DISCO DMA Configuration
@@ -495,7 +494,7 @@ Configurations
          CONFIG_WINDOWS_CYGWIN=y             : Cywin under Windows
 
        System Type -> Toolchain:
-         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y : GNU ARM EABI toolchain
+         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : GNU ARM EABI toolchain
 
        NOTE: As of this writing, there are issues with using this tool at
        the -Os level of optimization.  This has not been proven to be a

@@ -7,7 +7,7 @@
  *   Ported by: Darcy Gong
  *
  * It derives from the Rhombus OS math library by Nick Johnson which has
- * a compatibile, MIT-style license:
+ * a compatible, MIT-style license:
  *
  * Copyright (C) 2009-2011 Nick Johnson <nickbjohnson4224 at gmail.com>
  *
@@ -37,6 +37,21 @@
 
 float frexpf(float x, int *exponent)
 {
-  *exponent = (int)ceilf(log2f(x));
-  return x / ldexpf(1.0F, *exponent);
+  float res;
+
+  *exponent = (int)ceilf(log2f(fabsf(x)));
+  res = x / ldexpf(1.0F, *exponent);
+  if (res >= 1.0)
+    {
+      res -= 0.5;
+      *exponent += 1;
+    }
+
+  if (res <= -1.0)
+    {
+      res += 0.5;
+      *exponent += 1;
+    }
+
+  return res;
 }

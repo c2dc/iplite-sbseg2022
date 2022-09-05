@@ -216,9 +216,9 @@
 
 /* Queue helpers */
 
-#define dq_get(q)    (dq_remfirst(q))
-#define dq_put(q,n) (dq_addlast((dq_entry_t*)n,(q)))
-#define dq_put_back(q,n) (dq_addfirst((dq_entry_t*)n,(q)))
+#define dq_get(q)    dq_remfirst(q)
+#define dq_put(q,n) dq_addlast((dq_entry_t*)(n),(q))
+#define dq_put_back(q,n) dq_addfirst((dq_entry_t*)(n),(q))
 #define dq_clear(q) \
   do \
     { \
@@ -263,7 +263,7 @@ struct cxd56_dev_s
 
   /* Our specific driver data goes here */
 
-  const FAR struct cxd56_lower_s *lower;    /* Pointer to the board lower functions */
+  FAR const struct cxd56_lower_s *lower;    /* Pointer to the board lower functions */
   enum cxd56_devstate_e   state;            /* Driver state */
   enum cxd56_dmahandle_e  dma_handle;       /* DMA handle */
   struct file             mq;               /* Message queue for receiving messages */

@@ -1,12 +1,5 @@
 /****************************************************************************
  * include/nuttx/wireless/bluetooth/bt_ioctl.h
- * Bluetooth Network IOCTL commands.
- *
- *   Copyright (C) 2018 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *
- * Ported from the Intel/Zephyr arduino101_firmware_source-v1.tar package
- * where the code was released with a compatible 3-clause BSD license:
  *
  *   Copyright (c) 2016, Intel Corporation
  *   All rights reserved.
@@ -68,9 +61,13 @@
 #define HCI_GATTRD_DATA     32   /* Max number of bytes in GATT read data */
 #define HCI_GATTWR_DATA     16   /* Max number of bytes in GATT write data */
 
+#ifndef CONFIG_BLUETOOTH_MAXSCANDATA
+#  define CONFIG_BLUETOOTH_MAXSCANDATA 64
+#endif
+
 /* Bluetooth network device IOCTL commands. */
 
-#if !defined(WL_BLUETOOTHCMDS) || WL_BLUETOOTHCMDS != 26
+#if !defined(WL_BLUETOOTHCMDS) || WL_BLUETOOTHCMDS != 28
 #  error Incorrect setting for number of Bluetooth IOCTL commands
 #endif
 
@@ -194,6 +191,11 @@
 
 #define SIOCBTCONNECT          _WLIOC(WL_BLUETOOTHFIRST + 24)
 #define SIOCBTDISCONNECT       _WLIOC(WL_BLUETOOTHFIRST + 25)
+
+/* btsnoop open and close operations */
+
+#define SIOCBTSNOOPOPEN        _WLIOC(WL_BLUETOOTHFIRST + 26)
+#define SIOCBTSNOOPCLOSE       _WLIOC(WL_BLUETOOTHFIRST + 27)
 
 /* Definitions associated with struct btreg_s *******************************/
 

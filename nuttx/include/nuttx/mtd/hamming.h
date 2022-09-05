@@ -1,13 +1,6 @@
 /****************************************************************************
  * include/nuttx/mtd/hamming.h
  *
- *   Copyright (C) 2013 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *
- * This logic was taken directly from Atmel sample code with only
- * modifications for better integration with NuttX.  The Atmel sample
- * code has a BSD compatible license that requires this copyright notice:
- *
  *   Copyright (c) 2011, Atmel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,8 +32,8 @@
  *
  ****************************************************************************/
 
-#ifndef __INCLUDE_NUTTX_HAMMING_H
-#define __INCLUDE_NUTTX_HAMMING_H
+#ifndef __INCLUDE_NUTTX_MTD_HAMMING_H
+#define __INCLUDE_NUTTX_MTD_HAMMING_H
 
 /****************************************************************************
  * Included Files
@@ -146,4 +139,4 @@ int hamming_verify256x(FAR uint8_t *data,
 #endif
 
 #endif /* __ASSEMBLY__ */
-#endif /* __INCLUDE_NUTTX_HAMMING_H */
+#endif /* __INCLUDE_NUTTX_MTD_HAMMING_H */

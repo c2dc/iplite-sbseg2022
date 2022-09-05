@@ -58,8 +58,8 @@
 
 int sam_at25_automount(int minor)
 {
-  FAR struct spi_dev_s *spi;
-  FAR struct mtd_dev_s *mtd;
+  struct spi_dev_s *spi;
+  struct mtd_dev_s *mtd;
 #ifdef CONFIG_SAMA5D4EK_AT25_CHARDEV
 #if defined(CONFIG_BCH)
   char blockdev[18];
@@ -117,8 +117,8 @@ int sam_at25_automount(int minor)
 #if defined(CONFIG_BCH)
       /* Use the minor number to create device paths */
 
-      snprintf(blockdev, 18, "/dev/mtdblock%d", minor);
-      snprintf(chardev, 12, "/dev/mtd%d", minor);
+      snprintf(blockdev, sizeof(blockdev), "/dev/mtdblock%d", minor);
+      snprintf(chardev, sizeof(chardev), "/dev/mtd%d", minor);
 
       /* Now create a character device on the block device */
 

@@ -173,7 +173,7 @@ extern const uint16_t g_commonconfig[NCOMMON_CONFIG];
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -221,7 +221,7 @@ int stm32_adc_setup(void);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_CAN
+#ifdef CONFIG_STM32_CAN_CHARDRIVER
 int stm32_can_setup(void);
 #endif
 

@@ -53,6 +53,7 @@
 #include <nuttx/config.h>
 
 #include <sched.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/irq.h>
@@ -397,7 +398,7 @@ bool nxnotify_cancellation(FAR struct tcb_s *tcb)
            */
 
           else if (tcb->task_state == TSTATE_WAIT_MQNOTEMPTY ||
-                  tcb->task_state == TSTATE_WAIT_MQNOTFULL)
+                   tcb->task_state == TSTATE_WAIT_MQNOTFULL)
             {
               nxmq_wait_irq(tcb, ECANCELED);
             }

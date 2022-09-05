@@ -28,12 +28,6 @@
 #include <libgen.h>
 
 /****************************************************************************
- * Private Data
- ****************************************************************************/
-
-static char g_retchar[2];
-
-/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -65,16 +59,14 @@ static char g_retchar[2];
 
 FAR char *dirname(FAR char *path)
 {
-  char *p;
-  int   len;
-  int   ch;
+  FAR char *p;
+  int       len;
 
   /* Handle some corner cases */
 
   if (!path || *path == '\0')
     {
-      ch = '.';
-      goto out_retchar;
+      return ".";
     }
 
   /* Check for trailing slash characters */
@@ -91,40 +83,38 @@ FAR char *dirname(FAR char *path)
         }
       else
         {
-          ch = '/';
-          goto out_retchar;
+          return "/";
         }
     }
 
   /* Get the address of the last '/' which is not at the end of the path and,
-   * therefor, must be the end of the directory component.
+   * therefore, must be the end of the directory component.
    */
 
   p = strrchr(path, '/');
   if (p)
     {
-      /* Handle the case where the only '/' in the string is the at the
-       * beginning of the path.
-       */
-
-      if (p == path)
+      do
         {
-          ch = '/';
-          goto out_retchar;
+          /* Handle the case where the only '/' in the string is the at the
+           * beginning of the path.
+           */
+
+          if (p == path)
+            {
+              return "/";
+            }
+
+          /* No, the directory component is the substring before the '/'. */
+
+          *p-- = '\0';
         }
+      while (*p == '/');
 
-      /* No, the directory component is the substring before the '/'. */
-
-      *p = '\0';
       return path;
     }
 
   /* There is no '/' in the path */
 
-  ch = '.';
-
-out_retchar:
-  g_retchar[0] = ch;
-  g_retchar[1] = '\0';
-  return g_retchar;
+  return ".";
 }

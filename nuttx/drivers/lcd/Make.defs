@@ -45,6 +45,10 @@ ifeq ($(CONFIG_LCD_LPM013M091A),y)
   CSRCS += lpm013m091a.c
 endif
 
+ifeq ($(CONFIG_LCD_APA102),y)
+  CSRCS += apa102.c
+endif
+
 ifeq ($(CONFIG_LCD_P14201),y)
   CSRCS += p14201.c
 endif
@@ -71,6 +75,10 @@ endif
 
 ifeq ($(CONFIG_LCD_SSD1289),y)
   CSRCS += ssd1289.c
+endif
+
+ifeq ($(CONFIG_LCD_SSD1680),y)
+  CSRCS += ssd1680.c
 endif
 
 ifeq ($(CONFIG_LCD_SSD1351),y)
@@ -105,6 +113,10 @@ ifeq ($(CONFIG_LCD_SHARP_MEMLCD),y)
   CSRCS += memlcd.c
 endif
 
+ifeq ($(CONFIG_LCD_ILI9225),y)
+  CSRCS += ili9225.c
+endif
+
 ifeq ($(CONFIG_LCD_ILI9340),y)
   CSRCS += ili9340.c
 endif
@@ -129,6 +141,10 @@ ifeq ($(CONFIG_LCD_ST7789),y)
   CSRCS += st7789.c
 endif
 
+ifeq ($(CONFIG_LCD_GC9A01),y)
+  CSRCS += gc9a01.c
+endif
+
 endif # CONFIG_LCD
 
 ifeq ($(CONFIG_SLCD),y)
@@ -141,6 +157,10 @@ endif
 
 ifeq ($(CONFIG_LCD_ST7032),y)
   CSRCS += st7032.c
+endif
+
+ifeq ($(CONFIG_LCD_HT16K33),y)
+  CSRCS += ht16k33_14seg.c
 endif
 endif # CONFIG_SLCD
 

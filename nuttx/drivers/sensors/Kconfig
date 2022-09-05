@@ -12,12 +12,18 @@ menuconfig SENSORS
 
 if SENSORS
 
-config SENSORS_NPOLLWAITERS
-	int "Number of poll threads"
-	default 2
+config USENSOR
+	bool "Usensor Device Support"
+	default n
 	---help---
-		Maximum number of threads than can be waiting for POLL events.
-		Default: 2
+		Allow application to register user sensor by /dev/usensor.
+
+config SENSORS_RPMSG
+	bool "Sensor rpmsg Support"
+	default n
+	depends on RPTUN
+	---help---
+		Allow application to read or control remote sensor device by rpmsg.
 
 config SENSORS_WTGAHRS2
 	bool "Wtgahrs2 Sensor Support"
@@ -70,10 +76,19 @@ config SENSORS_AS5048B
 	---help---
 		Enable driver support for the AMS AS5048B magnetic rotary encoder.
 
+config SENSORS_AS5048A
+	bool "AMS AS5048A Magnetic Rotary Encoder support"
+	default n
+	select SPI
+	select SENSORS_QENCODER
+	---help---
+		Enable driver support for the AMS AS5048A magnetic rotary encoder.
+
 config SENSORS_AS726X
 	bool "AMS AS726X Spetral sensor support"
 	default n
 	select I2C
+	depends on ALLOW_BSD_COMPONENTS
 	---help---
 		Enable driver support for the AS726X Spectral Sensor.
 
@@ -95,7 +110,6 @@ config SENSORS_BMG160
 	select SPI
 	---help---
 		Enable driver support for the Bosch BMG160 gyroscope sensor.
-
 
 config SENSORS_BMI160
 	bool "Bosch BMI160 Inertial Measurement Sensor support"
@@ -170,6 +184,35 @@ config SENSORS_DHTXX
 	default n
 	---help---
 		Enable driver support for the DHTxx humidity/temperature sensor.
+
+config SENSORS_DS18B20
+	bool "Maxim Integrated DS18B20 Temperature Sensor support"
+	default n
+	select 1WIRE
+	---help---
+		Enable driver support for the DS18B20 temperature sensor.
+
+config SENSORS_DS18B20_POLL
+	bool "Enables polling sensor data"
+	depends on SENSORS_DS18B20
+	default n
+	---help---
+		Enables polling of sensor.
+
+config SENSORS_DS18B20_POLL_INTERVAL
+	int "Polling interval in microseconds, default 1 sec"
+	depends on SENSORS_DS18B20 && SENSORS_DS18B20_POLL
+	default 1000000
+	range 0 4294967295
+	---help---
+		The interval until a new sensor measurement will be triggered.
+
+config SENSORS_DS18B20_THREAD_STACKSIZE
+	int "Worker thread stack size"
+	depends on SENSORS_DS18B20 && SENSORS_DS18B20_POLL
+	default 1024
+	---help---
+		The stack size for the worker thread.
 
 config SENSORS_FXOS8700CQ
 	bool "NXP FXOS8700CQ Motion Sensor support"
@@ -287,7 +330,6 @@ config SENSORS_L3GD20_BUFFER_SIZE
 		The size of the circular buffer used. If the value equal to zero,
 		indicates that the circular buffer is disabled.
 
-
 config SENSOR_KXTJ9
 	bool "Kionix KXTJ9 Accelerometer support"
 	default n
@@ -346,6 +388,7 @@ config LIS3DH
 	bool "STMicro LIS3DH 3-Axis accelerometer support"
 	default n
 	select SPI
+	depends on ALLOW_BSD_COMPONENTS
 	---help---
 		Enable driver support for the STMicro LIS3DH 3-Axis accelerometer.
 
@@ -371,6 +414,7 @@ config SENSORS_LSM303AGR
 	bool "STMicro LSM303AGR support"
 	default n
 	select I2C
+	depends on ALLOW_BSD_COMPONENTS
 	---help---
 		Enable driver support for the STMicro LSM303AGR.
 
@@ -384,6 +428,7 @@ config SENSORS_LSM6DSL
 	bool "STMicro LSM6DSL support"
 	default n
 	select I2C
+	depends on ALLOW_BSD_COMPONENTS
 	---help---
 		Enable driver support for the STMicro LSM6DSL.
 
@@ -399,6 +444,13 @@ config SENSORS_LSM9DS1
 	select I2C
 	---help---
 		Enable driver support for the STMicro LSM9DS1.
+
+config SENSORS_MSA301
+	bool "MSA301 support"
+	default n
+	select I2C
+	---help---
+		Enable driver support for the MSA301.
 
 config LSM9DS1_I2C_FREQUENCY
 	int "LSM9DS1 I2C frequency"
@@ -453,11 +505,11 @@ config INA219_I2C_FREQUENCY
 	depends on SENSORS_INA219
 
 config SENSORS_INA226
-	bool "INA226 current and voltage monitor"
+	bool "INA226/INA230 current and voltage monitor"
 	default n
 	select I2C
 	---help---
-		Enable driver support for the Texas Instruments INA226 power monitor.
+		Enable driver support for the Texas Instruments INA226/INA230 power monitor.
 
 config INA226_I2C_FREQUENCY
 	int "INA226 I2C frequency"
@@ -524,6 +576,46 @@ config MCP9844_I2C_FREQUENCY
 	default 400000
 	range 1 400000
 	depends on SENSORS_MCP9844
+
+config SENSORS_MS5611
+	bool "MS5611 Barometric Pressure Sensor support"
+	default n
+	---help---
+		Enable driver support for MEAS MS5511 barometer.
+
+if SENSORS_MS5611
+
+choice
+	prompt "MS5611 Interface"
+	default MS5611_I2C
+
+config MS5611_I2C
+	bool "MS5611 I2C Interface"
+	select I2C
+	---help---
+		Enables support for the I2C interface
+
+config MS5611_SPI
+	bool "MS5611 SPI Interface"
+	select SPI
+	---help---
+		Enables support for the SPI interface.
+
+endchoice
+
+config MS5611_THREAD_STACKSIZE
+	int "Worker thread stack size"
+	default 1024
+	---help---
+		The stack size for the worker thread
+
+config MS5611_I2C_FREQUENCY
+	int "MS5611 I2C frequency"
+	default 400000
+	range 1 400000
+	depends on MS5611_I2C
+
+endif # SENSORS_MS5611
 
 config SENSORS_MS58XX
 	bool "MEAS MS58XX Altimeter support"
@@ -652,6 +744,52 @@ config MPU60X0_EXTI
 		to the sampling rate chosen during operation.
 		Default:  No interrupts or blocking, i.e. user-driven sampling.
 
+config MPU60X0_EXT_SYNC_SET
+	int "MPU60x0 frame sync bit position"
+	default 0
+	---help---
+		EXT_SYNC_SET[2..0]
+		EXT_SYNC_SET: frame sync bit position
+		(see datasheet, it's ... complicated)
+
+config MPU60X0_DLPF_CFG
+	int "MPU60x0 digital low-pass filter bandwidth"
+	default 1
+	---help---
+		DLPF_CFG[2..0]
+		DLPF_CFG: digital low-pass filter bandwidth
+		(see datasheet, it's ... complicated)
+
+config MPU60X0_GYRO_FS_SEL
+	int "MPU60x0 Gyro FS_SEL"
+	default 2
+	---help---
+		Sets the @fs_sel bit in GYRO_CONFIG to the value provided. Per 
+		the	datasheet, the meaning of @fs_sel is as follows:
+		GYRO_CONFIG(0x1b) :   XG_ST YG_ST ZG_ST FS_SEL1 FS_SEL0 x  x  x
+		XG_ST, YG_ST, ZG_ST  :  self-test (unsupported in this driver)
+				1 -> activate self-test on X, Y, and/or Z gyros
+		FS_SEL[10] : full-scale range select
+				0 -> ±  250 deg/sec
+				1 -> ±  500 deg/sec
+				2 -> ± 1000 deg/sec
+				3 -> ± 2000 deg/sec
+
+config MPU60X0_ACCEL_AFS_SEL
+	int "MPU60x0 Accelerometer AFS_SEL"
+	default 2
+	---help---
+		Sets the @afs_sel bit in ACCEL_CONFIG to the value provided. Per
+		the datasheet, the meaning of @afs_sel is as follows:
+		ACCEL_CONFIG(0x1c) :   XA_ST YA_ST ZA_ST AFS_SEL1 AFS_SEL0 x  x  x
+		XA_ST, YA_ST, ZA_ST  :  self-test (unsupported in this driver)
+				1 -> activate self-test on X, Y, and/or Z accelerometers
+		AFS_SEL[10] : full-scale range select
+				0 -> ±  2 g
+				1 -> ±  4 g
+				2 -> ±  8 g
+				3 -> ± 16 g
+
 endif # SENSORS_MPU60X0
 
 config SENSORS_MAX44009
@@ -767,6 +905,37 @@ config SCD30_DEBUG
 
 endif # SENSORS_SCD30
 
+config SENSORS_SCD41
+	bool "Sensirion SCD41 CO2, humidity and temperature sensor"
+	default n
+	---help---
+		Enable driver support for the Sensirion SCD41 CO₂, humidity and
+		temperature sensor.
+
+if SENSORS_SCD41
+
+config SCD41_I2C
+	bool "Sensirion SCD41 I2C mode"
+	default y
+	select I2C
+
+config SCD41_I2C_FREQUENCY
+	int "SCD41 I2C frequency"
+	default 100000
+	range 1 100000
+	depends on SCD41_I2C
+	---help---
+		I2C frequency for SCD41. Note, maximum supported frequency for
+		this sensor is 100kHz.
+
+config SCD41_DEBUG
+	bool "Debug support for the SCD41"
+	default n
+	---help---
+		Enables debug features for the SCD41
+
+endif # SENSORS_SCD41
+
 config SENSORS_SGP30
 	bool "Sensirion SGP30 Gas Platform sensor"
 	default n
@@ -790,11 +959,11 @@ config SGP30_DEBUG
 endif # SENSORS_SGP30
 
 config SENSORS_AHT10
-        bool "ASAIR AHT10 temperature and humidity sensor"
-        default n
-        select I2C
-        ---help---
-                Enable driver support for the ASAIR AHT10 temperature and humidity sensors.
+	bool "ASAIR AHT10 temperature and humidity sensor"
+	default n
+	select I2C
+	---help---
+		Enable driver support for the ASAIR AHT10 temperature and humidity sensors.
 
 if SENSORS_AHT10
 config AHT10_I2C_FREQUENCY
@@ -898,6 +1067,10 @@ config SENSORS_QENCODER
 	bool "Qencoder"
 	default n
 
+config SENSORS_HALL3PHASE
+	bool "3-phase Hall effect sensor"
+	default n
+
 config SENSORS_VEML6070
 	bool "Vishay VEML6070 UV-A Light Sensor support"
 	default n
@@ -914,6 +1087,7 @@ config SENSORS_VL53L1X
 	bool "ST VL53L1X TOF sensor"
 	default n
 	select I2C
+	depends on ALLOW_BSD_COMPONENTS
 	---help---
 		Enable driver support for the VL53L1X Time Of Flight sensor.
 
@@ -952,12 +1126,12 @@ config SENSORS_HDC1008
 if SENSORS_HDC1008
 
 config HDC1008_I2C_ADDRESS
-  hex "HDC1008 I2C address"
-  default 0x40
-  range 0x40 0x43
-  ---help---
-    The I2C address of the HDC1008 sensor. It can be configured via straps to
-    a value between 0x40 and 0x43.
+	hex "HDC1008 I2C address"
+	default 0x40
+	range 0x40 0x43
+	---help---
+		The I2C address of the HDC1008 sensor. It can be configured via straps to
+		a value between 0x40 and 0x43.
 
 config HDC1008_I2C_FREQUENCY
 	int "HDC1008 I2C frequency"

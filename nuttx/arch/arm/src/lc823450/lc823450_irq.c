@@ -25,20 +25,19 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
-#include <arch/irq.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/board.h>
 
 #include <arch/armv7-m/nvicpri.h>
 
 #include "nvic.h"
 #include "ram_vectors.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-#include "chip.h"
 #include "lc823450_intc.h"
 
 #ifdef CONFIG_DVFS
@@ -74,15 +73,11 @@
  * Public Data
  ****************************************************************************/
 
-#ifdef CONFIG_SMP
 /* For the case of configurations with multiple CPUs, then there must be one
  * such value for each processor that can receive an interrupt.
  */
 
 volatile uint32_t *g_current_regs[CONFIG_SMP_NCPUS];
-#else
-volatile uint32_t *g_current_regs[1];
-#endif
 
 #if defined(CONFIG_SMP) && CONFIG_ARCH_INTERRUPTSTACK > 7
 /* In the SMP configuration, we will need two custom interrupt stacks.
@@ -194,7 +189,7 @@ static void lc823450_dumpnvic(const char *msg, int irq)
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG
-static int lc823450_nmi(int irq, FAR void *context, FAR void *arg)
+static int lc823450_nmi(int irq, void *context, void *arg)
 {
   enter_critical_section();
   irqinfo("PANIC!!! NMI received\n");
@@ -202,7 +197,7 @@ static int lc823450_nmi(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int lc823450_busfault(int irq, FAR void *context, FAR void *arg)
+static int lc823450_busfault(int irq, void *context, void *arg)
 {
   enter_critical_section();
   irqinfo("PANIC!!! Bus fault received: %08x\n", getreg32(NVIC_CFAULTS));
@@ -210,7 +205,7 @@ static int lc823450_busfault(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int lc823450_usagefault(int irq, FAR void *context, FAR void *arg)
+static int lc823450_usagefault(int irq, void *context, void *arg)
 {
   enter_critical_section();
   irqinfo("PANIC!!! Usage fault received: %08x\n", getreg32(NVIC_CFAULTS));
@@ -218,7 +213,7 @@ static int lc823450_usagefault(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int lc823450_pendsv(int irq, FAR void *context, FAR void *arg)
+static int lc823450_pendsv(int irq, void *context, void *arg)
 {
   enter_critical_section();
   irqinfo("PANIC!!! PendSV received\n");
@@ -226,7 +221,7 @@ static int lc823450_pendsv(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int lc823450_dbgmonitor(int irq, FAR void *context, FAR void *arg)
+static int lc823450_dbgmonitor(int irq, void *context, void *arg)
 {
   enter_critical_section();
   irqinfo("PANIC!!! Debug Monitor received\n");
@@ -234,7 +229,7 @@ static int lc823450_dbgmonitor(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int lc823450_reserved(int irq, FAR void *context, FAR void *arg)
+static int lc823450_reserved(int irq, void *context, void *arg)
 {
   enter_critical_section();
   irqinfo("PANIC!!! Reserved interrupt\n");
@@ -301,7 +296,7 @@ static void lc823450_extint_clr(int irq)
  *
  ****************************************************************************/
 
-static int lc823450_extint_isr(int irq, FAR void *context, FAR void *arg)
+static int lc823450_extint_isr(int irq, void *context, void *arg)
 {
   uint32_t regaddr;
   uint32_t pending;
@@ -724,7 +719,7 @@ void arm_ack_irq(int irq)
     {
       /* IRQ should be handled on CPU0 */
 
-      DEBUGASSERT(false);
+      DEBUGPANIC();
     }
 #endif
 }
@@ -861,16 +856,16 @@ int lc823450_irq_register(int irq, struct lc823450_irq_ops *ops)
 #endif /* CONFIG_LC823450_VIRQ */
 
 /****************************************************************************
- * Name: arm_intstack_base
+ * Name: arm_intstack_top
  *
  * Description:
- *   Return a pointer to the "base" the correct interrupt stack allocation
- *   for the current CPU. NOTE: Here, the base means "top" of the stack
+ *   Return a pointer to the top the correct interrupt stack allocation
+ *   for the current CPU.
  *
  ****************************************************************************/
 
 #if defined(CONFIG_SMP) && CONFIG_ARCH_INTERRUPTSTACK > 7
-uintptr_t arm_intstack_base(void)
+uintptr_t arm_intstack_top(void)
 {
   return g_cpu_intstack_top[up_cpu_index()];
 }

@@ -24,11 +24,13 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <string.h>
 #include <malloc.h>
 #include <stdbool.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/fs/procfs.h>
 #include <nuttx/mm/mm.h>
 
 #include "up_internal.h"
@@ -43,48 +45,51 @@
 
 struct mm_delaynode_s
 {
-  FAR struct mm_delaynode_s *flink;
+  struct mm_delaynode_s *flink;
 };
 
-struct mm_heap_impl_s
+struct mm_heap_s
 {
-  struct mm_delaynode_s *mm_delaylist;
+  struct mm_delaynode_s *mm_delaylist[CONFIG_SMP_NCPUS];
+
+#if defined(CONFIG_FS_PROCFS) && !defined(CONFIG_FS_PROCFS_EXCLUDE_MEMINFO)
+  struct procfs_meminfo_entry_s mm_procfs;
+#endif
 };
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
 
-#if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
-static void mm_add_delaylist(FAR struct mm_heap_s *heap, FAR void *mem)
+static void mm_add_delaylist(struct mm_heap_s *heap, void *mem)
 {
-  FAR struct mm_delaynode_s *tmp = mem;
+#if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
+  struct mm_delaynode_s *tmp = mem;
   irqstate_t flags;
 
   /* Delay the deallocation until a more appropriate time. */
 
   flags = enter_critical_section();
 
-  tmp->flink = heap->mm_impl->mm_delaylist;
-  heap->mm_impl->mm_delaylist = tmp;
+  tmp->flink = heap->mm_delaylist[up_cpu_index()];
+  heap->mm_delaylist[up_cpu_index()] = tmp;
 
   leave_critical_section(flags);
+#endif
 }
 
-#endif
-
-static void mm_free_delaylist(FAR struct mm_heap_s *heap)
+static void mm_free_delaylist(struct mm_heap_s *heap)
 {
 #if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
-  FAR struct mm_delaynode_s *tmp;
+  struct mm_delaynode_s *tmp;
   irqstate_t flags;
 
   /* Move the delay list to local */
 
   flags = enter_critical_section();
 
-  tmp = heap->mm_impl->mm_delaylist;
-  heap->mm_impl->mm_delaylist = NULL;
+  tmp = heap->mm_delaylist[up_cpu_index()];
+  heap->mm_delaylist[up_cpu_index()] = NULL;
 
   leave_critical_section(flags);
 
@@ -92,7 +97,7 @@ static void mm_free_delaylist(FAR struct mm_heap_s *heap)
 
   while (tmp)
     {
-      FAR void *address;
+      void *address;
 
       /* Get the first delayed deallocation */
 
@@ -131,13 +136,23 @@ static void mm_free_delaylist(FAR struct mm_heap_s *heap)
  *
  ****************************************************************************/
 
-void mm_initialize(FAR struct mm_heap_s *heap, FAR void *heap_start,
-                   size_t heap_size)
+struct mm_heap_s *mm_initialize(const char *name,
+                                    void *heap_start, size_t heap_size)
 {
-  FAR struct mm_heap_impl_s *impl;
-  impl = host_malloc(sizeof(struct mm_heap_impl_s));
-  impl->mm_delaylist = NULL;
-  heap->mm_impl = impl;
+  struct mm_heap_s *heap;
+
+  heap = host_memalign(sizeof(void *), sizeof(*heap));
+  DEBUGASSERT(heap);
+
+  memset(heap, 0, sizeof(struct mm_heap_s));
+
+#if defined(CONFIG_FS_PROCFS) && !defined(CONFIG_FS_PROCFS_EXCLUDE_MEMINFO)
+  heap->mm_procfs.name = name;
+  heap->mm_procfs.heap = heap;
+  procfs_register_meminfo(&heap->mm_procfs);
+#endif
+
+  return heap;
 }
 
 /****************************************************************************
@@ -158,7 +173,7 @@ void mm_initialize(FAR struct mm_heap_s *heap, FAR void *heap_start,
  *
  ****************************************************************************/
 
-void mm_addregion(FAR struct mm_heap_s *heap, FAR void *heapstart,
+void mm_addregion(struct mm_heap_s *heap, void *heapstart,
                   size_t heapsize)
 {
 }
@@ -174,12 +189,9 @@ void mm_addregion(FAR struct mm_heap_s *heap, FAR void *heapstart,
  *
  ****************************************************************************/
 
-FAR void *mm_malloc(FAR struct mm_heap_s *heap, size_t size)
+void *mm_malloc(struct mm_heap_s *heap, size_t size)
 {
-  /* Firstly, free mm_delaylist */
-
-  mm_free_delaylist(heap);
-  return host_malloc(size);
+  return mm_realloc(heap, NULL, size);
 }
 
 /****************************************************************************
@@ -191,35 +203,33 @@ FAR void *mm_malloc(FAR struct mm_heap_s *heap, size_t size)
  *
  ****************************************************************************/
 
-FAR void mm_free(FAR struct mm_heap_s *heap, FAR void *mem)
+void mm_free(struct mm_heap_s *heap, void *mem)
 {
 #if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
-  int ret = (int)getpid();
-
   /* Check current environment */
 
   if (up_interrupt_context())
     {
-      /* We are in ISR, add to mm_delaylist */
-
-      mm_add_delaylist(heap, mem);
-    }
-  else if (ret == -ESRCH || sched_idletask())
-    {
-      /* We are in IDLE task & can't get sem, or meet -ESRCH return,
-       * which means we are in situations during context switching(See
-       * mm_trysemaphore() & getpid()). Then add to mm_delaylist.
-       */
+      /* We are in ISR, add to the delay list */
 
       mm_add_delaylist(heap, mem);
     }
   else
 #endif
+
+  if (getpid() < 0)
+    {
+      /* getpid() return -ESRCH, means we are in situations
+       * during context switching(See getpid's comment).
+       * Then add to the delay list.
+       */
+
+      mm_add_delaylist(heap, mem);
+    }
+  else
     {
       host_free(mem);
     }
-
-  return;
 }
 
 /****************************************************************************
@@ -245,7 +255,7 @@ FAR void mm_free(FAR struct mm_heap_s *heap, FAR void *mem)
  *
  ****************************************************************************/
 
-FAR void *mm_realloc(FAR struct mm_heap_s *heap, FAR void *oldmem,
+void *mm_realloc(struct mm_heap_s *heap, void *oldmem,
                     size_t size)
 {
   mm_free_delaylist(heap);
@@ -260,10 +270,16 @@ FAR void *mm_realloc(FAR struct mm_heap_s *heap, FAR void *oldmem,
  *
  ****************************************************************************/
 
-FAR void *mm_calloc(FAR struct mm_heap_s *heap, size_t n, size_t elem_size)
+void *mm_calloc(struct mm_heap_s *heap, size_t n, size_t elem_size)
 {
-  mm_free_delaylist(heap);
-  return host_calloc(n, elem_size);
+  size_t size = n * elem_size;
+
+  if (size < elem_size)
+    {
+      return NULL;
+    }
+
+  return mm_zalloc(heap, size);
 }
 
 /****************************************************************************
@@ -274,9 +290,9 @@ FAR void *mm_calloc(FAR struct mm_heap_s *heap, size_t n, size_t elem_size)
  *
  ****************************************************************************/
 
-FAR void *mm_zalloc(FAR struct mm_heap_s *heap, size_t size)
+void *mm_zalloc(struct mm_heap_s *heap, size_t size)
 {
-  FAR void *ptr;
+  void *ptr;
 
   ptr = mm_malloc(heap, size);
   if (ptr != NULL)
@@ -300,7 +316,7 @@ FAR void *mm_zalloc(FAR struct mm_heap_s *heap, size_t size)
  *
  ****************************************************************************/
 
-FAR void *mm_memalign(FAR struct mm_heap_s *heap, size_t alignment,
+void *mm_memalign(struct mm_heap_s *heap, size_t alignment,
                       size_t size)
 {
   mm_free_delaylist(heap);
@@ -324,7 +340,7 @@ FAR void *mm_memalign(FAR struct mm_heap_s *heap, size_t alignment,
  *
  ****************************************************************************/
 
-bool mm_heapmember(FAR struct mm_heap_s *heap, FAR void *mem)
+bool mm_heapmember(struct mm_heap_s *heap, void *mem)
 {
   return true;
 }
@@ -338,47 +354,7 @@ bool mm_heapmember(FAR struct mm_heap_s *heap, FAR void *mem)
  *
  ****************************************************************************/
 
-FAR void *mm_brkaddr(FAR struct mm_heap_s *heap, int region)
-{
-  return NULL;
-}
-
-/****************************************************************************
- * Name: mm_sbrk
- *
- * Description:
- *    The sbrk() function is used to change the amount of space allocated
- *    for the calling process. The change is made by resetting the process's
- *    break value and allocating the appropriate amount of space.  The amount
- *    of allocated space increases as the break value increases.
- *
- *    The sbrk() function adds 'incr' bytes to the break value and changes
- *    the allocated space accordingly. If incr is negative, the amount of
- *    allocated space is decreased by incr bytes. The current value of the
- *    program break is returned by sbrk(0).
- *
- * Input Parameters:
- *    heap - A reference to the data structure that defines this heap.
- *    incr - Specifies the number of bytes to add or to remove from the
- *      space allocated for the process.
- *    maxbreak - The maximum permissible break address.
- *
- * Returned Value:
- *    Upon successful completion, sbrk() returns the prior break value.
- *    Otherwise, it returns (void *)-1 and sets errno to indicate the
- *    error:
- *
- *      ENOMEM - The requested change would allocate more space than
- *        allowed under system limits.
- *      EAGAIN - The total amount of system memory available for allocation
- *        to this process is temporarily insufficient. This may occur even
- *        though the space requested was less than the maximum data segment
- *        size.
- *
- ****************************************************************************/
-
-FAR void *mm_sbrk(FAR struct mm_heap_s *heap, intptr_t incr,
-                  uintptr_t maxbreak)
+void *mm_brkaddr(struct mm_heap_s *heap, int region)
 {
   return NULL;
 }
@@ -392,7 +368,7 @@ FAR void *mm_sbrk(FAR struct mm_heap_s *heap, intptr_t incr,
  *
  ****************************************************************************/
 
-void mm_extend(FAR struct mm_heap_s *heap, FAR void *mem, size_t size,
+void mm_extend(struct mm_heap_s *heap, void *mem, size_t size,
                int region)
 {
 }
@@ -405,10 +381,23 @@ void mm_extend(FAR struct mm_heap_s *heap, FAR void *mem, size_t size,
  *
  ****************************************************************************/
 
-int mm_mallinfo(FAR struct mm_heap_s *heap, FAR struct mallinfo *info)
+int mm_mallinfo(struct mm_heap_s *heap, struct mallinfo *info)
 {
   memset(info, 0, sizeof(struct mallinfo));
+  host_mallinfo(&info->aordblks, &info->uordblks);
   return 0;
+}
+
+/****************************************************************************
+ * Name: mm_memdump
+ *
+ * Description:
+ *   mm_memdump returns a memory info about specified pid of task/thread.
+ *
+ ****************************************************************************/
+
+void mm_memdump(struct mm_heap_s *heap, pid_t pid)
+{
 }
 
 #ifdef CONFIG_DEBUG_MM
@@ -421,11 +410,20 @@ int mm_mallinfo(FAR struct mm_heap_s *heap, FAR struct mallinfo *info)
  *
  ****************************************************************************/
 
-void mm_checkcorruption(FAR struct mm_heap_s *heap)
+void mm_checkcorruption(struct mm_heap_s *heap)
 {
 }
 
 #endif /* CONFIG_DEBUG_MM */
+
+/****************************************************************************
+ * Name: malloc_size
+ ****************************************************************************/
+
+size_t mm_malloc_size(void *mem)
+{
+  return host_malloc_size(mem);
+}
 
 /****************************************************************************
  * Name: up_allocate_heap
@@ -454,7 +452,7 @@ void up_allocate_heap(void **heap_start, size_t *heap_size)
 
   /* We make the entire heap executable here to keep
    * the sim simpler. If it turns out to be a problem, the
-   * ARCH_HAVE_MODULE_TEXT mechanism can be an alternative.
+   * ARCH_HAVE_TEXT_HEAP mechanism can be an alternative.
    */
 
   uint8_t *sim_heap = host_alloc_heap(SIM_HEAP_SIZE);

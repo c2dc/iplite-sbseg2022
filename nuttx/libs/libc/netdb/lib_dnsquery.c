@@ -50,6 +50,7 @@
 
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <errno.h>
 #include <debug.h>
 #include <assert.h>
@@ -85,7 +86,6 @@
 
 struct dns_query_s
 {
-  int sd;                         /* DNS server socket */
   int result;                     /* Explanation of the failure */
   FAR const char *hostname;       /* Hostname to lookup */
   FAR union dns_addr_u *addr;     /* Location to return host address */
@@ -181,7 +181,7 @@ static inline uint16_t dns_alloc_id(void)
 {
   struct timespec ts;
 
-  clock_gettime(CLOCK_REALTIME, &ts);
+  clock_gettime(CLOCK_MONOTONIC, &ts);
   return (uint32_t)ts.tv_nsec + ((uint32_t)ts.tv_nsec >> 16);
 }
 
@@ -219,7 +219,7 @@ static int dns_send_query(int sd, FAR const char *name,
 
   hdr               = (FAR struct dns_header_s *)buffer;
   memset(hdr, 0, sizeof(*hdr));
-  hdr->id           = htons(id);
+  hdr->id           = HTONS(id);
   hdr->flags1       = DNS_FLAG1_RD;
   hdr->numquestions = HTONS(1);
 
@@ -279,7 +279,7 @@ static int dns_send_query(int sd, FAR const char *name,
   *dest++ = (DNS_CLASS_IN >> 8);   /* DNS record class (big endian) */
   *dest++ = (DNS_CLASS_IN & 0xff);
 
-  qinfo->rectype = htons(rectype);
+  qinfo->rectype = HTONS(rectype);
   qinfo->id      = hdr->id;
 
   /* Send the request */
@@ -334,8 +334,10 @@ static int dns_recv_response(int sd, FAR union dns_addr_u *addr, int naddr,
   FAR struct dns_answer_s *ans;
   FAR struct dns_header_s *hdr;
   FAR struct dns_question_s *que;
+  struct dns_question_s bak;
   uint16_t nquestions;
   uint16_t nanswers;
+  uint16_t temp;
   int naddr_read;
   int ret;
 
@@ -365,12 +367,12 @@ static int dns_recv_response(int sd, FAR union dns_addr_u *addr, int naddr,
   hdr         = (FAR struct dns_header_s *)buffer;
   endofbuffer = (FAR uint8_t *)buffer + ret;
 
-  ninfo("ID %d\n", ntohs(hdr->id));
+  ninfo("ID %d\n", NTOHS(hdr->id));
   ninfo("Query %d\n", hdr->flags1 & DNS_FLAG1_RESPONSE);
   ninfo("Error %d\n", hdr->flags2 & DNS_FLAG2_ERR_MASK);
   ninfo("Num questions %d, answers %d, authrr %d, extrarr %d\n",
-        ntohs(hdr->numquestions), ntohs(hdr->numanswers),
-        ntohs(hdr->numauthrr), ntohs(hdr->numextrarr));
+        NTOHS(hdr->numquestions), NTOHS(hdr->numanswers),
+        NTOHS(hdr->numauthrr), NTOHS(hdr->numextrarr));
 
   /* Check for error */
 
@@ -385,7 +387,7 @@ static int dns_recv_response(int sd, FAR union dns_addr_u *addr, int naddr,
   if (hdr->id != qinfo->id)
     {
       nerr("ERROR: DNS wrong response ID (expected %d, got %d)\n",
-           ntohs(qinfo->id), ntohs(hdr->id));
+           NTOHS(qinfo->id), NTOHS(hdr->id));
       return -EBADMSG;
     }
 
@@ -393,8 +395,8 @@ static int dns_recv_response(int sd, FAR union dns_addr_u *addr, int naddr,
    * and the extrarr are simply discarded.
    */
 
-  nquestions = ntohs(hdr->numquestions);
-  nanswers   = ntohs(hdr->numanswers);
+  nquestions = NTOHS(hdr->numquestions);
+  nanswers   = NTOHS(hdr->numanswers);
 
   /* We only ever send queries with one question. */
 
@@ -436,11 +438,13 @@ static int dns_recv_response(int sd, FAR union dns_addr_u *addr, int naddr,
   /* Validate query type and class */
 
   que = (FAR struct dns_question_s *)nameptr;
-  ninfo("Question: type=%04x, class=%04x\n",
-        ntohs(que->type), ntohs(que->class));
+  memcpy(&bak, que, sizeof(struct dns_question_s));
 
-  if (que->type  != qinfo->rectype ||
-      que->class != HTONS(DNS_CLASS_IN))
+  /* N.B. Unaligned access may occur here */
+
+  temp = HTONS(DNS_CLASS_IN);
+  if (memcmp(&bak.type, &qinfo->rectype, sizeof(uint16_t)) != 0 ||
+      memcmp(&bak.class, &temp, sizeof(uint16_t)) != 0)
     {
       nerr("ERROR: DNS response with wrong question\n");
       return -EBADMSG;
@@ -467,10 +471,10 @@ static int dns_recv_response(int sd, FAR union dns_addr_u *addr, int naddr,
 
       ans = (FAR struct dns_answer_s *)nameptr;
 
-      ninfo("Answer: type=%04x, class=%04x, ttl=%06x, length=%04x \n",
-            ntohs(ans->type), ntohs(ans->class),
-            (ntohs(ans->ttl[0]) << 16) | ntohs(ans->ttl[1]),
-            ntohs(ans->len));
+      ninfo("Answer: type=%04x, class=%04x, ttl=%06x, length=%04x\n",
+            NTOHS(ans->type), NTOHS(ans->class),
+            (NTOHS(ans->ttl[0]) << 16) | NTOHS(ans->ttl[1]),
+            NTOHS(ans->len));
 
       /* Check for IPv4/6 address type and Internet class. Others are
        * discarded.
@@ -516,10 +520,14 @@ static int dns_recv_response(int sd, FAR union dns_addr_u *addr, int naddr,
           nameptr += 10 + 16;
 
           ninfo("IPv6 address: %04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x\n",
-                ntohs(ans->u.ipv6.s6_addr[7]), ntohs(ans->u.ipv6.s6_addr[6]),
-                ntohs(ans->u.ipv6.s6_addr[5]), ntohs(ans->u.ipv6.s6_addr[4]),
-                ntohs(ans->u.ipv6.s6_addr[3]), ntohs(ans->u.ipv6.s6_addr[2]),
-                ntohs(ans->u.ipv6.s6_addr[1]), ntohs(*ans->u.ipv6.s6_addr));
+                NTOHS(ans->u.ipv6.s6_addr16[0]),
+                NTOHS(ans->u.ipv6.s6_addr16[1]),
+                NTOHS(ans->u.ipv6.s6_addr16[2]),
+                NTOHS(ans->u.ipv6.s6_addr16[3]),
+                NTOHS(ans->u.ipv6.s6_addr16[4]),
+                NTOHS(ans->u.ipv6.s6_addr16[5]),
+                NTOHS(ans->u.ipv6.s6_addr16[6]),
+                NTOHS(ans->u.ipv6.s6_addr16[7]));
 
           inaddr                  = &addr[naddr_read].ipv6;
           inaddr->sin6_family     = AF_INET6;
@@ -535,7 +543,7 @@ static int dns_recv_response(int sd, FAR union dns_addr_u *addr, int naddr,
       else
 #endif
         {
-          nameptr = nameptr + 10 + ntohs(ans->len);
+          nameptr = nameptr + 10 + NTOHS(ans->len);
         }
     }
 
@@ -575,6 +583,13 @@ static int dns_query_callback(FAR void *arg, FAR struct sockaddr *addr,
   int retries;
   int ret;
 
+  int sd = dns_bind(addr->sa_family);
+  if (sd < 0)
+    {
+      query->result = sd;
+      return 0;
+    }
+
   /* Loop while receive timeout errors occur and there are remaining
    * retries.
    */
@@ -584,7 +599,7 @@ static int dns_query_callback(FAR void *arg, FAR struct sockaddr *addr,
 #ifdef CONFIG_NET_IPv6
       /* Send the IPv6 query */
 
-      ret = dns_send_query(query->sd, query->hostname,
+      ret = dns_send_query(sd, query->hostname,
                           (FAR union dns_addr_u *)addr,
                            DNS_RECTYPE_AAAA, &qinfo);
       if (ret < 0)
@@ -596,7 +611,7 @@ static int dns_query_callback(FAR void *arg, FAR struct sockaddr *addr,
         {
           /* Obtain the IPv6 response */
 
-          ret = dns_recv_response(query->sd, &query->addr[next],
+          ret = dns_recv_response(sd, &query->addr[next],
                                   *query->naddr - next, &qinfo);
           if (ret >= 0)
             {
@@ -613,7 +628,7 @@ static int dns_query_callback(FAR void *arg, FAR struct sockaddr *addr,
 #ifdef CONFIG_NET_IPv4
       /* Send the IPv4 query */
 
-      ret = dns_send_query(query->sd, query->hostname,
+      ret = dns_send_query(sd, query->hostname,
                            (FAR union dns_addr_u *)addr,
                            DNS_RECTYPE_A, &qinfo);
       if (ret < 0)
@@ -625,7 +640,7 @@ static int dns_query_callback(FAR void *arg, FAR struct sockaddr *addr,
         {
           /* Obtain the IPv4 response */
 
-          ret = dns_recv_response(query->sd, &query->addr[next],
+          ret = dns_recv_response(sd, &query->addr[next],
                                   *query->naddr - next, &qinfo);
           if (ret >= 0)
             {
@@ -651,6 +666,7 @@ static int dns_query_callback(FAR void *arg, FAR struct sockaddr *addr,
            */
 
           *query->naddr = next;
+          close(sd);
           return 1;
         }
       else if (query->result != -EAGAIN)
@@ -659,6 +675,7 @@ static int dns_query_callback(FAR void *arg, FAR struct sockaddr *addr,
         }
     }
 
+  close(sd);
   return 0;
 }
 
@@ -674,7 +691,6 @@ static int dns_query_callback(FAR void *arg, FAR struct sockaddr *addr,
  *   return its IP address in 'ipaddr'
  *
  * Input Parameters:
- *   sd       - The socket descriptor previously initialized by dsn_bind().
  *   hostname - The hostname string to be resolved.
  *   addr     - The location to return the IP addresses associated with the
  *     hostname.
@@ -687,7 +703,7 @@ static int dns_query_callback(FAR void *arg, FAR struct sockaddr *addr,
  *
  ****************************************************************************/
 
-int dns_query(int sd, FAR const char *hostname, FAR union dns_addr_u *addr,
+int dns_query(FAR const char *hostname, FAR union dns_addr_u *addr,
               FAR int *naddr)
 {
   FAR struct dns_query_s query;
@@ -695,7 +711,6 @@ int dns_query(int sd, FAR const char *hostname, FAR union dns_addr_u *addr,
 
   /* Set up the query info structure */
 
-  query.sd       = sd;
   query.result   = -EADDRNOTAVAIL;
   query.hostname = hostname;
   query.addr     = addr;

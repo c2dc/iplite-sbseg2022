@@ -32,9 +32,9 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/syslog/syslog.h>
 #include <arch/board/board.h>
 
-#include "mips_arch.h"
 #include "sched/sched.h"
 #include "mips_internal.h"
 
@@ -45,14 +45,18 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Name: up_stackdump
+ * Name: mips_stackdump
  ****************************************************************************/
 
-static void up_stackdump(uint32_t sp, uint32_t stack_base)
+static void mips_stackdump(uint32_t sp, uint32_t stack_top)
 {
-  uint32_t stack ;
+  uint32_t stack;
 
-  for (stack = sp & ~0x1f; stack < stack_base; stack += 32)
+  /* Flush any buffered SYSLOG data to avoid overwrite */
+
+  syslog_flush();
+
+  for (stack = sp & ~0x1f; stack < (stack_top & ~0x1f); stack += 32)
     {
       uint32_t *ptr = (uint32_t *)stack;
       _alert("%08" PRIx32 ": %08" PRIx32 " %08" PRIx32
@@ -64,10 +68,10 @@ static void up_stackdump(uint32_t sp, uint32_t stack_base)
 }
 
 /****************************************************************************
- * Name: up_registerdump
+ * Name: mips_registerdump
  ****************************************************************************/
 
-static inline void up_registerdump(void)
+static inline void mips_registerdump(void)
 {
   /* Are user registers available from interrupt processing? */
 
@@ -125,7 +129,7 @@ static inline void up_registerdump(void)
 void up_dumpstate(void)
 {
   struct tcb_s *rtcb = running_task();
-  uint32_t sp = mips_getsp();
+  uint32_t sp = up_getsp();
   uint32_t ustackbase;
   uint32_t ustacksize;
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
@@ -135,18 +139,18 @@ void up_dumpstate(void)
 
   /* Dump the registers (if available) */
 
-  up_registerdump();
+  mips_registerdump();
 
   /* Get the limits on the user stack memory */
 
-  ustackbase = (uint32_t)rtcb->adj_stack_ptr;
+  ustackbase = (uint32_t)rtcb->stack_base_ptr;
   ustacksize = (uint32_t)rtcb->adj_stack_size;
 
   /* Get the limits on the interrupt stack memory */
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
-  istackbase = (uint32_t)&g_intstackbase;
-  istacksize = (CONFIG_ARCH_INTERRUPTSTACK & ~3) - 4;
+  istackbase = (uint32_t)&g_intstackalloc;
+  istacksize = (CONFIG_ARCH_INTERRUPTSTACK & ~3);
 
   /* Show interrupt stack info */
 
@@ -159,23 +163,23 @@ void up_dumpstate(void)
    * stack?
    */
 
-  if (sp <= istackbase && sp > istackbase - istacksize)
+  if (sp >= istackbase && sp < istackbase + istacksize)
     {
       /* Yes.. dump the interrupt stack */
 
-      up_stackdump(sp, istackbase);
+      mips_stackdump(sp, istackbase + istacksize);
 
       /* Extract the user stack pointer which should lie
        * at the base of the interrupt stack.
        */
 
-      sp = g_intstackbase;
+      sp = g_intstacktop;
       _alert("sp:     %08" PRIx32 "\n", sp);
     }
   else if (CURRENT_REGS)
     {
       _alert("ERROR: Stack pointer is not within the interrupt stack\n");
-      up_stackdump(istackbase - istacksize, istackbase);
+      mips_stackdump(istackbase, istackbase + istacksize);
     }
 
   /* Show user stack info */
@@ -193,14 +197,14 @@ void up_dumpstate(void)
    * stack memory.
    */
 
-  if (sp > ustackbase || sp <= ustackbase - ustacksize)
+  if (sp >= ustackbase && sp < ustackbase + ustacksize)
     {
-      _alert("ERROR: Stack pointer is not within allocated stack\n");
-      up_stackdump(ustackbase - ustacksize, ustackbase);
+      mips_stackdump(sp, ustackbase + ustacksize);
     }
   else
     {
-      up_stackdump(sp, ustackbase);
+      _alert("ERROR: Stack pointer is not within allocated stack\n");
+      mips_stackdump(ustackbase, ustackbase + ustacksize);
     }
 }
 

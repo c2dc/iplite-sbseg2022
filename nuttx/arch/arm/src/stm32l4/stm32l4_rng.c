@@ -35,7 +35,6 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/drivers/drivers.h>
 
-#include "arm_arch.h"
 #include "hardware/stm32l4_rng.h"
 #include "arm_internal.h"
 
@@ -47,7 +46,7 @@
  ****************************************************************************/
 
 static int stm32l4_rng_initialize(void);
-static int stm32l4_rnginterrupt(int irq, void *context, FAR void *arg);
+static int stm32l4_rnginterrupt(int irq, void *context, void *arg);
 static void stm32l4_rngenable(void);
 static void stm32l4_rngdisable(void);
 static ssize_t stm32l4_rngread(struct file *filep, char *buffer, size_t);
@@ -82,7 +81,7 @@ static const struct file_operations g_rngops =
   NULL,            /* ioctl */
   NULL             /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  , 0              /* unlink */
+  , NULL           /* unlink */
 #endif
 };
 
@@ -138,7 +137,7 @@ static void stm32l4_rngdisable(void)
   putreg32(regval, STM32L4_RNG_CR);
 }
 
-static int stm32l4_rnginterrupt(int irq, void *context, FAR void *arg)
+static int stm32l4_rnginterrupt(int irq, void *context, void *arg)
 {
   uint32_t rngsr;
   uint32_t data;

@@ -30,6 +30,7 @@
 #include <stdio.h>
 #include <debug.h>
 #include <errno.h>
+#include <nuttx/arch.h>
 
 #include <nuttx/board.h>
 #include <nuttx/spi/spi.h>
@@ -73,6 +74,8 @@
 #else
 #  error "Select LTE SPI 4 or 5"
 #endif
+
+#define WAIT_READY_TO_GPIO_INTERRUPT 300 /* micro seconds */
 
 /****************************************************************************
  * Private Function Prototypes
@@ -313,6 +316,12 @@ static bool altmdm_sready(void)
 
 static void altmdm_master_request(bool request)
 {
+  /* If the GPIO falls within 300us after raising
+   * (or GPIO raises within 300us after falling), the modem may miss the GPIO
+   * interrupt. So delay by 300us before changing the GPIO.
+   */
+
+  up_udelay(WAIT_READY_TO_GPIO_INTERRUPT);
   cxd56_gpio_write(ALTMDM_MASTER_REQ, request);
 }
 
@@ -354,9 +363,9 @@ static uint32_t altmdm_spi_maxfreq(void)
  *
  ****************************************************************************/
 
-int board_altmdm_initialize(FAR const char *devpath)
+int board_altmdm_initialize(const char *devpath)
 {
-  FAR struct spi_dev_s *spi;
+  struct spi_dev_s *spi;
 #if defined(CONFIG_CXD56_LTE_SPI4_DMAC) || defined(CONFIG_CXD56_LTE_SPI5_DMAC)
   DMA_HANDLE            hdl;
   dma_config_t          conf;
@@ -366,7 +375,7 @@ int board_altmdm_initialize(FAR const char *devpath)
 
   if (!g_devhandle)
     {
-      /* Initialize spi deivce */
+      /* Initialize spi device */
 
       spi = cxd56_spibus_initialize(SPI_CH);
       if (!spi)

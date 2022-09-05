@@ -109,6 +109,10 @@
 #  include <nuttx/video/fb.h>
 #endif
 
+#ifdef CONFIG_CXD56_CISIF
+#  include <arch/chip/cisif.h>
+#endif
+
 #include "spresense.h"
 
 /****************************************************************************
@@ -182,7 +186,7 @@ static void timer_initialize(void)
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -191,9 +195,6 @@ int cxd56_bringup(void)
 {
   struct pm_cpu_wakelock_s wlock;
   int ret;
-#ifdef CONFIG_VIDEO_ISX012
-  FAR const struct video_devops_s *devops;
-#endif
 
   ret = nsh_cpucom_initialize();
   if (ret < 0)
@@ -247,6 +248,12 @@ int cxd56_bringup(void)
 #endif
 
 #ifndef CONFIG_CXD56_SUBCORE
+  /* Set the special pins for the host interface to GPIO mode because
+   * their mode is automatically changed by latching the SYSTEM0/1 pins.
+   */
+
+  CXD56_PIN_CONFIGS(PINCONFS_SPI2A_GPIO);
+
   /* Initialize CPU clock to max frequency */
 
   board_clock_initialize();
@@ -335,7 +342,7 @@ int cxd56_bringup(void)
   ret = board_pwm_setup();
   if (ret < 0)
     {
-      _err("ERROR: Failed to initialize pwm. \n");
+      _err("ERROR: Failed to initialize pwm.\n");
     }
 #endif
 
@@ -343,7 +350,7 @@ int cxd56_bringup(void)
   ret = cxd56_adcinitialize();
   if (ret < 0)
     {
-      _err("ERROR: Failed to initialize adc. \n");
+      _err("ERROR: Failed to initialize adc.\n");
     }
 #endif
 
@@ -351,7 +358,7 @@ int cxd56_bringup(void)
   ret = userled_lower_initialize("/dev/userleds");
   if (ret < 0)
     {
-      _err("ERROR: Failed to initialize led. \n");
+      _err("ERROR: Failed to initialize led.\n");
     }
 #endif
 
@@ -371,20 +378,30 @@ int cxd56_bringup(void)
     }
 #endif
 
-#ifdef CONFIG_VIDEO_ISX012
-  ret = board_isx012_initialize(IMAGER_I2C);
+#ifdef CONFIG_VIDEO_ISX019
+  ret = isx019_initialize();
   if (ret < 0)
     {
-      _err("ERROR: Failed to initialize ISX012 board. %d\n", ret);
+      _err("ERROR: Failed to initialize ISX019 board. %d\n", errno);
     }
+#endif
 
-  devops  = isx012_initialize();
-  if (devops == NULL)
+#ifdef CONFIG_VIDEO_ISX012
+  ret = isx012_initialize();
+  if (ret < 0)
     {
-      _err("ERROR: Failed to populate ISX012 devops. %d\n", ret);
+      _err("ERROR: Failed to initialize ISX012 board. %d\n", errno);
+    }
+#endif
+
+#ifdef CONFIG_CXD56_CISIF
+  ret = cxd56_cisif_initialize();
+  if (ret < 0)
+    {
+      _err("ERROR: Failed to initialize CISIF. %d\n", errno);
       ret = ERROR;
     }
-#endif /* CONFIG_VIDEO_ISX012 */
+#endif
 
 #if defined(CONFIG_CXD56_SDIO)
   /* In order to prevent Hi-Z from being input to the SD Card controller,
@@ -402,7 +419,7 @@ int cxd56_bringup(void)
   ret = board_sdcard_initialize();
   if (ret < 0)
     {
-      _err("ERROR: Failed to initialize sdhci. \n");
+      _err("ERROR: Failed to initialize sdhci.\n");
     }
 #endif
 
@@ -440,7 +457,7 @@ int cxd56_bringup(void)
   ret = board_gs2200m_initialize("/dev/gs2200m", 5);
   if (ret < 0)
     {
-      _err("ERROR: Failed to initialize GS2200M. \n");
+      _err("ERROR: Failed to initialize GS2200M.\n");
     }
 #endif
 
@@ -448,7 +465,7 @@ int cxd56_bringup(void)
   ret = cxd56_gnssinitialize("/dev/gps");
   if (ret < 0)
     {
-      _err("ERROR: Failed to initialize gnss. \n");
+      _err("ERROR: Failed to initialize gnss.\n");
     }
 #endif
 
@@ -456,7 +473,7 @@ int cxd56_bringup(void)
   ret = cxd56_geofenceinitialize("/dev/geofence");
   if (ret < 0)
     {
-      _err("ERROR: Failed to initialize geofence. \n");
+      _err("ERROR: Failed to initialize geofence.\n");
     }
 #endif
 

@@ -25,12 +25,12 @@
 #include <nuttx/config.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/clock.h>
 #include <arch/board/board.h>
 #include <string.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "lc823450_clockconfig.h"
 #include "lc823450_syscontrol.h"
 #include "lc823450_intc.h"
@@ -53,10 +53,6 @@
 
 #define UP_THRESHOLD 20
 #define DN_THRESHOLD 60
-
-#ifndef CONFIG_SMP_NCPUS
-#  define CONFIG_SMP_NCPUS 1
-#endif
 
 #ifdef CONFIG_DVFS_CHANGE_VOLTAGE
 #  define CORE12V_PIN (GPIO_PORT2 | GPIO_PIN1)
@@ -123,18 +119,14 @@ uint32_t g_dvfs_freq_stat[3] =
  ****************************************************************************/
 
 /****************************************************************************
- * Name: up_get_current_time()
+ * Name: _get_current_time64()
  ****************************************************************************/
 
 static uint64_t _get_current_time64(void)
 {
   struct timespec ts;
 
-#ifdef CONFIG_CLOCK_MONOTONIC
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-#else
-  clock_gettime(CLOCK_REALTIME, &ts);
-#endif
+  clock_systime_timespec(&ts);
   return (uint64_t)ts.tv_sec * NSEC_PER_SEC + (uint64_t)ts.tv_nsec;
 }
 
@@ -166,7 +158,7 @@ static int _dvfs_another_cpu_state(int me)
  * Callback for 1 shot timer
  ****************************************************************************/
 
-int lc823450_dvfs_oneshot(int irq, uint32_t *regs, FAR void *arg)
+int lc823450_dvfs_oneshot(int irq, uint32_t *regs, void *arg)
 {
   /* voltage has reached at 1.2V */
 

@@ -66,7 +66,7 @@
  * Name: up_saveusercontext
  *
  * Full C prototype:
- *  int up_saveusercontext(uint32_t *regs);
+ *  int up_saveusercontext(void *regs);
  *
  * Description:
  *  Save the "user" context.  It is not necessary to save all of the
@@ -124,7 +124,6 @@ up_saveusercontext:
 	 * NOTE:  We don't yet know the value for REG_ESP!  That depends upon
 	 * if a priority change occurs or not.
 	 */
-
 
 	leal	4(%esp), %ecx
 	movl	%ecx, (4*REG_SP)(%eax)

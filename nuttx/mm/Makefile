@@ -29,6 +29,9 @@ include mm_gran/Make.defs
 include shm/Make.defs
 include iob/Make.defs
 include circbuf/Make.defs
+include mempool/Make.defs
+include kasan/Make.defs
+include ubsan/Make.defs
 
 BINDIR ?= bin
 
@@ -61,8 +64,8 @@ $(BIN):	$(OBJS)
 # Memory manager for the kernel phase of the two-pass kernel build
 
 ifneq ($(BIN),$(KBIN))
-$(KBIN):
-	$(Q) $(MAKE) $(KBIN) BIN=$(KBIN) BINDIR=kbin EXTRAFLAGS="$(EXTRAFLAGS)"
+$(KBIN): $(OBJS)
+	$(Q) $(MAKE) $(KBIN) BIN=$(KBIN) EXTRAFLAGS="$(EXTRAFLAGS)"
 endif
 
 # Dependencies

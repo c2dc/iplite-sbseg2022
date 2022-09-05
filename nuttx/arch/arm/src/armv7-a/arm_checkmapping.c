@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/sched.h>
@@ -68,7 +69,7 @@
  *
  ****************************************************************************/
 
-bool arm_checkmapping(FAR struct tcb_s *tcb)
+bool arm_checkmapping(struct tcb_s *tcb)
 {
   uintptr_t vaddr;
   uint32_t *pte;

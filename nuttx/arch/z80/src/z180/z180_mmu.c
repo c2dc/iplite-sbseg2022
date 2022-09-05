@@ -27,6 +27,7 @@
 #include <nuttx/config.h>
 
 #include <errno.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -57,7 +58,7 @@
  ****************************************************************************/
 
 static GRAN_HANDLE g_physhandle;
-static struct z180_cbr_s g_cbrs[CONFIG_MAX_TASKS];
+static struct z180_cbr_s g_cbrs[CONFIG_Z180_MAX_TASKS];
 
 /****************************************************************************
  * Private Functions
@@ -78,7 +79,7 @@ static inline FAR struct z180_cbr_s *z180_mmu_alloccbr(void)
 {
   int i;
 
-  for (i = 0; i < CONFIG_MAX_TASKS; i++)
+  for (i = 0; i < CONFIG_Z180_MAX_TASKS; i++)
     {
       FAR struct z180_cbr_s *cbr = &g_cbrs[i];
       if (cbr->crefs == 0)
@@ -127,13 +128,13 @@ void z180_mmu_lowinit(void) __naked
    */
 
   __asm
-	ld	c, #Z180_MMU_CBAR		; port
-	ld	a, #Z180_CBAR_VALUE		; value
-	out	(c), a
+  ld c, #Z180_MMU_CBAR ; port
+  ld a, #Z180_CBAR_VALUE ; value
+  out (c), a
 
-	ld	c, #Z180_MMU_BBR		; port
-	ld	a, #Z180_BBR_VALUE		; value
-	out	(c), a
+  ld c, #Z180_MMU_BBR ; port
+  ld a, #Z180_BBR_VALUE ; value
+  out (c), a
   __endasm;
 }
 
@@ -373,6 +374,33 @@ int up_addrenv_vdata(FAR group_addrenv_t *addrenv, uintptr_t textsize,
 {
   return CONFIG_Z180_COMMON1AREA_VIRTBASE + textsize;
 }
+
+/****************************************************************************
+ * Name: up_addrenv_vheap
+ *
+ * Description:
+ *   Return the heap virtual address associated with the newly created
+ *   address environment.  This function is used by the binary loaders in
+ *   order get an address that can be used to initialize the new task.
+ *
+ * Input Parameters:
+ *   addrenv - The representation of the task address environment previously
+ *      returned by up_addrenv_create.
+ *   vheap - The location to return the virtual address.
+ *
+ * Returned Value:
+ *   Zero (OK) on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_BUILD_KERNEL
+int up_addrenv_vheap(FAR const group_addrenv_t *addrenv, FAR void **vheap)
+{
+  /* Not implemented */
+
+  return -ENOSYS;
+}
+#endif
 
 /****************************************************************************
  * Name: up_addrenv_heapsize

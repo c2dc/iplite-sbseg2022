@@ -31,6 +31,7 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <stdlib.h>
@@ -103,20 +104,20 @@ static bool    apds9960_isgestureavailable(FAR struct apds9960_dev_s *priv);
 /* I2C Helpers */
 
 static int     apds9960_i2c_read(FAR struct apds9960_dev_s *priv,
-                 uint8_t const regaddr, FAR uint8_t *regval, int len);
+                                 uint8_t const regaddr, FAR uint8_t *regval,
+                                 int len);
 static int     apds9960_i2c_read8(FAR struct apds9960_dev_s *priv,
-                 uint8_t const regaddr, FAR uint8_t *regval);
+                                  uint8_t const regaddr,
+                                  FAR uint8_t *regval);
 static int     apds9960_i2c_write(FAR struct apds9960_dev_s *priv,
-                 uint8_t const *data, int len);
+                                  uint8_t const *data, int len);
 static int     apds9960_i2c_write8(FAR struct apds9960_dev_s *priv,
-                 uint8_t const regaddr, uint8_t regval);
+                                   uint8_t const regaddr, uint8_t regval);
 
 /* Character driver methods */
 
-static int     apds9960_open(FAR struct file *filep);
-static int     apds9960_close(FAR struct file *filep);
 static ssize_t apds9960_read(FAR struct file *filep, FAR char *buffer,
-                 size_t buflen);
+                             size_t buflen);
 static ssize_t apds9960_write(FAR struct file *filep,
                  FAR const char *buffer, size_t buflen);
 
@@ -126,8 +127,8 @@ static ssize_t apds9960_write(FAR struct file *filep,
 
 static const struct file_operations g_apds9960_fops =
 {
-  apds9960_open,   /* open */
-  apds9960_close,  /* close */
+  NULL,            /* open */
+  NULL,            /* close */
   apds9960_read,   /* read */
   apds9960_write,  /* write */
   NULL,            /* seek */
@@ -679,7 +680,7 @@ static bool apds9960_processgesture(FAR struct apds9960_dev_s *priv)
 
       for (i = priv->gesture_data.total_gestures - 1; i >= 0; i--)
         {
-          sninfo("Finding last: \n");
+          sninfo("Finding last:\n");
           sninfo("U: %03d\n", priv->gesture_data.u_data[i]);
           sninfo("D: %03d\n", priv->gesture_data.d_data[i]);
           sninfo("L: %03d\n", priv->gesture_data.l_data[i]);
@@ -706,13 +707,13 @@ static bool apds9960_processgesture(FAR struct apds9960_dev_s *priv)
   ud_ratio_last  = ((u_last  - d_last)  * 100) / (u_last  + d_last);
   lr_ratio_last  = ((l_last  - r_last)  * 100) / (l_last  + r_last);
 
-  sninfo("Last Values: \n");
+  sninfo("Last Values:\n");
   sninfo("U: %03d\n", u_last);
   sninfo("D: %03d\n", d_last);
   sninfo("L: %03d\n", l_last);
   sninfo("R: %03d\n", r_last);
 
-  sninfo("Ratios: \n");
+  sninfo("Ratios:\n");
   sninfo("UD Fi: %03d\n", ud_ratio_first);
   sninfo("UD La: %03d\n", ud_ratio_last);
   sninfo("LR Fi: %03d\n", lr_ratio_first);
@@ -723,7 +724,7 @@ static bool apds9960_processgesture(FAR struct apds9960_dev_s *priv)
   ud_delta = ud_ratio_last - ud_ratio_first;
   lr_delta = lr_ratio_last - lr_ratio_first;
 
-  sninfo("Deltas: \n");
+  sninfo("Deltas:\n");
   sninfo("UD: %03d\n", ud_delta);
   sninfo("LR: %03d\n", lr_delta);
 
@@ -732,7 +733,7 @@ static bool apds9960_processgesture(FAR struct apds9960_dev_s *priv)
   priv->gesture_ud_delta += ud_delta;
   priv->gesture_lr_delta += lr_delta;
 
-  sninfo("Accumulations: \n");
+  sninfo("Accumulations:\n");
   sninfo("UD: %03d\n", priv->gesture_ud_delta);
   sninfo("LR: %03d\n", priv->gesture_lr_delta);
 
@@ -1126,32 +1127,6 @@ static int apds9960_readgesture(FAR struct apds9960_dev_s *priv)
           return motion;
         }
     }
-}
-
-/****************************************************************************
- * Name: apds9960_open
- *
- * Description:
- *   This function is called whenever the APDS9960 device is opened.
- *
- ****************************************************************************/
-
-static int apds9960_open(FAR struct file *filep)
-{
-  return OK;
-}
-
-/****************************************************************************
- * Name: apds9960_close
- *
- * Description:
- *   This routine is called when the APDS9960 device is closed.
- *
- ****************************************************************************/
-
-static int apds9960_close(FAR struct file *filep)
-{
-  return OK;
 }
 
 /****************************************************************************

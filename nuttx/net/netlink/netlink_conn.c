@@ -50,12 +50,14 @@
 
 /* The array containing all NetLink connections. */
 
+#ifndef CONFIG_NET_ALLOC_CONNS
 static struct netlink_conn_s g_netlink_connections[CONFIG_NETLINK_CONNS];
+#endif
 
 /* A list of all free NetLink connections */
 
 static dq_queue_t g_free_netlink_connections;
-static sem_t g_free_sem;
+static sem_t g_free_sem = SEM_INITIALIZER(1);
 
 /* A list of all allocated NetLink connections */
 
@@ -121,23 +123,17 @@ static void netlink_response_available(FAR void *arg)
 
 void netlink_initialize(void)
 {
+#ifndef CONFIG_NET_ALLOC_CONNS
   int i;
-
-  /* Initialize the queues */
-
-  dq_init(&g_free_netlink_connections);
-  dq_init(&g_active_netlink_connections);
-  nxsem_init(&g_free_sem, 0, 1);
 
   for (i = 0; i < CONFIG_NETLINK_CONNS; i++)
     {
-      FAR struct netlink_conn_s *conn = &g_netlink_connections[i];
-
       /* Mark the connection closed and move it to the free list */
 
-      memset(conn, 0, sizeof(*conn));
-      dq_addlast(&conn->node, &g_free_netlink_connections);
+      dq_addlast(&g_netlink_connections[i].sconn.node,
+                 &g_free_netlink_connections);
     }
+#endif
 }
 
 /****************************************************************************
@@ -152,21 +148,34 @@ void netlink_initialize(void)
 FAR struct netlink_conn_s *netlink_alloc(void)
 {
   FAR struct netlink_conn_s *conn;
+#ifdef CONFIG_NET_ALLOC_CONNS
+  int i;
+#endif
 
   /* The free list is protected by a semaphore (that behaves like a mutex). */
 
   _netlink_semtake(&g_free_sem);
+#ifdef CONFIG_NET_ALLOC_CONNS
+  if (dq_peek(&g_free_netlink_connections) == NULL)
+    {
+      conn = kmm_zalloc(sizeof(*conn) * CONFIG_NETLINK_CONNS);
+      if (conn != NULL)
+        {
+          for (i = 0; i < CONFIG_NETLINK_CONNS; i++)
+            {
+              dq_addlast(&conn[i].sconn.node, &g_free_netlink_connections);
+            }
+        }
+    }
+#endif
+
   conn = (FAR struct netlink_conn_s *)
            dq_remfirst(&g_free_netlink_connections);
   if (conn != NULL)
     {
-      /* Make sure that the connection is marked as uninitialized */
-
-      memset(conn, 0, sizeof(*conn));
-
       /* Enqueue the connection into the active list */
 
-      dq_addlast(&conn->node, &g_active_netlink_connections);
+      dq_addlast(&conn->sconn.node, &g_active_netlink_connections);
     }
 
   _netlink_semgive(&g_free_sem);
@@ -194,7 +203,7 @@ void netlink_free(FAR struct netlink_conn_s *conn)
 
   /* Remove the connection from the active list */
 
-  dq_rem(&conn->node, &g_active_netlink_connections);
+  dq_rem(&conn->sconn.node, &g_active_netlink_connections);
 
   /* Free any unclaimed responses */
 
@@ -209,7 +218,7 @@ void netlink_free(FAR struct netlink_conn_s *conn)
 
   /* Free the connection */
 
-  dq_addlast(&conn->node, &g_free_netlink_connections);
+  dq_addlast(&conn->sconn.node, &g_free_netlink_connections);
   _netlink_semgive(&g_free_sem);
 }
 
@@ -232,7 +241,7 @@ FAR struct netlink_conn_s *netlink_nextconn(FAR struct netlink_conn_s *conn)
     }
   else
     {
-      return (FAR struct netlink_conn_s *)conn->node.flink;
+      return (FAR struct netlink_conn_s *)conn->sconn.node.flink;
     }
 }
 

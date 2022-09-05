@@ -45,6 +45,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/arch.h>
@@ -53,7 +54,7 @@
 #include <nuttx/semaphore.h>
 #include <nuttx/signal.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "lc823450_sddrv_type.h"
 #include "lc823450_sddrv_if.h"
 #include "lc823450_dma.h"
@@ -109,7 +110,7 @@ static int _get_ch_from_cfg(struct sddrcfg_s *cfg)
         break;
 
       default:
-        DEBUGASSERT(false);
+        DEBUGPANIC();
     }
 
   return ch;
@@ -131,7 +132,7 @@ static void dma_callback(DMA_HANDLE hdma, void *arg, int result)
  * Name: _sddep_semtake
  ****************************************************************************/
 
-static int _sddep_semtake(FAR sem_t *sem)
+static int _sddep_semtake(sem_t *sem)
 {
   return nxsem_wait_uninterruptible(sem);
 }

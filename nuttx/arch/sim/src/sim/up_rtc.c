@@ -35,11 +35,11 @@
  * Private Function Prototypes
  ****************************************************************************/
 
-static int sim_rtc_rdtime(FAR struct rtc_lowerhalf_s *lower,
-                          FAR struct rtc_time *rtctime);
-static int sim_rtc_settime(FAR struct rtc_lowerhalf_s *lower,
-                           FAR const struct rtc_time *rtctime);
-static bool sim_rtc_havesettime(FAR struct rtc_lowerhalf_s *lower);
+static int sim_rtc_rdtime(struct rtc_lowerhalf_s *lower,
+                          struct rtc_time *rtctime);
+static int sim_rtc_settime(struct rtc_lowerhalf_s *lower,
+                           const struct rtc_time *rtctime);
+static bool sim_rtc_havesettime(struct rtc_lowerhalf_s *lower);
 
 /****************************************************************************
  * Private Data
@@ -63,8 +63,8 @@ static int64_t g_sim_delta;
  * Private Functions
  ****************************************************************************/
 
-static int sim_rtc_rdtime(FAR struct rtc_lowerhalf_s *lower,
-                          FAR struct rtc_time *rtctime)
+static int sim_rtc_rdtime(struct rtc_lowerhalf_s *lower,
+                          struct rtc_time *rtctime)
 {
   uint64_t nsec;
   time_t sec;
@@ -74,16 +74,16 @@ static int sim_rtc_rdtime(FAR struct rtc_lowerhalf_s *lower,
   sec   = nsec / NSEC_PER_SEC;
   nsec -= sec * NSEC_PER_SEC;
 
-  gmtime_r(&sec, (FAR struct tm *)rtctime);
+  gmtime_r(&sec, (struct tm *)rtctime);
   rtctime->tm_nsec = nsec;
 
   return OK;
 }
 
-static int sim_rtc_settime(FAR struct rtc_lowerhalf_s *lower,
-                           FAR const struct rtc_time *rtctime)
+static int sim_rtc_settime(struct rtc_lowerhalf_s *lower,
+                           const struct rtc_time *rtctime)
 {
-  g_sim_delta = mktime((FAR struct tm *)rtctime);
+  g_sim_delta = timegm((struct tm *)rtctime);
   g_sim_delta *= NSEC_PER_SEC;
   g_sim_delta += rtctime->tm_nsec;
   g_sim_delta -= host_gettime(true);
@@ -91,7 +91,7 @@ static int sim_rtc_settime(FAR struct rtc_lowerhalf_s *lower,
   return OK;
 }
 
-static bool sim_rtc_havesettime(FAR struct rtc_lowerhalf_s *lower)
+static bool sim_rtc_havesettime(struct rtc_lowerhalf_s *lower)
 {
   return true;
 }
@@ -123,10 +123,15 @@ static bool sim_rtc_havesettime(FAR struct rtc_lowerhalf_s *lower)
 
 int up_rtc_initialize(void)
 {
-#ifdef CONFIG_SIM_RPTUN_MASTER
-  up_rtc_set_lowerhalf(rpmsg_rtc_server_initialize(&g_sim_rtc));
-#else
-  up_rtc_set_lowerhalf(&g_sim_rtc);
+  struct rtc_lowerhalf_s *rtc = &g_sim_rtc;
+  bool sync = true;
+
+#ifdef CONFIG_RTC_RPMSG_SERVER
+  rtc = rpmsg_rtc_server_initialize(rtc);
+#elif defined(CONFIG_RTC_RPMSG)
+  rtc = rpmsg_rtc_initialize();
+  sync = false;
 #endif
-  return rtc_initialize(0, &g_sim_rtc);
+  up_rtc_set_lowerhalf(rtc, sync);
+  return rtc_initialize(0, rtc);
 }

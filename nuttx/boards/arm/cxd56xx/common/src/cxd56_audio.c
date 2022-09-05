@@ -39,7 +39,7 @@
 #include <arch/chip/audio.h>
 
 #include "chip.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 
 #include <arch/board/board.h>
 #include "cxd56_pmic.h"
@@ -453,6 +453,7 @@ void board_audio_finalize(void)
   board_audio_i2s_disable();
 }
 
+#ifdef CONFIG_AUDIO_CXD56
 /****************************************************************************
  * Name: board_audio_initialize_driver
  *
@@ -465,8 +466,8 @@ static struct cxd56_lower_s g_cxd56_lower[2];
 
 int board_audio_initialize_driver(int minor)
 {
-  FAR struct audio_lowerhalf_s *cxd56;
-  FAR struct audio_lowerhalf_s *pcm;
+  struct audio_lowerhalf_s *cxd56;
+  struct audio_lowerhalf_s *pcm;
   char devname[12];
   int ret;
 
@@ -480,6 +481,10 @@ int board_audio_initialize_driver(int minor)
       return -ENODEV;
     }
 
+#ifndef CONFIG_AUDIO_FORMAT_PCM
+  pcm = cxd56;
+#else
+
   /* Initialize a PCM decoder with the CXD56 instance. */
 
   pcm = pcm_decode_initialize(cxd56);
@@ -489,6 +494,8 @@ int board_audio_initialize_driver(int minor)
 
       return -ENODEV;
     }
+
+#endif
 
   /* Create a device name */
 
@@ -530,3 +537,4 @@ int board_audio_initialize_driver(int minor)
 
   return ret;
 }
+#endif /* CONFIG_AUDIO_CXD56 */

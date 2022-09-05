@@ -55,6 +55,7 @@
 #include <arch/irq.h>
 
 #include <nuttx/clock.h>
+#include <nuttx/kmalloc.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/net/netconfig.h>
 #include <nuttx/net/net.h>
@@ -71,8 +72,8 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define IPv4BUF ((struct ipv4_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
-#define IPv6BUF ((struct ipv6_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
+#define IPv4BUF ((FAR struct ipv4_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
+#define IPv6BUF ((FAR struct ipv6_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
 
 /****************************************************************************
  * Private Data
@@ -80,12 +81,14 @@
 
 /* The array containing all UDP connections. */
 
+#ifndef CONFIG_NET_ALLOC_CONNS
 struct udp_conn_s g_udp_connections[CONFIG_NET_UDP_CONNS];
+#endif
 
 /* A list of all free UDP connections */
 
 static dq_queue_t g_free_udp_connections;
-static sem_t g_free_sem;
+static sem_t g_free_sem = SEM_INITIALIZER(1);
 
 /* A list of all allocated UDP connections */
 
@@ -125,15 +128,12 @@ static FAR struct udp_conn_s *udp_find_conn(uint8_t domain,
                                             FAR union ip_binding_u *ipaddr,
                                             uint16_t portno)
 {
-  FAR struct udp_conn_s *conn;
-  int i;
+  FAR struct udp_conn_s *conn = NULL;
 
   /* Now search each connection structure. */
 
-  for (i = 0; i < CONFIG_NET_UDP_CONNS; i++)
+  while ((conn = udp_nextconn(conn)) != NULL)
     {
-      conn = &g_udp_connections[i];
-
       /* If the port local port number assigned to the connections matches
        * AND the IP address of the connection matches, then return a
        * reference to the connection structure.  INADDR_ANY is a special
@@ -170,76 +170,6 @@ static FAR struct udp_conn_s *udp_find_conn(uint8_t domain,
     }
 
   return NULL;
-}
-
-/****************************************************************************
- * Name: udp_select_port
- *
- * Description:
- *   Select an unused port number.
- *
- *   NOTE that in principle this function could fail if there is no available
- *   port number.  There is no check for that case and it would actually
- *   in an infinite loop if that were the case.  In this simple, small UDP
- *   implementation, it is reasonable to assume that that error cannot happen
- *   and that a port number will always be available.
- *
- * Input Parameters:
- *   None
- *
- * Returned Value:
- *   Next available port number
- *
- ****************************************************************************/
-
-static uint16_t udp_select_port(uint8_t domain, FAR union ip_binding_u *u)
-{
-  static uint16_t g_last_udp_port;
-  uint16_t portno;
-
-  net_lock();
-
-  /* Generate port base dynamically */
-
-  if (g_last_udp_port == 0)
-    {
-      g_last_udp_port = clock_systime_ticks() % 32000;
-
-      if (g_last_udp_port < 4096)
-        {
-          g_last_udp_port += 4096;
-        }
-    }
-
-  /* Find an unused local port number.  Loop until we find a valid
-   * listen port number that is not being used by any other connection.
-   */
-
-  do
-    {
-      /* Guess that the next available port number will be the one after
-       * the last port number assigned.
-       */
-
-      ++g_last_udp_port;
-
-      /* Make sure that the port number is within range */
-
-      if (g_last_udp_port >= 32000)
-        {
-          g_last_udp_port = 4096;
-        }
-    }
-  while (udp_find_conn(domain, u, htons(g_last_udp_port)) != NULL);
-
-  /* Initialize and return the connection structure, bind it to the
-   * port number
-   */
-
-  portno = g_last_udp_port;
-  net_unlock();
-
-  return portno;
 }
 
 /****************************************************************************
@@ -312,10 +242,10 @@ static inline FAR struct udp_conn_s *
        *   - Call send() with no address address information
        *   - call recv() (from address information should not be needed)
        *
-       * REVIST: SO_BROADCAST flag is currently ignored.
+       * REVISIT: SO_BROADCAST flag is currently ignored.
        */
 
-      /* Check that there is a local port number and this is matches
+      /* Check that there is a local port number and this matches
        * the port number in the destination address.
        */
 
@@ -377,7 +307,7 @@ static inline FAR struct udp_conn_s *
 
       /* Look at the next active connection */
 
-      conn = (FAR struct udp_conn_s *)conn->node.flink;
+      conn = (FAR struct udp_conn_s *)conn->sconn.node.flink;
     }
 
   return conn;
@@ -450,10 +380,10 @@ static inline FAR struct udp_conn_s *
        *   - Call send() with no address address information
        *   - call recv() (from address information should not be needed)
        *
-       * REVIST: SO_BROADCAST flag is currently ignored.
+       * REVISIT: SO_BROADCAST flag is currently ignored.
        */
 
-      /* Check that there is a local port number and this is matches
+      /* Check that there is a local port number and this matches
        * the port number in the destination address.
        */
 
@@ -516,7 +446,7 @@ static inline FAR struct udp_conn_s *
 
       /* Look at the next active connection */
 
-      conn = (FAR struct udp_conn_s *)conn->node.flink;
+      conn = (FAR struct udp_conn_s *)conn->sconn.node.flink;
     }
 
   return conn;
@@ -524,8 +454,118 @@ static inline FAR struct udp_conn_s *
 #endif /* CONFIG_NET_IPv6 */
 
 /****************************************************************************
+ * Name: udp_alloc_conn
+ *
+ * Description:
+ *   Allocate a uninitialized UDP connection structure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_NET_ALLOC_CONNS
+FAR struct udp_conn_s *udp_alloc_conn(void)
+{
+  FAR struct udp_conn_s *conn;
+  int i;
+
+  /* Return the entry from the head of the free list */
+
+  if (dq_peek(&g_free_udp_connections) == NULL)
+    {
+      conn = kmm_zalloc(sizeof(struct udp_conn_s) *
+                        CONFIG_NET_UDP_CONNS);
+      if (conn == NULL)
+        {
+          return conn;
+        }
+
+      /* Now initialize each connection structure */
+
+      for (i = 0; i < CONFIG_NET_UDP_CONNS; i++)
+        {
+          /* Mark the connection closed and move it to the free list */
+
+          conn[i].lport = 0;
+          dq_addlast(&conn[i].sconn.node, &g_free_udp_connections);
+        }
+    }
+
+  return (FAR struct udp_conn_s *)dq_remfirst(&g_free_udp_connections);
+}
+#endif
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: udp_select_port
+ *
+ * Description:
+ *   Select an unused port number.
+ *
+ *   NOTE that in principle this function could fail if there is no available
+ *   port number.  There is no check for that case and it would actually
+ *   in an infinite loop if that were the case.  In this simple, small UDP
+ *   implementation, it is reasonable to assume that that error cannot happen
+ *   and that a port number will always be available.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   Next available port number
+ *
+ ****************************************************************************/
+
+uint16_t udp_select_port(uint8_t domain, FAR union ip_binding_u *u)
+{
+  static uint16_t g_last_udp_port;
+  uint16_t portno;
+
+  net_lock();
+
+  /* Generate port base dynamically */
+
+  if (g_last_udp_port == 0)
+    {
+      g_last_udp_port = clock_systime_ticks() % 32000;
+
+      if (g_last_udp_port < 4096)
+        {
+          g_last_udp_port += 4096;
+        }
+    }
+
+  /* Find an unused local port number.  Loop until we find a valid
+   * listen port number that is not being used by any other connection.
+   */
+
+  do
+    {
+      /* Guess that the next available port number will be the one after
+       * the last port number assigned.
+       */
+
+      ++g_last_udp_port;
+
+      /* Make sure that the port number is within range */
+
+      if (g_last_udp_port >= 32000)
+        {
+          g_last_udp_port = 4096;
+        }
+    }
+  while (udp_find_conn(domain, u, HTONS(g_last_udp_port)) != NULL);
+
+  /* Initialize and return the connection structure, bind it to the
+   * port number
+   */
+
+  portno = g_last_udp_port;
+  net_unlock();
+
+  return portno;
+}
 
 /****************************************************************************
  * Name: udp_initialize
@@ -538,21 +578,17 @@ static inline FAR struct udp_conn_s *
 
 void udp_initialize(void)
 {
+#ifndef CONFIG_NET_ALLOC_CONNS
   int i;
-
-  /* Initialize the queues */
-
-  dq_init(&g_free_udp_connections);
-  dq_init(&g_active_udp_connections);
-  nxsem_init(&g_free_sem, 0, 1);
 
   for (i = 0; i < CONFIG_NET_UDP_CONNS; i++)
     {
       /* Mark the connection closed and move it to the free list */
 
       g_udp_connections[i].lport = 0;
-      dq_addlast(&g_udp_connections[i].node, &g_free_udp_connections);
+      dq_addlast(&g_udp_connections[i].sconn.node, &g_free_udp_connections);
     }
+#endif
 }
 
 /****************************************************************************
@@ -571,7 +607,11 @@ FAR struct udp_conn_s *udp_alloc(uint8_t domain)
   /* The free list is protected by a semaphore (that behaves like a mutex). */
 
   _udp_semtake(&g_free_sem);
+#ifndef CONFIG_NET_ALLOC_CONNS
   conn = (FAR struct udp_conn_s *)dq_remfirst(&g_free_udp_connections);
+#else
+  conn = udp_alloc_conn();
+#endif
   if (conn)
     {
       /* Make sure that the connection is marked as uninitialized */
@@ -580,11 +620,17 @@ FAR struct udp_conn_s *udp_alloc(uint8_t domain)
 #if defined(CONFIG_NET_IPv4) && defined(CONFIG_NET_IPv6)
       conn->domain  = domain;
 #endif
-#ifdef CONFIG_NET_UDP_BINDTODEVICE
-      conn->boundto = 0;  /* Not bound to any interface */
-#endif
       conn->lport   = 0;
-      conn->ttl     = IP_TTL;
+      conn->ttl     = IP_TTL_DEFAULT;
+#if CONFIG_NET_RECV_BUFSIZE > 0
+      conn->rcvbufs = CONFIG_NET_RECV_BUFSIZE;
+#endif
+#if CONFIG_NET_SEND_BUFSIZE > 0
+      conn->sndbufs = CONFIG_NET_SEND_BUFSIZE;
+
+      nxsem_init(&conn->sndsem, 0, 0);
+      nxsem_set_protocol(&conn->sndsem, SEM_PRIO_NONE);
+#endif
 
 #ifdef CONFIG_NET_UDP_WRITE_BUFFERS
       /* Initialize the write buffer lists */
@@ -593,7 +639,7 @@ FAR struct udp_conn_s *udp_alloc(uint8_t domain)
 #endif
       /* Enqueue the connection into the active list */
 
-      dq_addlast(&conn->node, &g_active_udp_connections);
+      dq_addlast(&conn->sconn.node, &g_active_udp_connections);
     }
 
   _udp_semgive(&g_free_sem);
@@ -624,11 +670,11 @@ void udp_free(FAR struct udp_conn_s *conn)
 
   /* Remove the connection from the active list */
 
-  dq_rem(&conn->node, &g_active_udp_connections);
+  dq_rem(&conn->sconn.node, &g_active_udp_connections);
 
   /* Release any read-ahead buffers attached to the connection */
 
-  iob_free_queue(&conn->readahead, IOBUSER_NET_UDP_READAHEAD);
+  iob_free_queue(&conn->readahead);
 
 #ifdef CONFIG_NET_UDP_WRITE_BUFFERS
   /* Release any write buffers attached to the connection */
@@ -638,11 +684,22 @@ void udp_free(FAR struct udp_conn_s *conn)
     {
       udp_wrbuffer_release(wrbuffer);
     }
+
+#if CONFIG_NET_SEND_BUFSIZE > 0
+  /* Notify the send buffer available */
+
+  udp_sendbuffer_notify(conn);
+#endif /* CONFIG_NET_SEND_BUFSIZE */
+
 #endif
+
+  /* Clear the connection structure */
+
+  memset(conn, 0, sizeof(*conn));
 
   /* Free the connection */
 
-  dq_addlast(&conn->node, &g_free_udp_connections);
+  dq_addlast(&conn->sconn.node, &g_free_udp_connections);
   _udp_semgive(&g_free_sem);
 }
 
@@ -699,7 +756,7 @@ FAR struct udp_conn_s *udp_nextconn(FAR struct udp_conn_s *conn)
     }
   else
     {
-      return (FAR struct udp_conn_s *)conn->node.flink;
+      return (FAR struct udp_conn_s *)conn->sconn.node.flink;
     }
 }
 
@@ -769,7 +826,7 @@ int udp_bind(FAR struct udp_conn_s *conn, FAR const struct sockaddr *addr)
     {
       /* Yes.. Select any unused local port number */
 
-      conn->lport = htons(udp_select_port(conn->domain, &conn->u));
+      conn->lport = HTONS(udp_select_port(conn->domain, &conn->u));
       ret         = OK;
     }
   else
@@ -839,7 +896,7 @@ int udp_connect(FAR struct udp_conn_s *conn, FAR const struct sockaddr *addr)
        * connection structure.
        */
 
-      conn->lport = htons(udp_select_port(conn->domain, &conn->u));
+      conn->lport = HTONS(udp_select_port(conn->domain, &conn->u));
     }
 
   /* Is there a remote port (rport)? */

@@ -49,6 +49,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <arpa/inet.h>
@@ -193,7 +194,7 @@ static int inet_ipv6_ntop(FAR const void *src, FAR char *dest,
 
   while (offset < 8)
     {
-      warray[offset] = ntohs(in6_addr->s6_addr16[offset]);
+      warray[offset] = NTOHS(in6_addr->s6_addr16[offset]);
       if (warray[offset] == 0)
         {
           entry = offset;
@@ -202,7 +203,7 @@ static int inet_ipv6_ntop(FAR const void *src, FAR char *dest,
 
           while (offset < 8)
             {
-              warray[offset] = ntohs(in6_addr->s6_addr16[offset]);
+              warray[offset] = NTOHS(in6_addr->s6_addr16[offset]);
               if (warray[offset] != 0)
                 {
                   break;

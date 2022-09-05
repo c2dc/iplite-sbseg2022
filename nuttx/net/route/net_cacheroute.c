@@ -122,7 +122,7 @@ static struct net_cache_ipv4_entry_s
 
 /* Serializes access to the routing table cache */
 
-static sem_t g_ipv4_cachelock;
+static sem_t g_ipv4_cachelock = SEM_INITIALIZER(1);
 #endif
 
 #if defined(CONFIG_ROUTE_IPv6_CACHEROUTE)
@@ -141,7 +141,7 @@ static struct net_cache_ipv6_entry_s
 
 /* Serializes access to the routing table cache */
 
-static sem_t g_ipv6_cachelock;
+static sem_t g_ipv6_cachelock = SEM_INITIALIZER(1);
 #endif
 
 /****************************************************************************
@@ -180,8 +180,8 @@ static sem_t g_ipv6_cachelock;
  *
  ****************************************************************************/
 
-#define net_unlock_ipv4_cache() (void)nxsem_post(&g_ipv4_cachelock)
-#define net_unlock_ipv6_cache() (void)nxsem_post(&g_ipv6_cachelock)
+#define net_unlock_ipv4_cache() nxsem_post(&g_ipv4_cachelock)
+#define net_unlock_ipv6_cache() nxsem_post(&g_ipv6_cachelock)
 
 /****************************************************************************
  * Name: net_add_newest_ipv4 and net_add_newest_ipv6
@@ -481,12 +481,10 @@ void net_init_cacheroute(void)
   /* Initialize the routing table cash and the free list */
 
 #ifdef CONFIG_ROUTE_IPv4_CACHEROUTE
-  nxsem_init(&g_ipv4_cachelock, 0, 1);
   net_reset_ipv4_cache();
 #endif
 
 #ifdef CONFIG_ROUTE_IPv6_CACHEROUTE
-  nxsem_init(&g_ipv6_cachelock, 0, 1);
   net_reset_ipv6_cache();
 #endif
 }

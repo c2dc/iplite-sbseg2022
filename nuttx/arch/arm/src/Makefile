@@ -19,7 +19,7 @@
 ############################################################################
 
 include $(TOPDIR)/Make.defs
--include chip/Make.defs
+include chip/Make.defs
 
 ifeq ($(CONFIG_ARCH_ARMV7A),y)          # ARMv7-A
 ARCH_SUBDIR = armv7-a
@@ -47,11 +47,7 @@ CFLAGS += $(INCLUDES)
 CXXFLAGS += $(INCLUDES)
 AFLAGS += $(INCLUDES)
 
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  NUTTX = "${shell cygpath -w $(TOPDIR)$(DELIM)nuttx$(EXEEXT)}"
-else
-  NUTTX = "$(TOPDIR)$(DELIM)nuttx$(EXEEXT)"
-endif
+NUTTX = $(call CONVERT_PATH,$(TOPDIR)$(DELIM)nuttx$(EXEEXT))
 
 # Additional rules for system call wrapper
 
@@ -89,27 +85,25 @@ UOBJS = $(UAOBJS) $(UCOBJS)
 KBIN = libkarch$(LIBEXT)
 BIN  = libarch$(LIBEXT)
 
-LDFLAGS += $(ARCHSCRIPT) $(EXTRALINKCMDS)
+LDFLAGS += $(addprefix -T,$(call CONVERT_PATH,$(ARCHSCRIPT))) $(EXTRALINKCMDS)
 
 # Override in Make.defs if linker is not 'ld'
 
-LDSTARTGROUP ?= --start-group
-LDENDGROUP ?= --end-group
+ifeq ($(LD),$(CC))
+  LDSTARTGROUP ?= -Wl,--start-group
+  LDENDGROUP   ?= -Wl,--end-group
+  LDFLAGS      := $(addprefix -Xlinker ,$(LDFLAGS))
+  LDFLAGS      += $(CFLAGS)
+else
+  LDSTARTGROUP ?= --start-group
+  LDENDGROUP   ?= --end-group
+endif
 
 BOARDMAKE = $(if $(wildcard board$(DELIM)Makefile),y,)
 
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  LIBPATHS += -L"${shell cygpath -w "$(TOPDIR)$(DELIM)staging"}"
+LIBPATHS += -L $(call CONVERT_PATH,$(TOPDIR)$(DELIM)staging)
 ifeq ($(BOARDMAKE),y)
-  LIBPATHS += -L"${shell cygpath -w "$(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)board"}"
-endif
-
-else
-  LIBPATHS += -L"$(TOPDIR)$(DELIM)staging"
-ifeq ($(BOARDMAKE),y)
-  LIBPATHS += -L"$(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)board"
-endif
-
+  LIBPATHS += -L $(call CONVERT_PATH,$(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)board)
 endif
 
 LDLIBS = $(patsubst %.a,%,$(patsubst lib%,-l%,$(LINKLIBS)))
@@ -122,9 +116,9 @@ VPATH += common
 VPATH += $(ARCH_SUBDIR)
 
 ifeq ($(CONFIG_ARCH_TOOLCHAIN_IAR),y)
-  VPATH += $(ARCH_SUBDIR)$(DELIM)iar
+  VPATH += common$(DELIM)iar
 else # ifeq ($(CONFIG_ARCH_TOOLCHAIN_GNU),y)
-  VPATH += $(ARCH_SUBDIR)$(DELIM)gnu
+  VPATH += common$(DELIM)gnu
 endif
 
 all: $(HEAD_OBJ) $(BIN)
@@ -151,11 +145,29 @@ $(KBIN): $(OBJS)
 board$(DELIM)libboard$(LIBEXT):
 	$(Q) $(MAKE) -C board libboard$(LIBEXT) EXTRAFLAGS="$(EXTRAFLAGS)"
 
-nuttx$(EXEEXT): $(HEAD_OBJ) board$(DELIM)libboard$(LIBEXT)
+define LINK_ALLSYMS
+	$(Q) $(TOPDIR)/tools/mkallsyms.sh $(NUTTX) $(CROSSDEV) > allsyms.tmp
+	$(Q) $(call COMPILE, -x c allsyms.tmp, allsyms$(OBJEXT))
+	$(Q) $(LD) --entry=__start $(LDFLAGS) $(LIBPATHS) $(EXTRA_LIBPATHS) \
+		-o $(NUTTX) $(HEAD_OBJ) allsyms$(OBJEXT) $(EXTRA_OBJS) \
+		$(LDSTARTGROUP) $(LDLIBS) $(EXTRA_LIBS) $(LDENDGROUP)
+	$(Q) $(call DELFILE, allsyms.tmp allsyms$(OBJEXT))
+endef
+
+nuttx$(EXEEXT): $(HEAD_OBJ) board$(DELIM)libboard$(LIBEXT) $(ARCHSCRIPT)
 	$(Q) echo "LD: nuttx"
+ifneq ($(CONFIG_ALLSYMS),y)
 	$(Q) $(LD) --entry=__start $(LDFLAGS) $(LIBPATHS) $(EXTRA_LIBPATHS) \
 		-o $(NUTTX) $(HEAD_OBJ) $(EXTRA_OBJS) \
 		$(LDSTARTGROUP) $(LDLIBS) $(EXTRA_LIBS) $(LDENDGROUP)
+else
+	$(Q) # Link and generate default table
+	$(Q) $(if $(wildcard $(shell echo $(NUTTX))),,$(call LINK_ALLSYMS,$^))
+	$(Q) # Extract all symbols
+	$(Q) $(call LINK_ALLSYMS, $^)
+	$(Q) # Extract again since the table offset may changed
+	$(Q) $(call LINK_ALLSYMS, $^)
+endif
 ifneq ($(CONFIG_WINDOWS_NATIVE),y)
 	$(Q) $(NM) $(NUTTX) | \
 	grep -v '\(compiled\)\|\(\$(OBJEXT)$$\)\|\( [aUw] \)\|\(\.\.ng$$\)\|\(LASH[RL]DI\)' | \
@@ -166,7 +178,7 @@ endif
 # Note that there may not be a head object if layout is handled
 # by the linker configuration.
 
-export_startup: board$(DELIM)libboard$(LIBEXT) $(STARTUP_OBJS)
+export_startup: $(STARTUP_OBJS)
 ifneq ($(STARTUP_OBJS),)
 	$(Q) if [ -d "$(EXPORT_DIR)$(DELIM)startup" ]; then \
 		cp -f $(STARTUP_OBJS) "$(EXPORT_DIR)$(DELIM)startup$(DELIM)."; \
@@ -193,8 +205,6 @@ depend: .depend
 
 context::
 
-clean_context::
-
 clean:
 ifeq ($(BOARDMAKE),y)
 	$(Q) $(MAKE) -C board clean
@@ -206,7 +216,7 @@ ifneq ($(EXTRADELFILE),)
 endif
 	$(call CLEAN)
 
-distclean: clean
+distclean:: clean
 ifeq ($(BOARDMAKE),y)
 	$(Q) $(MAKE) -C board distclean
 endif

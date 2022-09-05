@@ -38,7 +38,8 @@
  * Included Files
  ****************************************************************************/
 
-#include <arch/esp32/core-isa.h>
+#include <assert.h>
+#include <arch/chip/core-isa.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -56,7 +57,7 @@
 
 /* A set of all co-processors */
 
-#define XTENSA_CP_ALLSET     ((1 << XCHAL_CP_NUM) - 1)
+#define XTENSA_CP_ALLSET     XCHAL_CP_MASK
 
 /* CO-PROCESSOR STATE SAVE AREA FOR A THREAD
  *
@@ -131,7 +132,7 @@
 
 #define XTENSA_CPENABLE   0  /* (2 bytes) coprocessors active for this thread */
 #define XTENSA_CPSTORED   2  /* (2 bytes) coprocessors saved for this thread */
-#define XTENSA_CPASA      4  /* (4 bytes) ptr to aligned save area */
+#define XTENSA_CPASA      8  /* (8 bytes) ptr to aligned save area */
 
 /****************************************************************************
  * Public Types
@@ -139,12 +140,22 @@
 
 #ifndef __ASSEMBLY__
 
+#if 0
+
+/* This struct is not used as CP context switch was implement in interrupt
+ * handler. Will be reused when lazy context switch is implemented.
+ */
+
 struct xtensa_cpstate_s
 {
-  uint16_t cpenable;  /* (2 bytes) Co-processors active for this thread */
-  uint16_t cpstored;  /* (2 bytes) Co-processors saved for this thread */
-  uint32_t *cpasa;    /* (4 bytes) Pointer to aligned save area */
+  uint16_t cpenable;                                 /* (2 bytes) Co-processors active for this thread */
+  uint16_t cpstored;                                 /* (2 bytes) Co-processors saved for this thread */
+  uint8_t  cpasa[XTENSA_CP_SA_SIZE] aligned_data(8); /* cp save area */
 };
+
+static_assert(offsetof(struct xtensa_cpstate_s, cpasa) == XTENSA_CPASA,
+              "CP save area address alignment violation.");
+#endif
 
 /****************************************************************************
  * Inline Functions

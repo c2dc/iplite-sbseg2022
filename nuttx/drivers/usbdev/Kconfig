@@ -227,9 +227,17 @@ config COMPOSITE_PRODUCTSTR
 	---help---
 		The product ID code/string
 
+config COMPOSITE_BOARD_SERIALSTR
+	bool "Enable board unique ID to composite serial string"
+	default n
+	select BOARD_USBDEV_SERIALSTR
+	---help---
+		Use board unique serial number to iSerialNumber in the device descriptor.
+
 config COMPOSITE_SERIALSTR
 	string "Composite serial string"
 	default "001"
+	depends on !COMPOSITE_BOARD_SERIALSTR
 	---help---
 		Device serial number string
 
@@ -351,6 +359,13 @@ config PL2303_PRODUCTID
 config PL2303_VENDORSTR
 	string "Vendor string"
 	default "NuttX"
+
+config PL2303_BOARD_SERIALSTR
+	bool "Enable board unique ID to PL2303 serial string"
+	default n
+	select BOARD_USBDEV_SERIALSTR
+	---help---
+		Use board unique serial number to iSerialNumber in the device descriptor.
 
 config PL2303_PRODUCTSTR
 	string "Product string"
@@ -565,6 +580,13 @@ config CDCACM_PRODUCTSTR
 	string "Product string"
 	default "CDC/ACM Serial"
 
+config CDCACM_BOARD_SERIALSTR
+	bool "Enable board unique ID to CDC/ACM serial string"
+	default n
+	select BOARD_USBDEV_SERIALSTR
+	---help---
+		Use board unique serial number to iSerialNumber in the device descriptor.
+
 endif # !CDCACM_COMPOSITE
 endif # CDCACM
 
@@ -675,9 +697,17 @@ config USBADB_PRODUCTSTR
 	string "Product string"
 	default "Debug Bridge"
 
+config USBADB_BOARD_SERIALSTR
+	bool "Enable board unique ID to USBADB serial string"
+	default n
+        select BOARD_USBDEV_SERIALSTR
+	---help---
+		Use board unique serial number to iSerialNumber in the device descriptor.
+
 config USBADB_SERIALSTR
 	string "Serial string"
 	default "1234"
+	depends on !USBADB_BOARD_SERIALSTR
 
 endif # !USBADB_COMPOSITE
 
@@ -769,6 +799,20 @@ config USBMSC_NRDREQS
 	---help---
 		The number of write/read requests that can be in flight
 
+config USBMSC_WRMULTIPLE
+	bool "Write multiple blocks at once if possible"
+	default n
+	---help---
+		Store multiple blocks and write them in a single request.  This
+		speeds up the writing significantly with eMMC devices, for example,
+		because writing 512 bytes may be as fast as writing the complete
+		SUPER_PAGE_SIZE (see extended CSD [225] bits 0-3), which may be up
+		to 64Kb.  Real-life example with different block sizes, using the
+		dd command with argument bs=512, bs=8k (USBMSC_NWRREQS = 4, and 16):
+		512b: 470 kb/s, 8k: 5.3 Mb/s.  This is more than a tenfold increase
+		in the throughput.  Without this option enabled, the block driver's
+		block size is always used, which is usually 512 bytes.
+
 config USBMSC_BULKINREQLEN
 	int "Bulk IN request size"
 	default 512 if USBDEV_DUALSPEED
@@ -793,6 +837,20 @@ config USBMSC_BULKOUTREQLEN
 		Therefore, there is no benefit in increasing the size of this buffer
 		beyond the maximum size of one packet.  Default:  512 or 64 bytes
 		(depending upon if dual speed operation is supported or not).
+
+if USBMSC_COMPOSITE
+
+config USBMSC_IFNOBASE
+	int "Mass storage interface number"
+	default 0
+	---help---
+		With composite USB drivers, the interface is not guaranteed to be zero
+		but rather, may vary according to the order in which the devices are
+		declared in the board_composite_connect() -function. This function may
+		be found in the corresponding board file. This index number may need to
+		be adjusted to match the proper interface number.
+
+endif
 
 if !USBMSC_COMPOSITE
 
@@ -824,11 +882,18 @@ config USBMSC_PRODUCTSTR
 	string "Mass storage product string"
 	default "Mass Storage"
 
+config USBMSC_BOARD_SERIALSTR
+	bool "Enable board unique ID to mass storage serial string"
+	default n
+        select BOARD_USBDEV_SERIALSTR
+	---help---
+		Use board unique serial number to iSerialNumber in the device descriptor.
+
 endif # !USBMSC_COMPOSITE
 
 config USBMSC_VERSIONNO
 	hex "USB MSC Version Number"
-	default "0x399"
+	default 0x399
 
 config USBMSC_REMOVABLE
 	bool "Mass storage removable"
@@ -851,6 +916,14 @@ config USBMSC_SCSI_STACKSIZE
 	---help---
 		Stack size used with the SCSI kernel thread.  The default value
 		is not tuned.
+
+config USBMSC_NOT_STALL_BULKEP
+	bool "Not stall USBMSC bulk endpoints for workaround"
+	default n
+	---help---
+		Not stall USBMSC bulk endpoints in some conditions.
+		Because RP2040 usbdev driver cannot handle stalling/resuming bulk
+		endpoints well, this workaround is required.
 
 endif
 
@@ -913,9 +986,17 @@ config RNDIS_PRODUCTSTR
 	string "RNDIS product string"
 	default "RNDIS gadget"
 
+config RNDIS_BOARD_SERIALSTR
+	bool "Enable board unique ID to RNDIS serial string"
+	default n
+	select BOARD_USBDEV_SERIALSTR
+	---help---
+		Use board unique serial number to iSerialNumber in the device descriptor.
+
 config RNDIS_SERIALSTR
 	string "RNDIS serial string"
 	default "1234"
+	depends on !RNDIS_BOARD_SERIALSTR
 
 config RNDIS_VERSIONNO
 	hex "RNDIS Version Number"
@@ -1128,6 +1209,13 @@ config CDCECM_VENDORSTR
 config CDCECM_PRODUCTSTR
 	string "Product string"
 	default "CDC/ECM Ethernet"
+
+config CDCECM_BOARD_SERIALSTR
+	bool "Enable board unique ID to CDC/ECM serial string"
+	default n
+	select BOARD_USBDEV_SERIALSTR
+	---help---
+		Use board unique serial number to iSerialNumber in the device descriptor.
 
 endif # !CDCECM_COMPOSITE
 endif # CDCECM

@@ -1,35 +1,20 @@
 /****************************************************************************
- * examples/mld/mld_main.c
+ * apps/examples/mld/mld_main.c
  *
- *   Copyright (C) 2018 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -273,9 +258,10 @@ int main(int argc, FAR char *argv[])
   FAR char *iobuffer = NULL;
   struct sockaddr_in6 host;
 #ifdef CONFIG_NET_ROUTE
-  struct sockaddr_in6 target;
-  struct sockaddr_in6 router;
-  struct sockaddr_in6 netmask;
+  struct sockaddr_storage target;
+  struct sockaddr_storage router;
+  struct sockaddr_storage netmask;
+  FAR struct sockaddr_in6 *v6_addr;
 #endif
   struct ipv6_mreq mrec;
   int nsec;
@@ -374,31 +360,31 @@ int main(int argc, FAR char *argv[])
 
   /* Set up a routing table entry for the address of the multicast group */
 
-  memset(&target, 0, sizeof(struct sockaddr_in6));
-  target.sin6_family  = AF_INET6;
-  target.sin6_port    = HTONS(0x4321);
-  memcpy(target.sin6_addr.s6_addr16, g_grp_addr, sizeof(struct in6_addr));
+  memset(&target, 0, sizeof(target));
+  v6_addr = (FAR struct sockaddr_in6 *)&target;
+  v6_addr->sin6_family  = AF_INET6;
+  v6_addr->sin6_port    = HTONS(0x4321);
+  memcpy(v6_addr->sin6_addr.s6_addr16, g_grp_addr, sizeof(struct in6_addr));
 
-  memset(&netmask, 0, sizeof(struct sockaddr_in6));
-  netmask.sin6_family  = AF_INET6;
-  netmask.sin6_port    = HTONS(0x4321);
-  memset(netmask.sin6_addr.s6_addr16, 0xff, sizeof(struct in6_addr));
+  memset(&netmask, 0, sizeof(netmask));
+  v6_addr = (FAR struct sockaddr_in6 *)&netmask;
+  v6_addr->sin6_family  = AF_INET6;
+  v6_addr->sin6_port    = HTONS(0x4321);
+  memset(v6_addr->sin6_addr.s6_addr16, 0xff, sizeof(struct in6_addr));
 
-  memset(&router, 0, sizeof(struct sockaddr_in6));
-  router.sin6_family  = AF_INET6;
-  router.sin6_port    = HTONS(0x4321);
+  memset(&router, 0, sizeof(router));
+  v6_addr = (FAR struct sockaddr_in6 *)&router;
+  v6_addr->sin6_family  = AF_INET6;
+  v6_addr->sin6_port    = HTONS(0x4321);
 
-  ret = netlib_get_ipv6addr("eth0", &router.sin6_addr);
+  ret = netlib_get_ipv6addr("eth0", &v6_addr->sin6_addr);
   if (ret < 0)
     {
       fprintf(stderr, "ERROR: netlib_get_ipv6addr() failed: %d\n", ret);
     }
   else
     {
-      ret = addroute(sockfd,
-                     (FAR struct sockaddr_storage *)&target,
-                     (FAR struct sockaddr_storage *)&netmask,
-                     (FAR struct sockaddr_storage *)&router);
+      ret = addroute(sockfd, &target, &netmask, &router);
       if (ret < 0)
         {
           fprintf(stderr, "ERROR: addroute() failed: %d\n", errno);
@@ -420,9 +406,7 @@ int main(int argc, FAR char *argv[])
         }
     }
 
-  ret = delroute(sockfd,
-                 (FAR struct sockaddr_storage *)&target,
-                 (FAR struct sockaddr_storage *)&netmask);
+  ret = delroute(sockfd, &target, &netmask);
   if (ret < 0)
     {
       fprintf(stderr, "ERROR: delroute() failed: %d\n", errno);

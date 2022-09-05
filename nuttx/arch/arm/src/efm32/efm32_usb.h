@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_EFM32_EFM32_OTGFS_H
-#define __ARCH_ARM_SRC_EFM32_EFM32_OTGFS_H
+#ifndef __ARCH_ARM_SRC_EFM32_EFM32_USB_H
+#define __ARCH_ARM_SRC_EFM32_EFM32_USB_H
 
 /****************************************************************************
  * Included Files
@@ -152,7 +152,7 @@ extern "C"
 
 #ifdef CONFIG_USBHOST
 struct usbhost_connection_s;
-FAR struct usbhost_connection_s *efm32_usbhost_initialize(int controller);
+struct usbhost_connection_s *efm32_usbhost_initialize(int controller);
 #endif
 
 /****************************************************************************
@@ -190,7 +190,7 @@ void efm32_usbhost_vbusdrive(int iface, bool enable);
 
 #ifdef CONFIG_USBDEV
 struct usbdev_s;
-void efm32_usbsuspend(FAR struct usbdev_s *dev, bool resume);
+void efm32_usbsuspend(struct usbdev_s *dev, bool resume);
 #endif
 
 #undef EXTERN
@@ -200,4 +200,4 @@ void efm32_usbsuspend(FAR struct usbdev_s *dev, bool resume);
 
 #endif /* __ASSEMBLY__ */
 #endif /* CONFIG_EFM32_OTGFS */
-#endif /* __ARCH_ARM_SRC_EFM32_EFM32_OTGFS_H */
+#endif /* __ARCH_ARM_SRC_EFM32_EFM32_USB_H */

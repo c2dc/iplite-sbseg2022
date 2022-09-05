@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_RISCV_SRC_BL602_TIM_LOWERHALF_H
-#define __ARCH_RISCV_SRC_BL602_TIM_LOWERHALF_H
+#ifndef __ARCH_RISCV_SRC_BL602_BL602_TIM_LOWERHALF_H
+#define __ARCH_RISCV_SRC_BL602_BL602_TIM_LOWERHALF_H
 
 /****************************************************************************
  * Included Files
@@ -27,7 +27,6 @@
 
 #include <nuttx/config.h>
 
-#include "bl602_tim_lowerhalf.h"
 #include "bl602_tim.h"
 
 /****************************************************************************
@@ -38,6 +37,6 @@
  * Name: bl602_timer_initialize
  ****************************************************************************/
 
-int bl602_timer_initialize(FAR const char *devpath, int timer);
+int bl602_timer_initialize(const char *devpath, int timer);
 
-#endif /* __ARCH_RISCV_SRC_BL602_TIM_LOWERHALF_H */
+#endif /* __ARCH_RISCV_SRC_BL602_BL602_TIM_LOWERHALF_H */

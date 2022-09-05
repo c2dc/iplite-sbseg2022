@@ -1,35 +1,20 @@
 /****************************************************************************
  * drivers/mtd/filemtd.c
  *
- *   Copyright (C) 2015 Ken Pettit. All rights reserved.
- *   Author: Ken Pettit <pettitkd@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -56,6 +41,10 @@
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
+
+#ifndef MIN
+#  define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
 
 /* Configuration ************************************************************/
 
@@ -144,9 +133,10 @@ static ssize_t filemtd_write(FAR struct file_dev_s *priv, size_t offset,
                              FAR const void *src, size_t len)
 {
   FAR const uint8_t *pin  = (FAR const uint8_t *)src;
-  FAR uint8_t       *pout;
+  FAR uint8_t       *pout = NULL;
   char               buf[128];
-  int                buflen = 0;
+  int                buflen;
+  int                remain = 0;
   uint8_t            oldvalue;
   uint8_t            srcvalue;
   uint8_t            newvalue;
@@ -156,15 +146,16 @@ static ssize_t filemtd_write(FAR struct file_dev_s *priv, size_t offset,
 
   seekpos = priv->offset + offset;
 
-  while (len-- > 0)
+  for (buflen = 0; len > 0; len--)
     {
       if (buflen == 0)
         {
           /* Read more data from the file */
 
           file_seek(&priv->mtdfile, seekpos, SEEK_SET);
-          buflen = file_read(&priv->mtdfile, buf, sizeof(buf));
-          pout   = (FAR uint8_t *) buf;
+          buflen = file_read(&priv->mtdfile, buf, MIN(len, sizeof(buf)));
+          pout   = (FAR uint8_t *)buf;
+          remain = buflen;
         }
 
       /* Get the source and destination values */
@@ -197,17 +188,18 @@ static ssize_t filemtd_write(FAR struct file_dev_s *priv, size_t offset,
       /* Write the modified value to simulated FLASH */
 
       *pout++ = newvalue;
-      buflen--;
+      remain--;
 
       /* If our buffer is full, then seek back to beginning of
        * the file and write the buffer contents
        */
 
-      if (buflen == 0)
+      if (remain == 0)
         {
           file_seek(&priv->mtdfile, seekpos, SEEK_SET);
-          file_write(&priv->mtdfile, buf, sizeof(buf));
-          seekpos += sizeof(buf);
+          file_write(&priv->mtdfile, buf, buflen);
+          seekpos += buflen;
+          buflen = 0;
         }
     }
 
@@ -216,7 +208,7 @@ static ssize_t filemtd_write(FAR struct file_dev_s *priv, size_t offset,
   if (buflen != 0)
     {
       file_seek(&priv->mtdfile, seekpos, SEEK_SET);
-      file_write(&priv->mtdfile, buf, sizeof(buf));
+      file_write(&priv->mtdfile, buf, buflen);
     }
 
   return len;
@@ -267,8 +259,8 @@ static int filemtd_erase(FAR struct mtd_dev_s *dev, off_t startblock,
    * in logical block numbers
    */
 
-  startblock *= FILEMTD_BLKPER;
-  nblocks    *= FILEMTD_BLKPER;
+  startblock *= (priv->erasesize / priv->blocksize);
+  nblocks    *= (priv->erasesize / priv->blocksize);
 
   /* Get the offset corresponding to the first block and the size
    * corresponding to the number of blocks.
@@ -281,10 +273,10 @@ static int filemtd_erase(FAR struct mtd_dev_s *dev, off_t startblock,
 
   file_seek(&priv->mtdfile, priv->offset + offset, SEEK_SET);
   memset(buffer, CONFIG_FILEMTD_ERASESTATE, sizeof(buffer));
-  while (nbytes)
+  while (nbytes > 0)
     {
-      file_write(&priv->mtdfile, buffer, sizeof(buffer));
-      nbytes -= sizeof(buffer);
+      file_write(&priv->mtdfile, buffer, MIN(nbytes, sizeof(buffer)));
+      nbytes -= MIN(nbytes, sizeof(buffer));
     }
 
   return OK;
@@ -306,7 +298,7 @@ static ssize_t filemtd_bread(FAR struct mtd_dev_s *dev, off_t startblock,
 
   /* Don't let the read exceed the original size of the file */
 
-  maxblock = priv->nblocks * FILEMTD_BLKPER;
+  maxblock = priv->nblocks * (priv->erasesize / priv->blocksize);
   if (startblock >= maxblock)
     {
       return 0;
@@ -346,7 +338,7 @@ static ssize_t filemtd_bwrite(FAR struct mtd_dev_s *dev, off_t startblock,
 
   /* Don't let the write exceed the original size of the file */
 
-  maxblock = priv->nblocks * FILEMTD_BLKPER;
+  maxblock = priv->nblocks * (priv->erasesize / priv->blocksize);
   if (startblock >= maxblock)
     {
       return 0;
@@ -378,14 +370,21 @@ static ssize_t filemtd_byteread(FAR struct mtd_dev_s *dev, off_t offset,
                                 size_t nbytes, FAR uint8_t *buf)
 {
   FAR struct file_dev_s *priv = (FAR struct file_dev_s *)dev;
+  off_t maxoffset;
 
   DEBUGASSERT(dev && buf);
 
-  /* Don't let read read past end of buffer */
+  /* Don't let the read exceed the original size of the file */
 
-  if (offset + nbytes > priv->nblocks * priv->erasesize)
+  maxoffset = priv->nblocks * priv->erasesize;
+  if (offset >= maxoffset)
     {
       return 0;
+    }
+
+  if (offset + nbytes > maxoffset)
+    {
+      nbytes = maxoffset - offset;
     }
 
   filemtd_read(priv, buf, offset, nbytes);
@@ -411,6 +410,11 @@ static ssize_t file_bytewrite(FAR struct mtd_dev_s *dev, off_t offset,
   if (offset + nbytes > maxoffset)
     {
       return 0;
+    }
+
+  if (offset + nbytes > maxoffset)
+    {
+      nbytes = maxoffset - offset;
     }
 
   /* Then write the data to the file */
@@ -451,15 +455,35 @@ static int filemtd_ioctl(FAR struct mtd_dev_s *dev, int cmd,
         }
         break;
 
-      case MTDIOC_XIPBASE:
-        ret = -ENOTTY; /* Bad command */
+      case BIOC_PARTINFO:
+        {
+          FAR struct partition_info_s *info =
+            (FAR struct partition_info_s *)arg;
+          if (info != NULL)
+            {
+              info->numsectors  = priv->nblocks *
+                                  priv->erasesize / priv->blocksize;
+              info->sectorsize  = priv->blocksize;
+              info->startsector = 0;
+              info->parent[0]   = '\0';
+              ret               = OK;
+            }
+        }
         break;
 
       case MTDIOC_BULKERASE:
         {
           /* Erase the entire device */
 
-          filemtd_erase(dev, 0, priv->nblocks);
+          ret = filemtd_erase(dev, 0, priv->nblocks);
+        }
+        break;
+
+      case MTDIOC_ERASESTATE:
+        {
+          FAR uint8_t *result = (FAR uint8_t *)arg;
+          *result = CONFIG_FILEMTD_ERASESTATE;
+
           ret = OK;
         }
         break;
@@ -544,6 +568,15 @@ FAR struct mtd_dev_s *blockmtd_initialize(FAR const char *path,
       priv->erasesize = erasesize;
     }
 
+  if ((priv->erasesize / priv->blocksize) * priv->blocksize
+      != priv->erasesize)
+    {
+      ferr("ERROR: erasesize must be an even multiple of sectsize\n");
+      file_close(&priv->mtdfile);
+      kmm_free(priv);
+      return NULL;
+    }
+
   /* Force the size to be an even number of the erase block size */
 
   nblocks = mtdlen / priv->erasesize;
@@ -587,11 +620,10 @@ FAR struct mtd_dev_s *blockmtd_initialize(FAR const char *path,
 
 void blockmtd_teardown(FAR struct mtd_dev_s *dev)
 {
-  FAR struct file_dev_s *priv;
+  FAR struct file_dev_s *priv = (FAR struct file_dev_s *)dev;
 
   /* Close the enclosed file */
 
-  priv = (FAR struct file_dev_s *) dev;
   file_close(&priv->mtdfile);
 
 #ifdef CONFIG_MTD_REGISTRATION
@@ -673,7 +705,7 @@ void filemtd_teardown(FAR struct mtd_dev_s *dev)
 
 bool filemtd_isfilemtd(FAR struct mtd_dev_s *dev)
 {
-  FAR struct file_dev_s *priv = (FAR struct file_dev_s *) dev;
+  FAR struct file_dev_s *priv = (FAR struct file_dev_s *)dev;
 
   return (priv->mtd.erase == filemtd_erase);
 }

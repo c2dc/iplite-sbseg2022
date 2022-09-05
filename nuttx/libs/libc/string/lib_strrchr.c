@@ -34,19 +34,19 @@
  * occurrence of the character c in the string s.
  */
 
+#undef strrchr /* See mm/README.txt */
 FAR char *strrchr(FAR const char *s, int c)
 {
-  if (s)
+  FAR const char *r = NULL;
+
+  do
     {
-      const char *p = &s[strlen(s)];
-      for (; p >= s; p--)
+      if (*s == c)
         {
-          if (*p == c)
-            {
-              return (FAR char *)p;
-            }
+          r = s;
         }
     }
+  while (*s++ != '\0');
 
-  return NULL;
+  return (FAR char *)r;
 }

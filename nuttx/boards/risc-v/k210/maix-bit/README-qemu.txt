@@ -21,13 +21,12 @@
 +CONFIG_K210_WITH_QEMU=y
  CONFIG_LIBC_PERROR_STDOUT=y
  CONFIG_LIBC_STRERROR=y
- CONFIG_MAX_TASKS=64
 
 4. Configure and build NuttX
 
   $ mkdir ./nuttx; cd ./nuttx
-  $ git clone https://github.com/apache/incubator-nuttx.git
-  $ git clone https://github.com/apache/incubator-nuttx-apps.git
+  $ git clone https://github.com/apache/incubator-nuttx.git nuttx
+  $ git clone https://github.com/apache/incubator-nuttx-apps.git apps
   $ cd nuttx
   $ make distclean
   $ ./tools/configure.sh maix-bit:nsh
@@ -40,7 +39,7 @@
   NOTE: To run nuttx for kostest, gdb needs to be used to load both nuttx_user.elf and nuttx
 
   $ qemu-system-riscv64 -nographic -machine sifive_u -s -S
-  $ riscv64-unknown-elf-gdb -ex 'target extended-remot:1234' -ex 'load nuttx_user.elf' -ex 'load nuttx' -ex 'c'
+  $ riscv64-unknown-elf-gdb -ex 'target extended-remote:1234' -ex 'load nuttx_user.elf' -ex 'load nuttx' -ex 'c'
 
 6. TODO
 

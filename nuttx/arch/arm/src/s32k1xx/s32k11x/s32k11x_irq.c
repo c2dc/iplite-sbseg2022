@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -32,9 +33,7 @@
 #include <arch/irq.h>
 
 #include "nvic.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "s32k1xx_pin.h"
 #include "s32k11x/s32k11x_irq.h"
 
@@ -80,7 +79,7 @@ volatile uint32_t *g_current_regs[1];
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG_FEATURES
-static int s32k11x_nmi(int irq, FAR void *context, FAR void *arg)
+static int s32k11x_nmi(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! NMI received\n");
@@ -88,7 +87,7 @@ static int s32k11x_nmi(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int s32k11x_pendsv(int irq, FAR void *context, FAR void *arg)
+static int s32k11x_pendsv(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! PendSV received\n");
@@ -96,7 +95,7 @@ static int s32k11x_pendsv(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int s32k11x_reserved(int irq, FAR void *context, FAR void *arg)
+static int s32k11x_reserved(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! Reserved interrupt\n");

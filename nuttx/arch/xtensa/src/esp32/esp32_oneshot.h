@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_XTENSA_SRC_ESP32_ONESHOT_H
-#define __ARCH_XTENSA_SRC_ESP32_ONESHOT_H
+#ifndef __ARCH_XTENSA_SRC_ESP32_ESP32_ONESHOT_H
+#define __ARCH_XTENSA_SRC_ESP32_ESP32_ONESHOT_H
 
 /****************************************************************************
  * Included Files
@@ -60,7 +60,7 @@ struct esp32_oneshot_s
 {
   uint8_t chan;                       /* The timer/counter in use */
   volatile bool running;              /* True: the timer is running */
-  FAR struct esp32_tim_dev_s    *tim; /* Pointer returned by
+  struct esp32_tim_dev_s    *tim;     /* Pointer returned by
                                        * esp32_tim_init() */
   volatile oneshot_handler_t handler; /* Oneshot expiration callback */
   volatile void                 *arg; /* The argument that will accompany
@@ -199,4 +199,4 @@ int esp32_oneshot_current(struct esp32_oneshot_s *oneshot, uint64_t *usec);
 #endif
 
 #endif /* CONFIG_ESP32_ONESHOT */
-#endif /* __ARCH_XTENSA_SRC_ESP32_ONESHOT_H */
+#endif /* __ARCH_XTENSA_SRC_ESP32_ESP32_ONESHOT_H */

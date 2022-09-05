@@ -34,7 +34,7 @@
 #include <stdio.h>
 #include <errno.h>
 
-#include "up_arch.h"
+#include "up_internal.h"
 
 /************************************************************************************
  * Pre-processor Definitions
@@ -139,7 +139,7 @@ int up_rtc_initialize(void)
  *
  ************************************************************************************/
 
-int up_rtc_gettime(FAR struct timespec *tp)
+int up_rtc_gettime(struct timespec *tp)
 {
   uint64_t tmp;
 
@@ -165,7 +165,7 @@ int up_rtc_gettime(FAR struct timespec *tp)
  *
  ************************************************************************************/
 
-int up_rtc_settime(FAR const struct timespec *tp)
+int up_rtc_settime(const struct timespec *tp)
 {
   /* What so ever.. */
 

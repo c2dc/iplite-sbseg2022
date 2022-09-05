@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <assert.h>
 #include <debug.h>
 
 #include "fsutils/ipcfg.h"
@@ -328,7 +329,7 @@ int ipcfg_read_binary_ipv6(FAR const char *path,
   int fd;
   int ret;
 
-  DEBUGASSERT(fd >= 0 && ipv6cfg != NULL);
+  DEBUGASSERT(path != NULL && ipv6cfg != NULL);
 
   /* Open the file for reading */
 
@@ -384,7 +385,7 @@ int ipcfg_write_binary_ipv4(FAR const char *path,
   int fd;
   int ret;
 
-  DEBUGASSERT(fd >= 0 && ipv4cfg != NULL);
+  DEBUGASSERT(ipv4cfg != NULL);
 
 #ifdef CONFIG_NET_IPv6
   /* Read any IPv6 data in the file */
@@ -410,6 +411,7 @@ int ipcfg_write_binary_ipv4(FAR const char *path,
   /* Open the file for writing (truncates) */
 
   fd = ipcfg_open(path, O_WRONLY | O_TRUNC | O_CREAT, 0666);
+  DEBUGASSERT(fd >= 0);
   if (fd < 0)
     {
       return fd;

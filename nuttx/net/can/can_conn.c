@@ -49,12 +49,14 @@
 
 /* The array containing all NetLink connections. */
 
+#ifndef CONFIG_NET_ALLOC_CONNS
 static struct can_conn_s g_can_connections[CONFIG_CAN_CONNS];
+#endif
 
 /* A list of all free NetLink connections */
 
 static dq_queue_t g_free_can_connections;
-static sem_t g_free_sem;
+static sem_t g_free_sem = SEM_INITIALIZER(1);
 
 /* A list of all allocated NetLink connections */
 
@@ -97,23 +99,16 @@ static void _can_semgive(FAR sem_t *sem)
 
 void can_initialize(void)
 {
+#ifndef CONFIG_NET_ALLOC_CONNS
   int i;
-
-  /* Initialize the queues */
-
-  dq_init(&g_free_can_connections);
-  dq_init(&g_active_can_connections);
-  nxsem_init(&g_free_sem, 0, 1);
 
   for (i = 0; i < CONFIG_CAN_CONNS; i++)
     {
-      FAR struct can_conn_s *conn = &g_can_connections[i];
-
       /* Mark the connection closed and move it to the free list */
 
-      memset(conn, 0, sizeof(*conn));
-      dq_addlast(&conn->node, &g_free_can_connections);
+      dq_addlast(&g_can_connections[i].sconn.node, &g_free_can_connections);
     }
+#endif
 }
 
 /****************************************************************************
@@ -128,17 +123,30 @@ void can_initialize(void)
 FAR struct can_conn_s *can_alloc(void)
 {
   FAR struct can_conn_s *conn;
+#ifdef CONFIG_NET_ALLOC_CONNS
+  int i;
+#endif
 
   /* The free list is protected by a semaphore (that behaves like a mutex). */
 
   _can_semtake(&g_free_sem);
+#ifdef CONFIG_NET_ALLOC_CONNS
+  if (dq_peek(&g_free_can_connections) == NULL)
+    {
+      conn = kmm_zalloc(sizeof(*conn) * CONFIG_CAN_CONNS);
+      if (conn != NULL)
+        {
+          for (i = 0; i < CONFIG_CAN_CONNS; i++)
+            {
+              dq_addlast(&conn[i].sconn.node, &g_free_can_connections);
+            }
+        }
+    }
+#endif
+
   conn = (FAR struct can_conn_s *)dq_remfirst(&g_free_can_connections);
   if (conn != NULL)
     {
-      /* Make sure that the connection is marked as uninitialized */
-
-      memset(conn, 0, sizeof(*conn));
-
       /* FIXME SocketCAN default behavior enables loopback */
 
 #ifdef CONFIG_NET_CANPROTO_OPTIONS
@@ -159,7 +167,7 @@ FAR struct can_conn_s *can_alloc(void)
 
       /* Enqueue the connection into the active list */
 
-      dq_addlast(&conn->node, &g_active_can_connections);
+      dq_addlast(&conn->sconn.node, &g_active_can_connections);
     }
 
   _can_semgive(&g_free_sem);
@@ -185,7 +193,7 @@ void can_free(FAR struct can_conn_s *conn)
 
   /* Remove the connection from the active list */
 
-  dq_rem(&conn->node, &g_active_can_connections);
+  dq_rem(&conn->sconn.node, &g_active_can_connections);
 
   /* Reset structure */
 
@@ -193,7 +201,7 @@ void can_free(FAR struct can_conn_s *conn)
 
   /* Free the connection */
 
-  dq_addlast(&conn->node, &g_free_can_connections);
+  dq_addlast(&conn->sconn.node, &g_free_can_connections);
   _can_semgive(&g_free_sem);
 }
 
@@ -216,7 +224,7 @@ FAR struct can_conn_s *can_nextconn(FAR struct can_conn_s *conn)
     }
   else
     {
-      return (FAR struct can_conn_s *)conn->node.flink;
+      return (FAR struct can_conn_s *)conn->sconn.node.flink;
     }
 }
 

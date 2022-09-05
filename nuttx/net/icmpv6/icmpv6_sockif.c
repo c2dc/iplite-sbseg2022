@@ -81,7 +81,8 @@ const struct sock_intf_s g_icmpv6_sockif =
   icmpv6_netpoll,     /* si_poll */
   icmpv6_sendmsg,     /* si_sendmsg */
   icmpv6_recvmsg,     /* si_recvmsg */
-  icmpv6_close        /* si_close */
+  icmpv6_close,       /* si_close */
+  icmpv6_ioctl        /* si_ioctl */
 };
 
 /****************************************************************************
@@ -161,7 +162,7 @@ static int icmpv6_setup(FAR struct socket *psock, int protocol)
 
 static sockcaps_t icmpv6_sockcaps(FAR struct socket *psock)
 {
-  return 0;
+  return SOCKCAP_NONBLOCKING;
 }
 
 /****************************************************************************
@@ -475,7 +476,7 @@ static int icmpv6_close(FAR struct socket *psock)
     {
       /* Yes... free any read-ahead data */
 
-      iob_free_queue(&conn->readahead, IOBUSER_NET_SOCK_ICMPv6);
+      iob_free_queue(&conn->readahead);
 
       /* Then free the connection structure */
 

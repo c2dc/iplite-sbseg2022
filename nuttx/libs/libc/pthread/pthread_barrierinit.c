@@ -75,6 +75,8 @@ int pthread_barrier_init(FAR pthread_barrier_t *barrier,
 {
   int ret = OK;
 
+  UNUSED(attr);
+
   if (!barrier || count == 0)
     {
       ret = EINVAL;
@@ -82,6 +84,7 @@ int pthread_barrier_init(FAR pthread_barrier_t *barrier,
   else
     {
       sem_init(&barrier->sem, 0, 0);
+      sem_setprotocol(&barrier->sem, SEM_PRIO_NONE);
       barrier->count = count;
     }
 

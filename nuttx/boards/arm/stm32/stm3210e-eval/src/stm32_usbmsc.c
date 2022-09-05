@@ -72,7 +72,7 @@
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -97,7 +97,7 @@ int board_usbmsc_initialize(int port)
    */
 
 #ifndef CONFIG_NSH_BUILTIN_APPS
-  FAR struct sdio_dev_s *sdio;
+  struct sdio_dev_s *sdio;
   int ret;
 
   /* First, get an instance of the SDIO interface */

@@ -31,9 +31,10 @@
  ****************************************************************************/
 
 #ifndef CONFIG_ARCH_STRNCAT
-char *strncat(char *dest, const char *src, size_t n)
+#undef strncat /* See mm/README.txt */
+FAR char *strncat(FAR char *dest, FAR const char *src, size_t n)
 {
-  char *ret   = dest;
+  FAR char *ret = dest;
 
   dest  += strlen(dest);
   for (; n > 0 && *src != '\0' ; n--)

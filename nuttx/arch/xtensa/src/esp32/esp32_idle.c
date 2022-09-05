@@ -23,16 +23,43 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
-#include <nuttx/irq.h>
+
+#include <assert.h>
+#include <stdint.h>
+#include <debug.h>
+
+#include <nuttx/board.h>
 #include <nuttx/arch.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/power/pm.h>
+#include <arch/board/board.h>
 
 #include "esp32_pm.h"
 #include "xtensa.h"
 
+#ifdef CONFIG_ESP32_RT_TIMER
+#include "esp32_rt_timer.h"
+#endif
+
+#ifdef CONFIG_SCHED_TICKLESS
+#include "esp32_tickless.h"
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
+
+/* Does the board support an IDLE LED to indicate that the board is in the
+ * IDLE state?
+ */
+
+#ifdef CONFIG_ARCH_LEDS_CPU_ACTIVITY
+#  define BEGIN_IDLE() board_autoled_off(LED_CPU)
+#  define END_IDLE()
+#else
+#  define BEGIN_IDLE()
+#  define END_IDLE()
+#endif
 
 /* Values for the RTC Alarm to wake up from the PM_STANDBY mode
  * (which corresponds to ESP32 stop mode).  If this alarm expires,
@@ -41,6 +68,7 @@
  */
 
 #ifdef CONFIG_PM
+
 #ifndef CONFIG_PM_ALARM_SEC
 #  define CONFIG_PM_ALARM_SEC 15
 #endif
@@ -57,7 +85,13 @@
 #  define CONFIG_PM_SLEEP_WAKEUP_NSEC 0
 #endif
 
-#define PM_IDLE_DOMAIN 0 /* Revisit */
+#ifndef MIN
+#  define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
+
+#define EXPECTED_IDLE_TIME_US (800)
+#define EARLY_WAKEUP_US       (200)
+
 #endif
 
 /****************************************************************************
@@ -65,7 +99,7 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Name: up_idlepm
+ * Name: esp32_idlepm
  *
  * Description:
  *   Perform IDLE state power management.
@@ -73,11 +107,61 @@
  ****************************************************************************/
 
 #ifdef CONFIG_PM
-static void up_idlepm(void)
+static void esp32_idlepm(void)
 {
+  irqstate_t flags;
+
+#ifdef CONFIG_ESP32_AUTO_SLEEP
+  flags = spin_lock_irqsave(NULL);
+  if (esp32_pm_lockstatus() == 0)
+    {
+      uint64_t os_start_us;
+      uint64_t os_end_us;
+      uint64_t os_step_us;
+      uint64_t hw_start_us;
+      uint64_t hw_end_us;
+      uint64_t hw_step_us;
+      uint64_t rtc_diff_us;
+      struct   timespec ts;
+      uint64_t os_idle_us = up_get_idletime();
+      uint64_t hw_idle_us = rt_timer_get_alarm();
+      uint64_t sleep_us   = MIN(os_idle_us, hw_idle_us);
+      if (sleep_us > EXPECTED_IDLE_TIME_US)
+        {
+          sleep_us -= EARLY_WAKEUP_US;
+
+          esp32_sleep_enable_timer_wakeup(sleep_us);
+
+          up_timer_gettime(&ts);
+          os_start_us = (ts.tv_sec * USEC_PER_SEC +
+                         ts.tv_nsec /  NSEC_PER_USEC);
+          hw_start_us = rt_timer_time_us();
+
+          esp32_light_sleep_start(&rtc_diff_us);
+
+          hw_end_us = rt_timer_time_us();
+          up_timer_gettime(&ts);
+          os_end_us = (ts.tv_sec * USEC_PER_SEC +
+                         ts.tv_nsec /  NSEC_PER_USEC);
+          hw_step_us = rtc_diff_us - (hw_end_us - hw_start_us);
+          os_step_us = rtc_diff_us - (os_end_us - os_start_us);
+          DEBUGASSERT(hw_step_us > 0);
+          DEBUGASSERT(os_step_us > 0);
+
+          /* Adjust current RT timer by a certain value. */
+
+          rt_timer_calibration(hw_step_us);
+
+          /* Adjust system time by a certain value. */
+
+          up_step_idletime((uint32_t)os_step_us);
+        }
+    }
+
+  spin_unlock_irqrestore(NULL, flags);
+#else /* CONFIG_ESP32_AUTO_SLEEP */
   static enum pm_state_e oldstate = PM_NORMAL;
   enum pm_state_e newstate;
-  irqstate_t flags;
   int ret;
 
   /* Decide, which power saving level can be obtained */
@@ -159,9 +243,10 @@ static void up_idlepm(void)
       pm_changestate(PM_IDLE_DOMAIN, PM_NORMAL);
 #endif
     }
+#endif
 }
 #else
-#  define up_idlepm()
+#  define esp32_idlepm()
 #endif
 
 /****************************************************************************
@@ -191,16 +276,19 @@ void up_idle(void)
   nxsched_process_timer();
 #else
 
-  /* Perform IDLE mode power management */
-
-  up_idlepm();
-
   /* This would be an appropriate place to put some MCU-specific logic to
    * sleep in a reduced power mode until an interrupt occurs to save power
    */
 
+  BEGIN_IDLE();
 #if XCHAL_HAVE_INTERRUPTS
   __asm__ __volatile__ ("waiti 0");
 #endif
+  END_IDLE();
+
+  /* Perform IDLE mode power management */
+
+  esp32_idlepm();
+
 #endif
 }

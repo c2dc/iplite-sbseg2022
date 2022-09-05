@@ -26,12 +26,12 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/power/pm.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "stm32l4_gpio.h"
 #include "nucleo-l452re.h"

@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include <sched.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -35,7 +36,6 @@
 
 #include "sched/sched.h"
 #include "arm_internal.h"
-#include "arm_arch.h"
 
 /****************************************************************************
  * Public Functions
@@ -54,24 +54,13 @@
 void arm_sigdeliver(void)
 {
   struct tcb_s  *rtcb = this_task();
-  uint32_t regs[XCPTCONTEXT_REGS];
-
-  /* Save the errno.  This must be preserved throughout the signal handling
-   * so that the user code final gets the correct errno value (probably
-   * EINTR).
-   */
-
-  int saved_errno = get_errno();
+  uint32_t *regs = rtcb->xcp.saved_regs;
 
   board_autoled_on(LED_SIGNAL);
 
   sinfo("rtcb=%p sigdeliver=%p sigpendactionq.head=%p\n",
         rtcb, rtcb->xcp.sigdeliver, rtcb->sigpendactionq.head);
   DEBUGASSERT(rtcb->xcp.sigdeliver != NULL);
-
-  /* Save the return state on the stack. */
-
-  arm_copyfullstate(regs, rtcb->xcp.regs);
 
 #ifndef CONFIG_SUPPRESS_INTERRUPTS
   /* Then make sure that interrupts are enabled.  Signal handlers must always
@@ -92,7 +81,6 @@ void arm_sigdeliver(void)
 
   sinfo("Resuming\n");
   up_irq_save();
-  set_errno(saved_errno);
 
   /* Modify the saved return state with the actual saved values in the
    * TCB.  This depends on the fact that nested signal handling is
@@ -104,8 +92,6 @@ void arm_sigdeliver(void)
    * could be modified by a hostile program.
    */
 
-  regs[REG_PC]         = rtcb->xcp.saved_pc;
-  regs[REG_CPSR]       = rtcb->xcp.saved_cpsr;
   rtcb->xcp.sigdeliver = NULL;  /* Allows next handler to be scheduled */
 
   /* Then restore the correct state for this thread of execution. */

@@ -50,8 +50,7 @@
 
 #include "clock/clock.h"
 #include "lpc2378.h"
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "lpc23xx_scb.h"
 #include "lpc23xx_vic.h"
 #include "lpc23xx_timer.h"
@@ -96,7 +95,7 @@
 #ifdef CONFIG_VECTORED_INTERRUPTS
 static int lpc23xx_timerisr(uint32_t * regs)
 #else
-static int lpc23xx_timerisr(int irq, uint32_t * regs, FAR void *arg)
+static int lpc23xx_timerisr(int irq, uint32_t * regs, void *arg)
 #endif
 {
   static uint32_t tick;

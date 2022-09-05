@@ -50,7 +50,6 @@
 #include <stdint.h>
 #include <string.h>
 #include <fcntl.h>
-#include <dirent.h>
 #include <errno.h>
 #include <assert.h>
 #include <queue.h>
@@ -59,7 +58,6 @@
 
 #include <nuttx/kmalloc.h>
 #include <nuttx/fs/fs.h>
-#include <nuttx/fs/dirent.h>
 #include <nuttx/fs/ioctl.h>
 
 #include "spiffs.h"
@@ -72,17 +70,23 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define spiffs_lock_volume(fs)       (spiffs_lock_reentrant(&fs->exclsem))
-#define spiffs_unlock_volume(fs)     (spiffs_unlock_reentrant(&fs->exclsem))
+#define spiffs_lock_volume(fs)       (nxrmutex_lock(&fs->lock))
+#define spiffs_unlock_volume(fs)     (nxrmutex_unlock(&fs->lock))
+
+/****************************************************************************
+ * Private Type
+ ****************************************************************************/
+
+struct spiffs_dir_s
+{
+  struct fs_dirent_s base;
+  int16_t block;
+  int entry;
+};
 
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
-
-/* SPIFFS helpers */
-
-static int  spiffs_lock_reentrant(FAR struct spiffs_sem_s *sem);
-static void spiffs_unlock_reentrant(FAR struct spiffs_sem_s *sem);
 
 /* File system operations */
 
@@ -102,11 +106,12 @@ static int  spiffs_fstat(FAR const struct file *filep, FAR struct stat *buf);
 static int  spiffs_truncate(FAR struct file *filep, off_t length);
 
 static int  spiffs_opendir(FAR struct inode *mountpt,
-              FAR const char *relpath, FAR struct fs_dirent_s *dir);
+              FAR const char *relpath, FAR struct fs_dirent_s **dir);
 static int  spiffs_closedir(FAR struct inode *mountpt,
               FAR struct fs_dirent_s *dir);
 static int  spiffs_readdir(FAR struct inode *mountpt,
-              FAR struct fs_dirent_s *dir);
+              FAR struct fs_dirent_s *dir,
+              FAR struct dirent *dentry);
 static int  spiffs_rewinddir(FAR struct inode *mountpt,
               FAR struct fs_dirent_s *dir);
 static int  spiffs_bind(FAR struct inode *mtdinode, FAR const void *data,
@@ -140,6 +145,7 @@ const struct mountpt_operations spiffs_operations =
   spiffs_sync,       /* sync */
   spiffs_dup,        /* dup */
   spiffs_fstat,      /* fstat */
+  NULL,              /* fchstat */
   spiffs_truncate,   /* truncate */
 
   spiffs_opendir,    /* opendir */
@@ -156,6 +162,7 @@ const struct mountpt_operations spiffs_operations =
   spiffs_rmdir,      /* rmdir */
   spiffs_rename,     /* rename */
   spiffs_stat,       /* stat */
+  NULL               /* chstat */
 };
 
 /****************************************************************************
@@ -171,70 +178,6 @@ static inline int spiffs_map_errno(int errcode)
   /* Don't return any or our internal error codes to the application */
 
   return errcode < SPIFFS_ERR_INTERNAL ? -EFTYPE : errcode;
-}
-
-/****************************************************************************
- * Name: spiffs_lock_reentrant
- ****************************************************************************/
-
-static int spiffs_lock_reentrant(FAR struct spiffs_sem_s *rsem)
-{
-  pid_t me;
-  int ret = OK;
-
-  /* Do we already hold the semaphore? */
-
-  me = getpid();
-  if (me == rsem->holder)
-    {
-      /* Yes... just increment the count */
-
-      rsem->count++;
-      DEBUGASSERT(rsem->count > 0);
-    }
-
-  /* Take the semaphore (perhaps waiting) */
-
-  else
-    {
-      ret = nxsem_wait_uninterruptible(&rsem->sem);
-      if (ret >= 0)
-        {
-          /* No we hold the semaphore */
-
-          rsem->holder = me;
-          rsem->count  = 1;
-        }
-    }
-
-  return ret;
-}
-
-/****************************************************************************
- * Name: spiffs_unlock_reentrant
- ****************************************************************************/
-
-static void spiffs_unlock_reentrant(FAR struct spiffs_sem_s *rsem)
-{
-  DEBUGASSERT(rsem->holder == getpid());
-
-  /* Is this our last count on the semaphore? */
-
-  if (rsem->count > 1)
-    {
-      /* No.. just decrement the count */
-
-      rsem->count--;
-    }
-
-  /* Yes.. then we can really release the semaphore */
-
-  else
-    {
-      rsem->holder = SPIFFS_NO_HOLDER;
-      rsem->count  = 0;
-      nxsem_post(&rsem->sem);
-    }
 }
 
 /****************************************************************************
@@ -325,11 +268,7 @@ static int spiffs_readdir_callback(FAR struct spiffs_s *fs,
                                 SPIFFS_PH_FLAG_NDXDELE)) ==
       (SPIFFS_PH_FLAG_DELET | SPIFFS_PH_FLAG_NDXDELE))
     {
-      FAR struct fs_dirent_s *dir = (FAR struct fs_dirent_s *)user_var;
-      FAR struct dirent *entryp;
-
-      DEBUGASSERT(dir != NULL);
-      entryp = &dir->fd_dir;
+      FAR struct dirent *entryp = user_var;
 
 #ifdef CONFIG_SPIFFS_LEADING_SLASH
       /* Skip the leading '/'. */
@@ -340,9 +279,9 @@ static int spiffs_readdir_callback(FAR struct spiffs_s *fs,
         }
 #endif
 
-      strncpy(entryp->d_name,
+      strlcpy(entryp->d_name,
               (FAR char *)objhdr.name + SPIFFS_LEADING_SLASH_SIZE,
-              NAME_MAX);
+              sizeof(entryp->d_name));
       entryp->d_type = objhdr.type;
       return OK;
     }
@@ -1313,17 +1252,26 @@ static int spiffs_truncate(FAR struct file *filep, off_t length)
  ****************************************************************************/
 
 static int spiffs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
-                         FAR struct fs_dirent_s *dir)
+                          FAR struct fs_dirent_s **dir)
 {
+  FAR struct spiffs_dir_s *sdir;
+
   finfo("mountpt=%p relpath=%s dir=%p\n",
         mountpt, relpath, dir);
 
   DEBUGASSERT(mountpt != NULL && relpath != NULL && dir != NULL);
 
+  sdir = kmm_zalloc(sizeof(*sdir));
+  if (sdir == NULL)
+    {
+      return -ENOMEM;
+    }
+
   /* Initialize for traversal of the 'directory' */
 
-  dir->u.spiffs.block   = 0;
-  dir->u.spiffs.entry   = 0;
+  sdir->block = 0;
+  sdir->entry = 0;
+  *dir        = &sdir->base;
   return OK;
 }
 
@@ -1332,13 +1280,11 @@ static int spiffs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
  ****************************************************************************/
 
 static int spiffs_closedir(FAR struct inode *mountpt,
-                          FAR struct fs_dirent_s *dir)
+                           FAR struct fs_dirent_s *dir)
 {
   finfo("mountpt=%p dir=%p\n",  mountpt, dir);
   DEBUGASSERT(mountpt != NULL && dir != NULL);
-
-  /* There is nothing to be done */
-
+  kmm_free(dir);
   return OK;
 }
 
@@ -1347,8 +1293,10 @@ static int spiffs_closedir(FAR struct inode *mountpt,
  ****************************************************************************/
 
 static int spiffs_readdir(FAR struct inode *mountpt,
-                         FAR struct fs_dirent_s *dir)
+                          FAR struct fs_dirent_s *dir,
+                          FAR struct dirent *dentry)
 {
+  FAR struct spiffs_dir_s *sdir;
   FAR struct spiffs_s *fs;
   int16_t blkndx;
   int entry;
@@ -1356,6 +1304,8 @@ static int spiffs_readdir(FAR struct inode *mountpt,
 
   finfo("mountpt=%p dir=%p\n",  mountpt, dir);
   DEBUGASSERT(mountpt != NULL && dir != NULL);
+
+  sdir = (FAR struct spiffs_dir_s *)dir;
 
   /* Get the mountpoint private data from the inode structure */
 
@@ -1368,13 +1318,13 @@ static int spiffs_readdir(FAR struct inode *mountpt,
 
   /* And visit the next file object */
 
-  ret = spiffs_foreach_objlu(fs, dir->u.spiffs.block, dir->u.spiffs.entry,
+  ret = spiffs_foreach_objlu(fs, sdir->block, sdir->entry,
                              SPIFFS_VIS_NO_WRAP, 0, spiffs_readdir_callback,
-                             NULL, dir, &blkndx, &entry);
+                             NULL, dentry, &blkndx, &entry);
   if (ret >= 0)
     {
-      dir->u.spiffs.block = blkndx;
-      dir->u.spiffs.entry = entry + 1;
+      sdir->block = blkndx;
+      sdir->entry = entry + 1;
     }
 
   /* Release the lock on the file system */
@@ -1390,13 +1340,17 @@ static int spiffs_readdir(FAR struct inode *mountpt,
 static int spiffs_rewinddir(FAR struct inode *mountpt,
                            FAR struct fs_dirent_s *dir)
 {
+  FAR struct spiffs_dir_s *sdir;
+
   finfo("mountpt=%p dir=%p\n",  mountpt, dir);
   DEBUGASSERT(mountpt != NULL && dir != NULL);
 
+  sdir = (FAR struct spiffs_dir_s *)dir;
+
   /* Reset as when opendir() was called. */
 
-  dir->u.spiffs.block   = 0;
-  dir->u.spiffs.entry   = 0;
+  sdir->block = 0;
+  sdir->entry = 0;
 
   return OK;
 }
@@ -1503,7 +1457,7 @@ static int spiffs_bind(FAR struct inode *mtdinode, FAR const void *data,
   fs->lu_work   = &work[SPIFFS_GEO_PAGE_SIZE(fs)];
   fs->mtd_work  = &work[2 * SPIFFS_GEO_PAGE_SIZE(fs)];
 
-  nxsem_init(&fs->exclsem.sem, 0, 1);
+  nxrmutex_init(&fs->lock);
 
   /* Check the file system */
 
@@ -1606,7 +1560,7 @@ static int spiffs_unbind(FAR void *handle, FAR struct inode **mtdinode,
 
   /* Free the volume memory (note that the semaphore is now stale!) */
 
-  nxsem_destroy(&fs->exclsem.sem);
+  nxrmutex_destroy(&fs->lock);
   kmm_free(fs);
   ret = OK;
 

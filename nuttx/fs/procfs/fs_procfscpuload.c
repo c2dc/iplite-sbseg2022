@@ -138,14 +138,6 @@ static int cpuload_open(FAR struct file *filep, FAR const char *relpath,
       return -EACCES;
     }
 
-  /* "cpuload" is the only acceptable value for the relpath */
-
-  if (strcmp(relpath, "cpuload") != 0)
-    {
-      ferr("ERROR: relpath is '%s'\n", relpath);
-      return -ENOENT;
-    }
-
   /* Allocate a container to hold the file attributes */
 
   attr = kmm_zalloc(sizeof(struct cpuload_file_s));
@@ -238,9 +230,9 @@ static ssize_t cpuload_read(FAR struct file *filep, FAR char *buffer,
           fracpart = 0;
         }
 
-      linesize = snprintf(attr->line, CPULOAD_LINELEN,
-                          "%3" PRId32 ".%01" PRId32 "%%\n",
-                          intpart, fracpart);
+      linesize = procfs_snprintf(attr->line, CPULOAD_LINELEN,
+                                 "%3" PRId32 ".%01" PRId32 "%%\n",
+                                 intpart, fracpart);
 
       /* Save the linesize in case we are re-entered with f_pos > 0 */
 
@@ -310,14 +302,6 @@ static int cpuload_dup(FAR const struct file *oldp, FAR struct file *newp)
 
 static int cpuload_stat(const char *relpath, struct stat *buf)
 {
-  /* "cpuload" is the only acceptable value for the relpath */
-
-  if (strcmp(relpath, "cpuload") != 0)
-    {
-      ferr("ERROR: relpath is '%s'\n", relpath);
-      return -ENOENT;
-    }
-
   /* "cpuload" is the name for a read-only file */
 
   memset(buf, 0, sizeof(struct stat));

@@ -24,27 +24,24 @@
 
 #include <nuttx/config.h>
 
-#include <sys/types.h>
-#include <sys/ioctl.h>
-
 #include <stdint.h>
 #include <string.h>
-#include <fcntl.h>
 #include <debug.h>
 #include <errno.h>
 
-#include <nuttx/fs/fs.h>
-#include <nuttx/fs/ioctl.h>
 #include <nuttx/binfmt/binfmt.h>
 #include <nuttx/lib/builtin.h>
 
-#ifdef CONFIG_FS_BINFS
+#ifdef CONFIG_BUILTIN
 
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
 
-static int builtin_loadbinary(FAR struct binary_s *binp);
+static int builtin_loadbinary(FAR struct binary_s *binp,
+                              FAR const char *filename,
+                              FAR const struct symtab_s *exports,
+                              int nexports);
 
 /****************************************************************************
  * Private Data
@@ -69,46 +66,29 @@ static struct binfmt_s g_builtin_binfmt =
  *
  ****************************************************************************/
 
-static int builtin_loadbinary(struct binary_s *binp)
+static int builtin_loadbinary(FAR struct binary_s *binp,
+                              FAR const char *filename,
+                              FAR const struct symtab_s *exports,
+                              int nexports)
 {
-  FAR const char *filename;
   FAR const struct builtin_s *builtin;
-  int fd;
+  FAR char *name;
   int index;
-  int ret;
 
-  binfo("Loading file: %s\n", binp->filename);
+  binfo("Loading file: %s\n", filename);
 
-  /* Open the binary file for reading (only) */
-
-  fd = nx_open(binp->filename, O_RDONLY);
-  if (fd < 0)
+  name = strrchr(filename, '/');
+  if (name != NULL)
     {
-      berr("ERROR: Failed to open binary %s: %d\n", binp->filename, fd);
-      return fd;
+      filename = name + 1;
     }
 
-  /* If this file is a BINFS file system, then we can recover the name of
-   * the file using the FIOC_FILENAME ioctl() call.
-   */
-
-  ret = nx_ioctl(fd, FIOC_FILENAME, (unsigned long)((uintptr_t)&filename));
-  if (ret < 0)
-    {
-      berr("ERROR: FIOC_FILENAME ioctl failed: %d\n", ret);
-      nx_close(fd);
-      return ret;
-    }
-
-  /* Other file systems may also support FIOC_FILENAME, so the real proof
-   * is that we can look up the index to this name in g_builtins[].
-   */
+  /* Looking up the index to this name in g_builtins[] */
 
   index = builtin_isavail(filename);
   if (index < 0)
     {
       berr("ERROR: %s is not a builtin application\n", filename);
-      nx_close(fd);
       return index;
     }
 
@@ -117,10 +97,15 @@ static int builtin_loadbinary(struct binary_s *binp)
    */
 
   builtin         = builtin_for_index(index);
+  if (builtin == NULL)
+    {
+      berr("ERROR: %s is not a builtin application\n", filename);
+      return -ENOENT;
+    }
+
   binp->entrypt   = builtin->main;
   binp->stacksize = builtin->stacksize;
   binp->priority  = builtin->priority;
-  nx_close(fd);
   return OK;
 }
 
@@ -175,4 +160,4 @@ void builtin_uninitialize(void)
   unregister_binfmt(&g_builtin_binfmt);
 }
 
-#endif /* CONFIG_FS_BINFS */
+#endif /* CONFIG_BUILTIN */

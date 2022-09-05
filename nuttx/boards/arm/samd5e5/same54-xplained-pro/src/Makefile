@@ -22,7 +22,7 @@ include $(TOPDIR)/Make.defs
 
 CSRCS = sam_boot.c sam_bringup.c
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += sam_appinit.c
 endif
 
@@ -32,7 +32,7 @@ else
 CSRCS += sam_userleds.c
 endif
 
-ifeq ($(CONFIG_SAMD5E5_GMAC_PHYINIT), y)
+ifeq ($(CONFIG_SAMD5E5_GMAC_PHYINIT),y)
 CSRCS += sam_phyinit.c
 endif
 

@@ -1,48 +1,35 @@
 /****************************************************************************
  * drivers/usbdev/rndis.c
  *
- *   Copyright (C) 2011-2018 Gregory Nutt. All rights reserved.
- *   Authors: Sakari Kapanen <sakari.m.kapanen@gmail.com>,
- *            Petteri Aimonen <jpa@git.mail.kapsi.fi>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * References:
- *   [MS-RNDIS]:
- *     Remote Network Driver Interface Specification (RNDIS) Protocol
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
+
+/* References:
+ *   [MS-RNDIS]:
+ *     Remote Network Driver Interface Specification (RNDIS) Protocol
+ */
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include <queue.h>
+#include <assert.h>
+#include <debug.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <string.h>
@@ -59,8 +46,11 @@
 #include <nuttx/usb/usbdev.h>
 #include <nuttx/usb/usbdev_trace.h>
 #include <nuttx/usb/rndis.h>
-#include <nuttx/wdog.h>
 #include <nuttx/wqueue.h>
+
+#ifdef CONFIG_RNDIS_BOARD_SERIALSTR
+#include <nuttx/board.h>
+#endif
 
 #include "rndis_std.h"
 
@@ -102,12 +92,6 @@
 
 #define RNDIS_BUFFER_SIZE       CONFIG_NET_ETH_PKTSIZE
 #define RNDIS_BUFFER_COUNT      4
-
-/* TX poll delay = 1 seconds.
- * CLK_TCK is the number of clock ticks per second
- */
-
-#define RNDIS_WDDELAY           (1*CLK_TCK)
 
 /* Work queue to use for network operations. LPWORK should be used here */
 
@@ -154,7 +138,6 @@ struct rndis_dev_s
   struct rndis_req_s wrreqs[CONFIG_RNDIS_NWRREQS];
 
   struct work_s rxwork;                  /* Worker for dispatching RX packets */
-  struct wdog_s txpoll;                  /* TX poll watchdog */
   struct work_s pollwork;                /* TX poll worker */
 
   bool registered;                       /* Has netdev_register() been called */
@@ -230,7 +213,6 @@ static int rndis_ifdown(FAR struct net_driver_s *dev);
 static int rndis_txavail(FAR struct net_driver_s *dev);
 static int rndis_transmit(FAR struct rndis_dev_s *priv);
 static int rndis_txpoll(FAR struct net_driver_s *dev);
-static void rndis_polltimer(wdparm_t arg);
 
 /* usbclass callbacks */
 
@@ -952,7 +934,7 @@ static void rndis_rxdispatch(FAR void *arg)
   else
 #endif
 #ifdef CONFIG_NET_ARP
-  if (hdr->type == htons(ETHTYPE_ARP))
+  if (hdr->type == HTONS(ETHTYPE_ARP))
     {
       NETDEV_RXARP(&priv->netdev);
 
@@ -967,7 +949,7 @@ static void rndis_rxdispatch(FAR void *arg)
 #endif
     {
       uerr("ERROR: Unsupported packet type dropped (%02x)\n",
-           htons(hdr->type));
+           HTONS(hdr->type));
       NETDEV_RXDROPPED(&priv->netdev);
       priv->netdev.d_len = 0;
     }
@@ -1076,62 +1058,6 @@ static int rndis_transmit(FAR struct rndis_dev_s *priv)
 }
 
 /****************************************************************************
- * Name: rndis_pollworker
- *
- * Description:
- *   Worker function called by txpoll worker.
- *
- ****************************************************************************/
-
-static void rndis_pollworker(FAR void *arg)
-{
-  FAR struct rndis_dev_s *priv = (struct rndis_dev_s *)arg;
-
-  DEBUGASSERT(priv != NULL);
-
-  net_lock();
-
-  if (rndis_allocnetreq(priv))
-    {
-      devif_timer(&priv->netdev, RNDIS_WDDELAY, rndis_txpoll);
-
-      if (priv->net_req != NULL)
-        {
-          rndis_freenetreq(priv);
-        }
-    }
-
-  net_unlock();
-}
-
-/****************************************************************************
- * Name: rndis_polltimer
- *
- * Description:
- *   Network poll watchdog timer callback
- *
- ****************************************************************************/
-
-static void rndis_polltimer(wdparm_t arg)
-{
-  FAR struct rndis_dev_s *priv = (FAR struct rndis_dev_s *)arg;
-  int ret;
-
-  if (work_available(&priv->pollwork))
-    {
-      ret = work_queue(ETHWORK, &priv->pollwork, rndis_pollworker,
-                       (FAR void *)priv, 0);
-      DEBUGASSERT(ret == OK);
-      UNUSED(ret);
-    }
-
-  /* Setup the watchdog poll timer again */
-
-  wd_start(&priv->txpoll, RNDIS_WDDELAY,
-           rndis_polltimer, (wdparm_t)arg);
-}
-
-/****************************************************************************
  * Name: rndis_ifup
  *
  * Description:
@@ -1141,10 +1067,6 @@ static void rndis_polltimer(wdparm_t arg)
 
 static int rndis_ifup(FAR struct net_driver_s *dev)
 {
-  FAR struct rndis_dev_s *priv = (FAR struct rndis_dev_s *)dev->d_private;
-
-  wd_start(&priv->txpoll, RNDIS_WDDELAY,
-           rndis_polltimer, (wdparm_t)priv);
   return OK;
 }
 
@@ -1158,9 +1080,6 @@ static int rndis_ifup(FAR struct net_driver_s *dev)
 
 static int rndis_ifdown(FAR struct net_driver_s *dev)
 {
-  FAR struct rndis_dev_s *priv = (FAR struct rndis_dev_s *)dev->d_private;
-
-  wd_cancel(&priv->txpoll);
   return OK;
 }
 
@@ -1180,7 +1099,7 @@ static void rndis_txavail_work(FAR void *arg)
 
   if (rndis_allocnetreq(priv))
     {
-      devif_timer(&priv->netdev, 0, rndis_txpoll);
+      devif_poll(&priv->netdev, rndis_txpoll);
       if (priv->net_req != NULL)
         {
           rndis_freenetreq(priv);
@@ -1303,7 +1222,7 @@ static inline int rndis_recvpacket(FAR struct rndis_dev_s *priv,
             }
           else
             {
-              uerr("The packet exceeds request buffer (reqlen=%d) \n",
+              uerr("The packet exceeds request buffer (reqlen=%d)\n",
                    reqlen);
             }
         }
@@ -1906,6 +1825,7 @@ static FAR struct usbdev_req_s *usbclass_allocreq(FAR struct usbdev_ep_s *ep,
 
 static int usbclass_mkstrdesc(uint8_t id, FAR struct usb_strdesc_s *strdesc)
 {
+  FAR uint8_t *data = (FAR uint8_t *)(strdesc + 1);
   FAR const char *str;
   int len;
   int ndata;
@@ -1918,10 +1838,10 @@ static int usbclass_mkstrdesc(uint8_t id, FAR struct usb_strdesc_s *strdesc)
         {
           /* Descriptor 0 is the language id */
 
-          strdesc->len     = 4;
-          strdesc->type    = USB_DESC_TYPE_STRING;
-          strdesc->data[0] = LSBYTE(RNDIS_STR_LANGUAGE);
-          strdesc->data[1] = MSBYTE(RNDIS_STR_LANGUAGE);
+          strdesc->len  = 4;
+          strdesc->type = USB_DESC_TYPE_STRING;
+          data[0] = LSBYTE(RNDIS_STR_LANGUAGE);
+          data[1] = MSBYTE(RNDIS_STR_LANGUAGE);
           return 4;
         }
 
@@ -1934,7 +1854,11 @@ static int usbclass_mkstrdesc(uint8_t id, FAR struct usb_strdesc_s *strdesc)
         break;
 
       case RNDIS_SERIALSTRID:
+#ifdef CONFIG_RNDIS_BOARD_SERIALSTR
+        str = board_usbdev_serialstr();
+#else
         str = CONFIG_RNDIS_SERIALSTR;
+#endif
         break;
 #endif
 
@@ -1954,8 +1878,8 @@ static int usbclass_mkstrdesc(uint8_t id, FAR struct usb_strdesc_s *strdesc)
 
   for (i = 0, ndata = 0; i < len; i++, ndata += 2)
     {
-      strdesc->data[ndata]     = str[i];
-      strdesc->data[ndata + 1] = 0;
+      data[ndata]     = str[i];
+      data[ndata + 1] = 0;
     }
 
   strdesc->len  = ndata + 2;

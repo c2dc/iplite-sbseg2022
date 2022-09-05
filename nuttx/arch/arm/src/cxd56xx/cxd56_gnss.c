@@ -132,14 +132,12 @@ extern int fw_pm_sleepcpu(int cpuid, int mode);
  * Private Types
  ****************************************************************************/
 
-#ifndef CONFIG_DISABLE_SIGNAL
 struct cxd56_gnss_sig_s
 {
-  uint8_t                             enable;
-  int                                 pid;
-  FAR struct cxd56_gnss_signal_info_s info;
+  uint8_t                         enable;
+  pid_t                           pid;
+  struct cxd56_gnss_signal_info_s info;
 };
-#endif
 
 struct cxd56_gnss_shared_info_s
 {
@@ -161,10 +159,9 @@ struct cxd56_gnss_dev_s
   uint8_t                         num_open;
   uint8_t                         notify_data;
   struct file                     cepfp;
-  FAR void *                      cepbuf;
-  FAR struct pollfd              *fds[CONFIG_CXD56_GNSS_NPOLLWAITERS];
-#if !defined(CONFIG_DISABLE_SIGNAL) && \
-  (CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0)
+  void *                          cepbuf;
+  struct pollfd                  *fds[CONFIG_CXD56_GNSS_NPOLLWAITERS];
+#if CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0
   struct cxd56_gnss_sig_s         sigs[CONFIG_CXD56_GNSS_NSIGNALRECEIVERS];
 #endif
   struct cxd56_gnss_shared_info_s shared_info;
@@ -179,130 +176,128 @@ struct cxd56_gnss_dev_s
 
 /* ioctl command functions */
 
-static int cxd56_gnss_start(FAR struct file *filep, unsigned long arg);
-static int cxd56_gnss_stop(FAR struct file *filep, unsigned long arg);
-static int cxd56_gnss_select_satellite_system(FAR struct file *filep,
-                                              unsigned long    arg);
-static int cxd56_gnss_get_satellite_system(FAR struct file *filep,
-                                           unsigned long    arg);
+static int cxd56_gnss_start(struct file *filep, unsigned long arg);
+static int cxd56_gnss_stop(struct file *filep, unsigned long arg);
+static int cxd56_gnss_select_satellite_system(struct file *filep,
+                                              unsigned long arg);
+static int cxd56_gnss_get_satellite_system(struct file *filep,
+                                           unsigned long arg);
 static int
-cxd56_gnss_set_receiver_position_ellipsoidal(FAR struct file *filep,
-                                             unsigned long    arg);
+cxd56_gnss_set_receiver_position_ellipsoidal(struct file *filep,
+                                             unsigned long arg);
 static int cxd56_gnss_set_receiver_position_orthogonal(
-                                   FAR struct file *filep,
-                                   unsigned long    arg);
-static int cxd56_gnss_set_ope_mode(FAR struct file *filep,
+                                   struct file *filep,
                                    unsigned long arg);
-static int cxd56_gnss_get_ope_mode(FAR struct file *filep,
+static int cxd56_gnss_set_ope_mode(struct file *filep,
                                    unsigned long arg);
-static int cxd56_gnss_set_tcxo_offset(FAR struct file *filep,
-                                      unsigned long    arg);
-static int cxd56_gnss_get_tcxo_offset(FAR struct file *filep,
-                                      unsigned long    arg);
-static int cxd56_gnss_set_time(FAR struct file *filep,
-                               unsigned long arg);
-static int cxd56_gnss_get_almanac(FAR struct file *filep,
-                                  unsigned long arg);
-static int cxd56_gnss_set_almanac(FAR struct file *filep,
-                                  unsigned long arg);
-static int cxd56_gnss_get_ephemeris(FAR struct file *filep,
-                                    unsigned long    arg);
-static int cxd56_gnss_set_ephemeris(FAR struct file *filep,
-                                    unsigned long    arg);
-static int cxd56_gnss_save_backup_data(FAR struct file *filep,
-                                       unsigned long    arg);
-static int cxd56_gnss_erase_backup_data(FAR struct file *filep,
-                                        unsigned long    arg);
-static int cxd56_gnss_open_cep_data(FAR struct file *filep,
-                                    unsigned long    arg);
-static int cxd56_gnss_close_cep_data(FAR struct file *filep,
-                                     unsigned long    arg);
-static int cxd56_gnss_check_cep_data(FAR struct file *filep,
-                                     unsigned long    arg);
-static int cxd56_gnss_get_cep_age(FAR struct file *filep,
-                                  unsigned long arg);
-static int cxd56_gnss_reset_cep_flag(FAR struct file *filep,
-                                     unsigned long    arg);
-static int cxd56_gnss_set_acquist_data(FAR struct file *filep,
-                                       unsigned long    arg);
-static int cxd56_gnss_set_frametime(FAR struct file *filep,
-                                    unsigned long    arg);
-static int cxd56_gnss_set_tau_gps(FAR struct file *filep,
-                                  unsigned long arg);
-static int cxd56_gnss_set_time_gps(FAR struct file *filep,
+static int cxd56_gnss_get_ope_mode(struct file *filep,
                                    unsigned long arg);
-static int cxd56_gnss_clear_receiver_info(FAR struct file *filep,
-                                          unsigned long    arg);
-static int cxd56_gnss_set_tow_assist(FAR struct file *filep,
-                                     unsigned long    arg);
-static int cxd56_gnss_set_utc_model(FAR struct file *filep,
-                                    unsigned long    arg);
-static int cxd56_gnss_control_spectrum(FAR struct file *filep,
-                                       unsigned long    arg);
-static int cxd56_gnss_start_test(FAR struct file *filep,
-                                 unsigned long arg);
-static int cxd56_gnss_stop_test(FAR struct file *filep,
-                                unsigned long arg);
-static int cxd56_gnss_get_test_result(FAR struct file *filep,
-                                      unsigned long    arg);
-static int cxd56_gnss_set_signal(FAR struct file *filep,
-                                 unsigned long arg);
-static int cxd56_gnss_start_pvtlog(FAR struct file *filep,
-                                   unsigned long arg);
-static int cxd56_gnss_stop_pvtlog(FAR struct file *filep,
-                                  unsigned long arg);
-static int cxd56_gnss_delete_pvtlog(FAR struct file *filep,
-                                    unsigned long    arg);
-static int cxd56_gnss_get_pvtlog_status(FAR struct file *filep,
-                                        unsigned long    arg);
-static int cxd56_gnss_start_rtk_output(FAR struct file *filep,
-                                       unsigned long    arg);
-static int cxd56_gnss_stop_rtk_output(FAR struct file *filep,
-                                      unsigned long    arg);
-static int cxd56_gnss_set_rtk_interval(FAR struct file *filep,
-                                       unsigned long    arg);
-static int cxd56_gnss_get_rtk_interval(FAR struct file *filep,
-                                       unsigned long    arg);
-static int cxd56_gnss_select_rtk_satellite(FAR struct file *filep,
-                                           unsigned long    arg);
-static int cxd56_gnss_get_rtk_satellite(FAR struct file *filep,
-                                        unsigned long    arg);
-static int cxd56_gnss_set_rtk_ephemeris_enable(FAR struct file *filep,
-                                               unsigned long    arg);
-static int cxd56_gnss_get_rtk_ephemeris_enable(FAR struct file *filep,
-                                               unsigned long    arg);
-static int cxd56_gnss_start_navmsg_output(FAR struct file *filep,
-                                          unsigned long    arg);
-static int cxd56_gnss_get_var_ephemeris(FAR struct file *filep,
-                                        unsigned long arg);
-static int cxd56_gnss_set_var_ephemeris(FAR struct file *filep,
-                                        unsigned long arg);
-static int cxd56_gnss_set_usecase(FAR struct file *filep,
-                                  unsigned long arg);
-static int cxd56_gnss_get_usecase(FAR struct file *filep,
-                                  unsigned long arg);
-static int cxd56_gnss_set_1pps_output(FAR struct file *filep,
+static int cxd56_gnss_set_tcxo_offset(struct file *filep,
                                       unsigned long arg);
-static int cxd56_gnss_get_1pps_output(FAR struct file *filep,
+static int cxd56_gnss_get_tcxo_offset(struct file *filep,
+                                      unsigned long arg);
+static int cxd56_gnss_set_time(struct file *filep,
+                               unsigned long arg);
+static int cxd56_gnss_get_almanac(struct file *filep,
+                                  unsigned long arg);
+static int cxd56_gnss_set_almanac(struct file *filep,
+                                  unsigned long arg);
+static int cxd56_gnss_get_ephemeris(struct file *filep,
+                                    unsigned long arg);
+static int cxd56_gnss_set_ephemeris(struct file *filep,
+                                    unsigned long arg);
+static int cxd56_gnss_save_backup_data(struct file *filep,
+                                       unsigned long arg);
+static int cxd56_gnss_erase_backup_data(struct file *filep,
+                                        unsigned long arg);
+static int cxd56_gnss_open_cep_data(struct file *filep,
+                                    unsigned long arg);
+static int cxd56_gnss_close_cep_data(struct file *filep,
+                                     unsigned long arg);
+static int cxd56_gnss_check_cep_data(struct file *filep,
+                                     unsigned long arg);
+static int cxd56_gnss_get_cep_age(struct file *filep,
+                                  unsigned long arg);
+static int cxd56_gnss_reset_cep_flag(struct file *filep,
+                                     unsigned long arg);
+static int cxd56_gnss_set_acquist_data(struct file *filep,
+                                       unsigned long arg);
+static int cxd56_gnss_set_frametime(struct file *filep,
+                                    unsigned long arg);
+static int cxd56_gnss_set_tau_gps(struct file *filep,
+                                  unsigned long arg);
+static int cxd56_gnss_set_time_gps(struct file *filep,
+                                   unsigned long arg);
+static int cxd56_gnss_clear_receiver_info(struct file *filep,
+                                          unsigned long arg);
+static int cxd56_gnss_set_tow_assist(struct file *filep,
+                                     unsigned long arg);
+static int cxd56_gnss_set_utc_model(struct file *filep,
+                                    unsigned long arg);
+static int cxd56_gnss_control_spectrum(struct file *filep,
+                                       unsigned long arg);
+static int cxd56_gnss_start_test(struct file *filep,
+                                 unsigned long arg);
+static int cxd56_gnss_stop_test(struct file *filep,
+                                unsigned long arg);
+static int cxd56_gnss_get_test_result(struct file *filep,
+                                      unsigned long arg);
+static int cxd56_gnss_set_signal(struct file *filep,
+                                 unsigned long arg);
+static int cxd56_gnss_start_pvtlog(struct file *filep,
+                                   unsigned long arg);
+static int cxd56_gnss_stop_pvtlog(struct file *filep,
+                                  unsigned long arg);
+static int cxd56_gnss_delete_pvtlog(struct file *filep,
+                                    unsigned long arg);
+static int cxd56_gnss_get_pvtlog_status(struct file *filep,
+                                        unsigned long arg);
+static int cxd56_gnss_start_rtk_output(struct file *filep,
+                                       unsigned long arg);
+static int cxd56_gnss_stop_rtk_output(struct file *filep,
+                                      unsigned long arg);
+static int cxd56_gnss_set_rtk_interval(struct file *filep,
+                                       unsigned long arg);
+static int cxd56_gnss_get_rtk_interval(struct file *filep,
+                                       unsigned long arg);
+static int cxd56_gnss_select_rtk_satellite(struct file *filep,
+                                           unsigned long arg);
+static int cxd56_gnss_get_rtk_satellite(struct file *filep,
+                                        unsigned long arg);
+static int cxd56_gnss_set_rtk_ephemeris_enable(struct file *filep,
+                                               unsigned long arg);
+static int cxd56_gnss_get_rtk_ephemeris_enable(struct file *filep,
+                                               unsigned long arg);
+static int cxd56_gnss_start_navmsg_output(struct file *filep,
+                                          unsigned long arg);
+static int cxd56_gnss_get_var_ephemeris(struct file *filep,
+                                        unsigned long arg);
+static int cxd56_gnss_set_var_ephemeris(struct file *filep,
+                                        unsigned long arg);
+static int cxd56_gnss_set_usecase(struct file *filep,
+                                  unsigned long arg);
+static int cxd56_gnss_get_usecase(struct file *filep,
+                                  unsigned long arg);
+static int cxd56_gnss_set_1pps_output(struct file *filep,
+                                      unsigned long arg);
+static int cxd56_gnss_get_1pps_output(struct file *filep,
                                       unsigned long arg);
 
 /* file operation functions */
 
-static int cxd56_gnss_open(FAR struct file *filep);
-static int cxd56_gnss_close(FAR struct file *filep);
-static ssize_t cxd56_gnss_read(FAR struct file *filep, FAR char *buffer,
+static int cxd56_gnss_open(struct file *filep);
+static int cxd56_gnss_close(struct file *filep);
+static ssize_t cxd56_gnss_read(struct file *filep, char *buffer,
                                size_t len);
-static ssize_t cxd56_gnss_write(FAR struct file *filep,
-                                FAR const char *buffer, size_t buflen);
-static int cxd56_gnss_ioctl(FAR struct file *filep, int cmd,
+static ssize_t cxd56_gnss_write(struct file *filep,
+                                const char *buffer, size_t buflen);
+static int cxd56_gnss_ioctl(struct file *filep, int cmd,
                             unsigned long arg);
-#ifndef CONFIG_DISABLE_POLL
-static int cxd56_gnss_poll(FAR struct file *filep, FAR struct pollfd *fds,
+static int cxd56_gnss_poll(struct file *filep, struct pollfd *fds,
                            bool setup);
-#endif
 static int8_t cxd56_gnss_select_notifytype(off_t fpos, uint32_t *offset);
 
-static int cxd56_gnss_cpufifo_api(FAR struct file *filep,
+static int cxd56_gnss_cpufifo_api(struct file *filep,
                                   unsigned int api,
                                   unsigned int data);
 
@@ -318,17 +313,18 @@ static const struct file_operations g_gnssfops =
   cxd56_gnss_close, /* close */
   cxd56_gnss_read,  /* read */
   cxd56_gnss_write, /* write */
-  0,                /* seek */
+  NULL,             /* seek */
   cxd56_gnss_ioctl, /* ioctl */
-#ifndef CONFIG_DISABLE_POLL
-  cxd56_gnss_poll,  /* poll */
+  cxd56_gnss_poll   /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL            /* unlink */
 #endif
 };
 
 /* GNSS ioctl command list */
 
-static int (*g_cmdlist[CXD56_GNSS_IOCTL_MAX])(FAR struct file *filep,
-                                              unsigned long    arg) =
+static int (*g_cmdlist[CXD56_GNSS_IOCTL_MAX])(struct file *filep,
+                                              unsigned long arg) =
 {
   NULL,                    /* CXD56_GNSS_IOCTL_INVAL = 0 */
   cxd56_gnss_start,
@@ -392,6 +388,11 @@ static struct pm_cpu_freqlock_s g_lv_lock =
   PM_CPUFREQLOCK_INIT(PM_CPUFREQLOCK_TAG('G', 'T', 0),
                       PM_CPUFREQLOCK_FLAG_LV);
 
+/* Lock to prohibit clock change in gnss open */
+
+static struct pm_cpu_freqlock_s g_hold_lock =
+  PM_CPUFREQLOCK_INIT(0, PM_CPUFREQLOCK_FLAG_HOLD);
+
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
@@ -415,7 +416,7 @@ static struct pm_cpu_freqlock_s g_lv_lock =
  *
  ****************************************************************************/
 
-static int cxd56_gnss_start(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_start(struct file *filep, unsigned long arg)
 {
   int     ret;
   int     retry = 50;
@@ -460,7 +461,7 @@ static int cxd56_gnss_start(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_stop(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_stop(struct file *filep, unsigned long arg)
 {
   int ret;
 
@@ -487,8 +488,8 @@ static int cxd56_gnss_stop(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_select_satellite_system(FAR struct file *filep,
-                                              unsigned long    arg)
+static int cxd56_gnss_select_satellite_system(struct file *filep,
+                                              unsigned long arg)
 {
   uint32_t system = (uint32_t)arg;
 
@@ -513,11 +514,11 @@ static int cxd56_gnss_select_satellite_system(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_satellite_system(FAR struct file *filep,
-                                           unsigned long    arg)
+static int cxd56_gnss_get_satellite_system(struct file *filep,
+                                           unsigned long arg)
 {
   int ret;
-  uint32_t system;
+  uint32_t system = 0;
 
   if (!arg)
     {
@@ -548,17 +549,17 @@ static int cxd56_gnss_get_satellite_system(FAR struct file *filep,
  ****************************************************************************/
 
 static int
-cxd56_gnss_set_receiver_position_ellipsoidal(FAR struct file *filep,
-                                             unsigned long    arg)
+cxd56_gnss_set_receiver_position_ellipsoidal(struct file *filep,
+                                             unsigned long arg)
 {
-  FAR struct cxd56_gnss_ellipsoidal_position_s *pos;
+  struct cxd56_gnss_ellipsoidal_position_s *pos;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  pos = (FAR struct cxd56_gnss_ellipsoidal_position_s *)arg;
+  pos = (struct cxd56_gnss_ellipsoidal_position_s *)arg;
 
   return fw_gd_setreceiverpositionellipsoidal(&pos->latitude,
                                            &pos->longitude,
@@ -583,17 +584,17 @@ cxd56_gnss_set_receiver_position_ellipsoidal(FAR struct file *filep,
  ****************************************************************************/
 
 static int cxd56_gnss_set_receiver_position_orthogonal(
-                                           FAR struct file *filep,
-                                           unsigned long    arg)
+                                           struct file *filep,
+                                           unsigned long arg)
 {
-  FAR struct cxd56_gnss_orthogonal_position_s *pos;
+  struct cxd56_gnss_orthogonal_position_s *pos;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  pos = (FAR struct cxd56_gnss_orthogonal_position_s *)arg;
+  pos = (struct cxd56_gnss_orthogonal_position_s *)arg;
   return fw_gd_setreceiverpositionorthogonal(pos->x, pos->y, pos->z);
 }
 
@@ -613,15 +614,15 @@ static int cxd56_gnss_set_receiver_position_orthogonal(
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_ope_mode(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_set_ope_mode(struct file *filep, unsigned long arg)
 {
-  FAR struct cxd56_gnss_ope_mode_param_s *ope_mode;
+  struct cxd56_gnss_ope_mode_param_s *ope_mode;
   if (!arg)
     {
       return -EINVAL;
     }
 
-  ope_mode = (FAR struct cxd56_gnss_ope_mode_param_s *)arg;
+  ope_mode = (struct cxd56_gnss_ope_mode_param_s *)arg;
 
   return fw_gd_setoperationmode(ope_mode->mode, ope_mode->cycle);
 }
@@ -642,15 +643,15 @@ static int cxd56_gnss_set_ope_mode(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_ope_mode(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_get_ope_mode(struct file *filep, unsigned long arg)
 {
-  FAR struct cxd56_gnss_ope_mode_param_s *ope_mode;
+  struct cxd56_gnss_ope_mode_param_s *ope_mode;
   if (!arg)
     {
       return -EINVAL;
     }
 
-  ope_mode = (FAR struct cxd56_gnss_ope_mode_param_s *)arg;
+  ope_mode = (struct cxd56_gnss_ope_mode_param_s *)arg;
 
   return fw_gd_getoperationmode(&ope_mode->mode, &ope_mode->cycle);
 }
@@ -671,8 +672,8 @@ static int cxd56_gnss_get_ope_mode(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_tcxo_offset(FAR struct file *filep,
-                                      unsigned long    arg)
+static int cxd56_gnss_set_tcxo_offset(struct file *filep,
+                                      unsigned long arg)
 {
   int32_t offset = (int32_t)arg;
 
@@ -695,11 +696,11 @@ static int cxd56_gnss_set_tcxo_offset(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_tcxo_offset(FAR struct file *filep,
-                                      unsigned long    arg)
+static int cxd56_gnss_get_tcxo_offset(struct file *filep,
+                                      unsigned long arg)
 {
   int     ret;
-  int32_t offset;
+  int32_t offset = 0;
 
   if (!arg)
     {
@@ -729,9 +730,9 @@ static int cxd56_gnss_get_tcxo_offset(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_time(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_set_time(struct file *filep, unsigned long arg)
 {
-  FAR struct cxd56_gnss_datetime_s *date_time;
+  struct cxd56_gnss_datetime_s *date_time;
   int ret;
 
   if (!arg)
@@ -739,7 +740,7 @@ static int cxd56_gnss_set_time(FAR struct file *filep, unsigned long arg)
       return -EINVAL;
     }
 
-  date_time = (FAR struct cxd56_gnss_datetime_s *)arg;
+  date_time = (struct cxd56_gnss_datetime_s *)arg;
 
   up_pm_acquire_freqlock(&g_lv_lock);
   ret = fw_gd_settime(&date_time->date, &date_time->time);
@@ -764,17 +765,17 @@ static int cxd56_gnss_set_time(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_almanac(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_get_almanac(struct file *filep, unsigned long arg)
 {
-  FAR struct cxd56_gnss_orbital_param_s *param;
-  uint32_t                            almanac_size;
+  struct cxd56_gnss_orbital_param_s *param;
+  uint32_t                           almanac_size;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  param = (FAR struct cxd56_gnss_orbital_param_s *)arg;
+  param = (struct cxd56_gnss_orbital_param_s *)arg;
 
   return fw_gd_getalmanac(param->type, param->data, &almanac_size);
 }
@@ -795,16 +796,16 @@ static int cxd56_gnss_get_almanac(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_almanac(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_set_almanac(struct file *filep, unsigned long arg)
 {
-  FAR struct cxd56_gnss_orbital_param_s *param;
+  struct cxd56_gnss_orbital_param_s *param;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  param = (FAR struct cxd56_gnss_orbital_param_s *)arg;
+  param = (struct cxd56_gnss_orbital_param_s *)arg;
 
   return fw_gd_setalmanac(param->type, param->data);
 }
@@ -825,18 +826,18 @@ static int cxd56_gnss_set_almanac(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_ephemeris(FAR struct file *filep,
+static int cxd56_gnss_get_ephemeris(struct file *filep,
                                     unsigned long arg)
 {
-  FAR struct cxd56_gnss_orbital_param_s *param;
-  uint32_t                               ephemeris_size;
+  struct cxd56_gnss_orbital_param_s *param;
+  uint32_t                           ephemeris_size;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  param = (FAR struct cxd56_gnss_orbital_param_s *)arg;
+  param = (struct cxd56_gnss_orbital_param_s *)arg;
 
   return fw_gd_getephemeris(param->type, param->data, &ephemeris_size);
 }
@@ -857,17 +858,17 @@ static int cxd56_gnss_get_ephemeris(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_ephemeris(FAR struct file *filep,
+static int cxd56_gnss_set_ephemeris(struct file *filep,
                                     unsigned long arg)
 {
-  FAR struct cxd56_gnss_orbital_param_s *param;
+  struct cxd56_gnss_orbital_param_s *param;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  param = (FAR struct cxd56_gnss_orbital_param_s *)arg;
+  param = (struct cxd56_gnss_orbital_param_s *)arg;
 
   return fw_gd_setephemeris(param->type, param->data);
 }
@@ -888,10 +889,10 @@ static int cxd56_gnss_set_ephemeris(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_save_backup_data(FAR struct file *filep,
-                                       unsigned long    arg)
+static int cxd56_gnss_save_backup_data(struct file *filep,
+                                       unsigned long arg)
 {
-  FAR char   *buf;
+  char       *buf;
   struct file file;
   int         n = 0;
   int32_t     offset = 0;
@@ -946,8 +947,8 @@ static int cxd56_gnss_save_backup_data(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_erase_backup_data(FAR struct file *filep,
-                                        unsigned long    arg)
+static int cxd56_gnss_erase_backup_data(struct file *filep,
+                                        unsigned long arg)
 {
   return nx_unlink(CONFIG_CXD56_GNSS_BACKUP_FILENAME);
 }
@@ -968,7 +969,7 @@ static int cxd56_gnss_erase_backup_data(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_open_cep_data(FAR struct file *filep,
+static int cxd56_gnss_open_cep_data(struct file *filep,
                                     unsigned long arg)
 {
   return cxd56_cpu1sigsend(CXD56_CPU1_DATA_TYPE_CEPFILE, TRUE);
@@ -990,8 +991,8 @@ static int cxd56_gnss_open_cep_data(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_close_cep_data(FAR struct file *filep,
-                                     unsigned long    arg)
+static int cxd56_gnss_close_cep_data(struct file *filep,
+                                     unsigned long arg)
 {
   return cxd56_cpu1sigsend(CXD56_CPU1_DATA_TYPE_CEPFILE, FALSE);
 }
@@ -1012,8 +1013,8 @@ static int cxd56_gnss_close_cep_data(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_check_cep_data(FAR struct file *filep,
-                                     unsigned long    arg)
+static int cxd56_gnss_check_cep_data(struct file *filep,
+                                     unsigned long arg)
 {
   return fw_gd_cepcheckassistdata();
 }
@@ -1034,16 +1035,16 @@ static int cxd56_gnss_check_cep_data(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_cep_age(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_get_cep_age(struct file *filep, unsigned long arg)
 {
-  FAR struct cxd56_gnss_cep_age_s *age;
+  struct cxd56_gnss_cep_age_s *age;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  age = (FAR struct cxd56_gnss_cep_age_s *)arg;
+  age = (struct cxd56_gnss_cep_age_s *)arg;
 
   return fw_gd_cepgetagedata(&age->age, &age->cepi);
 }
@@ -1064,7 +1065,7 @@ static int cxd56_gnss_get_cep_age(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_reset_cep_flag(FAR struct file *filep,
+static int cxd56_gnss_reset_cep_flag(struct file *filep,
                                      unsigned long arg)
 {
   return cxd56_gnss_cpufifo_api(filep,
@@ -1087,17 +1088,17 @@ static int cxd56_gnss_reset_cep_flag(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_acquist_data(FAR struct file *filep,
+static int cxd56_gnss_set_acquist_data(struct file *filep,
                                        unsigned long arg)
 {
-  FAR struct cxd56_gnss_agps_acquist_s *acquist;
+  struct cxd56_gnss_agps_acquist_s *acquist;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  acquist = (FAR struct cxd56_gnss_agps_acquist_s *)arg;
+  acquist = (struct cxd56_gnss_agps_acquist_s *)arg;
 
   return fw_gd_setacquist(acquist->data, acquist->size);
 }
@@ -1118,17 +1119,17 @@ static int cxd56_gnss_set_acquist_data(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_frametime(FAR struct file *filep,
+static int cxd56_gnss_set_frametime(struct file *filep,
                                     unsigned long arg)
 {
-  FAR struct cxd56_gnss_agps_frametime_s *frametime;
+  struct cxd56_gnss_agps_frametime_s *frametime;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  frametime = (FAR struct cxd56_gnss_agps_frametime_s *)arg;
+  frametime = (struct cxd56_gnss_agps_frametime_s *)arg;
 
   return fw_gd_setframetime(frametime->sec, frametime->frac);
 }
@@ -1149,16 +1150,16 @@ static int cxd56_gnss_set_frametime(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_tau_gps(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_set_tau_gps(struct file *filep, unsigned long arg)
 {
-  FAR struct cxd56_gnss_agps_tau_gps_s *taugpstime;
+  struct cxd56_gnss_agps_tau_gps_s *taugpstime;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  taugpstime = (FAR struct cxd56_gnss_agps_tau_gps_s *)arg;
+  taugpstime = (struct cxd56_gnss_agps_tau_gps_s *)arg;
 
   return fw_gd_settaugps(&taugpstime->taugps);
 }
@@ -1179,16 +1180,16 @@ static int cxd56_gnss_set_tau_gps(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_time_gps(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_set_time_gps(struct file *filep, unsigned long arg)
 {
-  FAR struct cxd56_gnss_agps_time_gps_s *time_gps;
+  struct cxd56_gnss_agps_time_gps_s *time_gps;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  time_gps = (FAR struct cxd56_gnss_agps_time_gps_s *)arg;
+  time_gps = (struct cxd56_gnss_agps_time_gps_s *)arg;
 
   return fw_gd_settimegps(&time_gps->date, &time_gps->time);
 }
@@ -1209,7 +1210,7 @@ static int cxd56_gnss_set_time_gps(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_clear_receiver_info(FAR struct file *filep,
+static int cxd56_gnss_clear_receiver_info(struct file *filep,
                                           unsigned long arg)
 {
   uint32_t clear_type = arg;
@@ -1233,17 +1234,17 @@ static int cxd56_gnss_clear_receiver_info(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_tow_assist(FAR struct file *filep,
+static int cxd56_gnss_set_tow_assist(struct file *filep,
                                      unsigned long arg)
 {
-  FAR struct cxd56_gnss_agps_tow_assist_s *assist;
+  struct cxd56_gnss_agps_tow_assist_s *assist;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  assist = (FAR struct cxd56_gnss_agps_tow_assist_s *)arg;
+  assist = (struct cxd56_gnss_agps_tow_assist_s *)arg;
 
   return fw_gd_settowassist(assist->data, assist->size);
 }
@@ -1264,17 +1265,17 @@ static int cxd56_gnss_set_tow_assist(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_utc_model(FAR struct file *filep,
+static int cxd56_gnss_set_utc_model(struct file *filep,
                                     unsigned long arg)
 {
-  FAR struct cxd56_gnss_agps_utc_model_s *model;
+  struct cxd56_gnss_agps_utc_model_s *model;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  model = (FAR struct cxd56_gnss_agps_utc_model_s *)arg;
+  model = (struct cxd56_gnss_agps_utc_model_s *)arg;
 
   return fw_gd_setutcmodel(model->data, model->size);
 }
@@ -1295,17 +1296,17 @@ static int cxd56_gnss_set_utc_model(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_control_spectrum(FAR struct file *filep,
+static int cxd56_gnss_control_spectrum(struct file *filep,
                                        unsigned long arg)
 {
-  FAR struct cxd56_gnss_spectrum_control_s *control;
+  struct cxd56_gnss_spectrum_control_s *control;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  control = (FAR struct cxd56_gnss_spectrum_control_s *)arg;
+  control = (struct cxd56_gnss_spectrum_control_s *)arg;
 
   return fw_gd_spectrumcontrol(control->time, control->enable,
                                control->point1, control->step1,
@@ -1328,11 +1329,11 @@ static int cxd56_gnss_control_spectrum(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_start_test(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_start_test(struct file *filep, unsigned long arg)
 {
   int ret;
   int retry = 50;
-  FAR struct cxd56_gnss_test_info_s *info;
+  struct cxd56_gnss_test_info_s *info;
 
   /* check argument */
 
@@ -1359,7 +1360,7 @@ static int cxd56_gnss_start_test(FAR struct file *filep, unsigned long arg)
 
       /* set parameter */
 
-      info = (FAR struct cxd56_gnss_test_info_s *)arg;
+      info = (struct cxd56_gnss_test_info_s *)arg;
       fw_gd_startgpstest(info->satellite, info->reserve1,
                       info->reserve2, info->reserve3);
 
@@ -1387,7 +1388,7 @@ static int cxd56_gnss_start_test(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_stop_test(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_stop_test(struct file *filep, unsigned long arg)
 {
   int ret;
 
@@ -1424,17 +1425,17 @@ static int cxd56_gnss_stop_test(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_test_result(FAR struct file *filep,
+static int cxd56_gnss_get_test_result(struct file *filep,
                                       unsigned long arg)
 {
-  FAR struct cxd56_gnss_test_result_s *result;
+  struct cxd56_gnss_test_result_s *result;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  result = (FAR struct cxd56_gnss_test_result_s *)arg;
+  result = (struct cxd56_gnss_test_result_s *)arg;
 
   return fw_gd_getgpstestresult(&result->cn, &result->doppler);
 }
@@ -1455,33 +1456,32 @@ static int cxd56_gnss_get_test_result(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_signal(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_set_signal(struct file *filep, unsigned long arg)
 {
   int ret = 0;
 
-#if !defined(CONFIG_DISABLE_SIGNAL) && \
-  (CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0)
-  FAR struct inode                       *inode;
-  FAR struct cxd56_gnss_dev_s            *priv;
-  FAR struct cxd56_gnss_signal_setting_s *setting;
-  FAR struct cxd56_gnss_sig_s            *sig;
-  FAR struct cxd56_gnss_sig_s            *checksig;
-  int                                     pid;
-  int                                     i;
+#if CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0
+  struct inode                       *inode;
+  struct cxd56_gnss_dev_s            *priv;
+  struct cxd56_gnss_signal_setting_s *setting;
+  struct cxd56_gnss_sig_s            *sig;
+  struct cxd56_gnss_sig_s            *checksig;
+  pid_t                               pid;
+  int                                 i;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  setting = (FAR struct cxd56_gnss_signal_setting_s *)arg;
+  setting = (struct cxd56_gnss_signal_setting_s *)arg;
   if (setting->gnsssig >= CXD56_CPU1_DATA_TYPE_MAX)
     {
       return -EPROTOTYPE;
     }
 
   inode = filep->f_inode;
-  priv  = (FAR struct cxd56_gnss_dev_s *)inode->i_private;
+  priv  = (struct cxd56_gnss_dev_s *)inode->i_private;
 
   ret = nxsem_wait(&priv->devsem);
   if (ret < 0)
@@ -1533,10 +1533,7 @@ static int cxd56_gnss_set_signal(FAR struct file *filep, unsigned long arg)
   _success:
   _err:
   nxsem_post(&priv->devsem);
-#endif
-/* if !defined(CONFIG_DISABLE_SIGNAL) &&
- *  (CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0)
- */
+#endif /* CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0 */
 
   return ret;
 }
@@ -1557,16 +1554,16 @@ static int cxd56_gnss_set_signal(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_start_pvtlog(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_start_pvtlog(struct file *filep, unsigned long arg)
 {
-  FAR struct cxd56_pvtlog_setting_s *setting;
+  struct cxd56_pvtlog_setting_s *setting;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  setting = (FAR struct cxd56_pvtlog_setting_s *)arg;
+  setting = (struct cxd56_pvtlog_setting_s *)arg;
 
   return fw_gd_registerpvtlog(setting->cycle, setting->threshold);
 }
@@ -1587,7 +1584,7 @@ static int cxd56_gnss_start_pvtlog(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_stop_pvtlog(FAR struct file *filep, unsigned long arg)
+static int cxd56_gnss_stop_pvtlog(struct file *filep, unsigned long arg)
 {
   return fw_gd_releasepvtlog();
 }
@@ -1608,7 +1605,7 @@ static int cxd56_gnss_stop_pvtlog(FAR struct file *filep, unsigned long arg)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_delete_pvtlog(FAR struct file *filep,
+static int cxd56_gnss_delete_pvtlog(struct file *filep,
                                     unsigned long arg)
 {
   return fw_gd_pvtlogdeletelog();
@@ -1630,17 +1627,17 @@ static int cxd56_gnss_delete_pvtlog(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_pvtlog_status(FAR struct file *filep,
-                                        unsigned long    arg)
+static int cxd56_gnss_get_pvtlog_status(struct file *filep,
+                                        unsigned long arg)
 {
-  FAR struct cxd56_pvtlog_status_s *status;
+  struct cxd56_pvtlog_status_s *status;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  status = (FAR struct cxd56_pvtlog_status_s *)arg;
+  status = (struct cxd56_pvtlog_status_s *)arg;
 
   return fw_gd_pvtloggetlogstatus(&status->status);
 }
@@ -1661,17 +1658,17 @@ static int cxd56_gnss_get_pvtlog_status(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_start_rtk_output(FAR struct file *filep,
-                                       unsigned long    arg)
+static int cxd56_gnss_start_rtk_output(struct file *filep,
+                                       unsigned long arg)
 {
-  FAR struct cxd56_rtk_setting_s *setting;
+  struct cxd56_rtk_setting_s *setting;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  setting = (FAR struct cxd56_rtk_setting_s *)arg;
+  setting = (struct cxd56_rtk_setting_s *)arg;
   setting->sbasout = 0;
 
   return fw_gd_rtkstart(setting);
@@ -1693,8 +1690,8 @@ static int cxd56_gnss_start_rtk_output(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_stop_rtk_output(FAR struct file *filep,
-                                      unsigned long    arg)
+static int cxd56_gnss_stop_rtk_output(struct file *filep,
+                                      unsigned long arg)
 {
   return fw_gd_rtkstop();
 }
@@ -1715,8 +1712,8 @@ static int cxd56_gnss_stop_rtk_output(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_rtk_interval(FAR struct file *filep,
-                                       unsigned long    arg)
+static int cxd56_gnss_set_rtk_interval(struct file *filep,
+                                       unsigned long arg)
 {
   int interval = (int)arg;
 
@@ -1739,11 +1736,11 @@ static int cxd56_gnss_set_rtk_interval(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_rtk_interval(FAR struct file *filep,
-                                       unsigned long    arg)
+static int cxd56_gnss_get_rtk_interval(struct file *filep,
+                                       unsigned long arg)
 {
   int ret;
-  int interval;
+  int interval = 0;
 
   if (!arg)
     {
@@ -1772,8 +1769,8 @@ static int cxd56_gnss_get_rtk_interval(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_select_rtk_satellite(FAR struct file *filep,
-                                           unsigned long    arg)
+static int cxd56_gnss_select_rtk_satellite(struct file *filep,
+                                           unsigned long arg)
 {
   uint32_t gnss  = (uint32_t)arg;
 
@@ -1796,11 +1793,11 @@ static int cxd56_gnss_select_rtk_satellite(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_rtk_satellite(FAR struct file *filep,
-                                        unsigned long    arg)
+static int cxd56_gnss_get_rtk_satellite(struct file *filep,
+                                        unsigned long arg)
 {
   int       ret;
-  uint32_t  gnss;
+  uint32_t  gnss = 0;
 
   if (!arg)
     {
@@ -1829,8 +1826,8 @@ static int cxd56_gnss_get_rtk_satellite(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_rtk_ephemeris_enable(FAR struct file *filep,
-                                               unsigned long    arg)
+static int cxd56_gnss_set_rtk_ephemeris_enable(struct file *filep,
+                                               unsigned long arg)
 {
   int enable = (int)arg;
 
@@ -1853,11 +1850,11 @@ static int cxd56_gnss_set_rtk_ephemeris_enable(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_rtk_ephemeris_enable(FAR struct file *filep,
-                                               unsigned long    arg)
+static int cxd56_gnss_get_rtk_ephemeris_enable(struct file *filep,
+                                               unsigned long arg)
 {
   int ret;
-  int enable;
+  int enable = 0;
 
   if (!arg)
     {
@@ -1886,17 +1883,17 @@ static int cxd56_gnss_get_rtk_ephemeris_enable(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_start_navmsg_output(FAR struct file *filep,
-                                          unsigned long    arg)
+static int cxd56_gnss_start_navmsg_output(struct file *filep,
+                                          unsigned long arg)
 {
-  FAR struct cxd56_rtk_setting_s *setting;
+  struct cxd56_rtk_setting_s *setting;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  setting = (FAR struct cxd56_rtk_setting_s *)arg;
+  setting = (struct cxd56_rtk_setting_s *)arg;
 
   return fw_gd_rtkstart(setting);
 }
@@ -1917,17 +1914,17 @@ static int cxd56_gnss_start_navmsg_output(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_var_ephemeris(FAR struct file *filep,
+static int cxd56_gnss_set_var_ephemeris(struct file *filep,
                                         unsigned long arg)
 {
-  FAR struct cxd56_gnss_set_var_ephemeris_s *param;
+  struct cxd56_gnss_set_var_ephemeris_s *param;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  param = (FAR struct cxd56_gnss_set_var_ephemeris_s *)arg;
+  param = (struct cxd56_gnss_set_var_ephemeris_s *)arg;
 
   return fw_gd_setvarephemeris(param->data, param->size);
 }
@@ -1948,17 +1945,17 @@ static int cxd56_gnss_set_var_ephemeris(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_var_ephemeris(FAR struct file *filep,
+static int cxd56_gnss_get_var_ephemeris(struct file *filep,
                                         unsigned long arg)
 {
-  FAR struct cxd56_gnss_get_var_ephemeris_s *param;
+  struct cxd56_gnss_get_var_ephemeris_s *param;
 
   if (!arg)
     {
       return -EINVAL;
     }
 
-  param = (FAR struct cxd56_gnss_get_var_ephemeris_s *)arg;
+  param = (struct cxd56_gnss_get_var_ephemeris_s *)arg;
 
   return fw_gd_getvarephemeris(param->type, param->data, param->size);
 }
@@ -1978,7 +1975,7 @@ static int cxd56_gnss_get_var_ephemeris(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_usecase(FAR struct file *filep,
+static int cxd56_gnss_set_usecase(struct file *filep,
                                   unsigned long arg)
 {
   return fw_gd_setusecase(arg);
@@ -1999,7 +1996,7 @@ static int cxd56_gnss_set_usecase(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_usecase(FAR struct file *filep,
+static int cxd56_gnss_get_usecase(struct file *filep,
                                   unsigned long arg)
 {
   int ret;
@@ -2031,7 +2028,7 @@ static int cxd56_gnss_get_usecase(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_set_1pps_output(FAR struct file *filep,
+static int cxd56_gnss_set_1pps_output(struct file *filep,
                                       unsigned long arg)
 {
   if (arg)
@@ -2073,7 +2070,7 @@ static int cxd56_gnss_set_1pps_output(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_get_1pps_output(FAR struct file *filep,
+static int cxd56_gnss_get_1pps_output(struct file *filep,
                                       unsigned long arg)
 {
   int ret;
@@ -2109,20 +2106,9 @@ static int cxd56_gnss_get_1pps_output(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_wait_notify(FAR sem_t *sem, time_t waitsec)
+static int cxd56_gnss_wait_notify(sem_t *sem, time_t waitsec)
 {
-  int             ret;
-  struct timespec timeout;
-
-  ret = clock_gettime(CLOCK_REALTIME, &timeout);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  timeout.tv_sec += waitsec; /* <waitsec> seconds timeout for wait */
-
-  return nxsem_timedwait(sem, &timeout);
+  return nxsem_tickwait(sem, SEC2TICK(waitsec));
 }
 
 /****************************************************************************
@@ -2142,12 +2128,12 @@ static int cxd56_gnss_wait_notify(FAR sem_t *sem, time_t waitsec)
  *
  ****************************************************************************/
 
-static FAR char *
-cxd56_gnss_read_cep_file(FAR struct file *fp, int32_t offset,
-                         size_t len, FAR int *retval)
+static char *
+cxd56_gnss_read_cep_file(struct file *fp, int32_t offset,
+                         size_t len, int *retval)
 {
-  FAR char *buf;
-  int       ret;
+  char *buf;
+  int   ret;
 
   if (fp == NULL)
     {
@@ -2206,9 +2192,9 @@ cxd56_gnss_read_cep_file(FAR struct file *fp, int32_t offset,
  *
  ****************************************************************************/
 
-static void cxd56_gnss_read_backup_file(FAR int *retval)
+static void cxd56_gnss_read_backup_file(int *retval)
 {
-  FAR char   *buf;
+  char       *buf;
   struct file file;
   int32_t     offset = 0;
   size_t      n;
@@ -2257,9 +2243,6 @@ static void cxd56_gnss_read_backup_file(FAR int *retval)
   cxd56_cpu1sigsend(CXD56_CPU1_DATA_TYPE_BKUPFILE, 0);
 }
 
-#if !defined(CONFIG_DISABLE_SIGNAL) && \
-  (CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0)
-
 /****************************************************************************
  * Name: cxd56_gnss_common_signalhandler
  *
@@ -2276,15 +2259,16 @@ static void cxd56_gnss_read_backup_file(FAR int *retval)
  *
  ****************************************************************************/
 
+#if CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0
 static void cxd56_gnss_common_signalhandler(uint32_t data,
-                                            FAR void *userdata)
+                                            void *userdata)
 {
-  FAR struct cxd56_gnss_dev_s *priv =
-                              (FAR struct cxd56_gnss_dev_s *)userdata;
-  uint8_t                      sigtype = CXD56_CPU1_GET_DEV(data);
-  int                          issetmask = 0;
-  int                          i;
-  int                          ret;
+  struct cxd56_gnss_dev_s *priv =
+                          (struct cxd56_gnss_dev_s *)userdata;
+  uint8_t                  sigtype = CXD56_CPU1_GET_DEV(data);
+  int                      issetmask = 0;
+  int                      i;
+  int                      ret;
 
   ret = nxsem_wait(&priv->devsem);
   if (ret < 0)
@@ -2312,11 +2296,7 @@ static void cxd56_gnss_common_signalhandler(uint32_t data,
 
   nxsem_post(&priv->devsem);
 }
-
-#endif
-/* if !defined(CONFIG_DISABLE_SIGNAL) &&
- *  (CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0)
- */
+#endif /* CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0 */
 
 /****************************************************************************
  * Name: cxd56_gnss_default_sighandler
@@ -2334,13 +2314,13 @@ static void cxd56_gnss_common_signalhandler(uint32_t data,
  *
  ****************************************************************************/
 
-static void cxd56_gnss_default_sighandler(uint32_t data, FAR void *userdata)
+static void cxd56_gnss_default_sighandler(uint32_t data, void *userdata)
 {
-  FAR struct cxd56_gnss_dev_s *priv =
-                              (FAR struct cxd56_gnss_dev_s *)userdata;
-  int                          i;
-  int                          ret;
-  int                          dtype = CXD56_CPU1_GET_DATA(data);
+  struct cxd56_gnss_dev_s *priv =
+                          (struct cxd56_gnss_dev_s *)userdata;
+  int                      i;
+  int                      ret;
+  int                      dtype = CXD56_CPU1_GET_DATA(data);
 
   switch (dtype)
     {
@@ -2411,15 +2391,14 @@ static void cxd56_gnss_default_sighandler(uint32_t data, FAR void *userdata)
       if (fds)
         {
           fds->revents |= POLLIN;
-          gnssinfo("Report events: %02x\n", fds->revents);
+          gnssinfo("Report events: %08" PRIx32 "\n", fds->revents);
           nxsem_post(fds->sem);
         }
     }
 
   nxsem_post(&priv->devsem);
 
-#if !defined(CONFIG_DISABLE_SIGNAL) && \
-  (CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0)
+#if CONFIG_CXD56_GNSS_NSIGNALRECEIVERS != 0
   cxd56_gnss_common_signalhandler(data, userdata);
 #endif
 }
@@ -2441,15 +2420,13 @@ static void cxd56_gnss_default_sighandler(uint32_t data, FAR void *userdata)
  ****************************************************************************/
 
 static void cxd56_gnss_cpufifoapi_signalhandler(uint32_t data,
-                                                FAR void *userdata)
+                                                void *userdata)
 {
-  FAR struct cxd56_gnss_dev_s *priv =
-                              (FAR struct cxd56_gnss_dev_s *)userdata;
+  struct cxd56_gnss_dev_s *priv =
+                              (struct cxd56_gnss_dev_s *)userdata;
 
   priv->apiret = CXD56_CPU1_GET_DATA((int)data);
   nxsem_post(&priv->apiwait);
-
-  return;
 }
 
 /****************************************************************************
@@ -2468,16 +2445,16 @@ static void cxd56_gnss_cpufifoapi_signalhandler(uint32_t data,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_cpufifo_api(FAR struct file *filep, unsigned int api,
+static int cxd56_gnss_cpufifo_api(struct file *filep, unsigned int api,
                                   unsigned int data)
 {
-  FAR struct inode            *inode;
-  FAR struct cxd56_gnss_dev_s *priv;
-  unsigned int                 type;
-  int                          ret = OK;
+  struct inode            *inode;
+  struct cxd56_gnss_dev_s *priv;
+  unsigned int             type;
+  int                      ret = OK;
 
   inode = filep->f_inode;
-  priv  = (FAR struct cxd56_gnss_dev_s *)inode->i_private;
+  priv  = (struct cxd56_gnss_dev_s *)inode->i_private;
 
   type = CXD56_GNSS_CPUFIFOAPI_SET_DATA(api, data);
   cxd56_cpu1sigsend(CXD56_CPU1_DATA_TYPE_CPUFIFOAPI, type);
@@ -2515,7 +2492,7 @@ static int cxd56_gnss_cpufifo_api(FAR struct file *filep, unsigned int api,
  *
  ****************************************************************************/
 
-static int8_t cxd56_gnss_select_notifytype(off_t fpos, FAR uint32_t *offset)
+static int8_t cxd56_gnss_select_notifytype(off_t fpos, uint32_t *offset)
 {
   int8_t type;
 
@@ -2592,7 +2569,7 @@ static int8_t cxd56_gnss_select_notifytype(off_t fpos, FAR uint32_t *offset)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_initialize(FAR struct cxd56_gnss_dev_s *dev)
+static int cxd56_gnss_initialize(struct cxd56_gnss_dev_s *dev)
 {
   int32_t ret = 0;
 
@@ -2613,15 +2590,15 @@ static int cxd56_gnss_initialize(FAR struct cxd56_gnss_dev_s *dev)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_open(FAR struct file *filep)
+static int cxd56_gnss_open(struct file *filep)
 {
-  FAR struct inode *           inode;
-  FAR struct cxd56_gnss_dev_s *priv;
-  int                          ret = OK;
-  int                          retry = 50;
+  struct inode *           inode;
+  struct cxd56_gnss_dev_s *priv;
+  int                      ret = OK;
+  int                      retry = 50;
 
   inode = filep->f_inode;
-  priv  = (FAR struct cxd56_gnss_dev_s *)inode->i_private;
+  priv  = (struct cxd56_gnss_dev_s *)inode->i_private;
 
   while (!g_rtc_enabled && 0 < retry--)
     {
@@ -2646,7 +2623,16 @@ static int cxd56_gnss_open(FAR struct file *filep)
 
       nxsem_set_protocol(&priv->syncsem, SEM_PRIO_NONE);
 
+      /* Prohibit the clock change during loading image */
+
+      up_pm_acquire_freqlock(&g_hold_lock);
+
       ret = fw_pm_loadimage(CXD56_GNSS_GPS_CPUID, CXD56_GNSS_FWNAME);
+
+      /* Allow the clock change after loading image */
+
+      up_pm_release_freqlock(&g_hold_lock);
+
       if (ret < 0)
         {
           goto _err1;
@@ -2713,14 +2699,14 @@ static int cxd56_gnss_open(FAR struct file *filep)
  *
  ****************************************************************************/
 
-static int cxd56_gnss_close(FAR struct file *filep)
+static int cxd56_gnss_close(struct file *filep)
 {
-  FAR struct inode *          inode;
-  FAR struct cxd56_gnss_dev_s *priv;
-  int                         ret = OK;
+  struct inode *          inode;
+  struct cxd56_gnss_dev_s *priv;
+  int                     ret = OK;
 
   inode = filep->f_inode;
-  priv  = (FAR struct cxd56_gnss_dev_s *)inode->i_private;
+  priv  = (struct cxd56_gnss_dev_s *)inode->i_private;
 
   ret = nxsem_wait(&priv->devsem);
   if (ret < 0)
@@ -2763,7 +2749,7 @@ static int cxd56_gnss_close(FAR struct file *filep)
  *
  ****************************************************************************/
 
-static ssize_t cxd56_gnss_read(FAR struct file *filep, FAR char *buffer,
+static ssize_t cxd56_gnss_read(struct file *filep, char *buffer,
                                size_t len)
 {
   int32_t   ret = 0;
@@ -2833,8 +2819,8 @@ static ssize_t cxd56_gnss_read(FAR struct file *filep, FAR char *buffer,
  *
  ****************************************************************************/
 
-static ssize_t cxd56_gnss_write(FAR struct file *filep,
-                                FAR const char *buffer, size_t buflen)
+static ssize_t cxd56_gnss_write(struct file *filep,
+                                const char *buffer, size_t buflen)
 {
   return -ENOENT;
 }
@@ -2855,15 +2841,15 @@ static ssize_t cxd56_gnss_write(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_gnss_ioctl(FAR struct file *filep, int cmd,
+static int cxd56_gnss_ioctl(struct file *filep, int cmd,
                             unsigned long arg)
 {
-  FAR struct inode *          inode;
-  FAR struct cxd56_gnss_dev_s *priv;
+  struct inode *          inode;
+  struct cxd56_gnss_dev_s *priv;
   int ret;
 
   inode = filep->f_inode;
-  priv  = (FAR struct cxd56_gnss_dev_s *)inode->i_private;
+  priv  = (struct cxd56_gnss_dev_s *)inode->i_private;
 
   if (cmd <= CXD56_GNSS_IOCTL_INVAL || cmd >= CXD56_GNSS_IOCTL_MAX)
     {
@@ -2899,17 +2885,16 @@ static int cxd56_gnss_ioctl(FAR struct file *filep, int cmd,
  *
  ****************************************************************************/
 
-#ifndef CONFIG_DISABLE_POLL
-static int cxd56_gnss_poll(FAR struct file *filep, FAR struct pollfd *fds,
+static int cxd56_gnss_poll(struct file *filep, struct pollfd *fds,
                            bool setup)
 {
-  FAR struct inode            *inode;
-  FAR struct cxd56_gnss_dev_s *priv;
-  int                          ret = OK;
-  int                          i;
+  struct inode            *inode;
+  struct cxd56_gnss_dev_s *priv;
+  int                      ret = OK;
+  int                      i;
 
   inode = filep->f_inode;
-  priv  = (FAR struct cxd56_gnss_dev_s *)inode->i_private;
+  priv  = (struct cxd56_gnss_dev_s *)inode->i_private;
 
   ret = nxsem_wait(&priv->devsem);
   if (ret < 0)
@@ -2965,7 +2950,6 @@ errout:
   nxsem_post(&priv->devsem);
   return ret;
 }
-#endif
 
 /****************************************************************************
  * Name: cxd56_gnss_register
@@ -2981,11 +2965,11 @@ errout:
  *
  ****************************************************************************/
 
-static int cxd56_gnss_register(FAR const char *devpath)
+static int cxd56_gnss_register(const char *devpath)
 {
-  FAR struct cxd56_gnss_dev_s *priv;
-  int                          i;
-  int                          ret;
+  struct cxd56_gnss_dev_s *priv;
+  int                      i;
+  int                      ret;
 
   static struct cxd56_devsig_table_s devsig_table[] =
   {
@@ -3035,7 +3019,7 @@ static int cxd56_gnss_register(FAR const char *devpath)
     }
   };
 
-  priv = (FAR struct cxd56_gnss_dev_s *)kmm_malloc(
+  priv = (struct cxd56_gnss_dev_s *)kmm_malloc(
     sizeof(struct cxd56_gnss_dev_s));
   if (!priv)
     {
@@ -3122,7 +3106,7 @@ static int cxd56_gnss_register(FAR const char *devpath)
  *
  ****************************************************************************/
 
-int cxd56_gnssinitialize(FAR const char *devpath)
+int cxd56_gnssinitialize(const char *devpath)
 {
   int ret;
 

@@ -15,7 +15,7 @@ config NET_LOCAL
 
 if NET_LOCAL
 
-config NET_LOCAL_PATH_PREFIX
+config NET_LOCAL_VFS_PATH
 	string "Path prefix to Unix domain sockets"
 	default "/var/socket"
 	---help---
@@ -32,6 +32,12 @@ config NET_LOCAL_DGRAM
 	default y
 	---help---
 		Enable support for Unix domain SOCK_DGRAM type sockets
+
+config NET_LOCAL_SCM
+	bool "Unix domain socket control message"
+	default n
+	---help---
+		Enable support for Unix domain socket control message
 
 endif # NET_LOCAL
 

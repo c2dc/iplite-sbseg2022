@@ -51,26 +51,16 @@ config NUNGET_CHARS
 		Number of characters that can be buffered by ungetc() (Only if
 		FILE_STREAM equals y)
 
-config LIBC_PRINT_LEGACY
-	bool "Enable legacy printf logic"
-	default n
-	---help---
-		By default, printf (and friends) are implemented using a port from
-		newlib-nano.  That port can be signifcantly smaller, especially if
-		floating support is enabled.  This option is available, however,
-		to revert to the legacy printf version is so desired.
-
 config LIBC_FLOATINGPOINT
 	bool "Enable floating point in printf"
-	default n
+	default !DEFAULT_SMALL && ARCH_FPU
 	---help---
 		By default, floating point support in printf, sscanf, etc. is
 		disabled.  This option will enable floating point support.
 
 config LIBC_LONG_LONG
 	bool "Enable long long support in printf"
-	default y if !DEFAULT_SMALL
-	default n if DEFAULT_SMALL
+	default !DEFAULT_SMALL
 	---help---
 		Enables support for long long formats in printf, sscanf, etc. is
 		enabled.  This is enabled by default but if you are trying to
@@ -86,7 +76,7 @@ config LIBC_LONG_LONG
 config LIBC_NUMBERED_ARGS
 	bool "Enable numbered arguments in printf"
 	default n
-	depends on (LIBC_FLOATINGPOINT || LIBC_LONG_LONG) && !LIBC_PRINT_LEGACY
+	depends on LIBC_FLOATINGPOINT || LIBC_LONG_LONG
 	---help---
 		Enables support for numbered arguments in printf.
 

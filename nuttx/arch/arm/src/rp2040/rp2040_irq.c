@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -33,10 +34,7 @@
 
 #include "nvic.h"
 #include "ram_vectors.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
-#include "rp2040_irq.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -62,15 +60,11 @@
  * CURRENT_REGS for portability.
  */
 
-#ifdef CONFIG_SMP
 /* For the case of configurations with multiple CPUs, then there must be one
  * such value for each processor that can receive an interrupt.
  */
 
 volatile uint32_t *g_current_regs[CONFIG_SMP_NCPUS];
-#else
-volatile uint32_t *g_current_regs[1];
-#endif
 
 #ifdef CONFIG_SMP
 extern void rp2040_send_irqreq(int irqreq);
@@ -164,7 +158,7 @@ static void rp2040_dumpnvic(const char *msg, int irq)
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG_FEATURES
-static int rp2040_nmi(int irq, FAR void *context, FAR void *arg)
+static int rp2040_nmi(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! NMI received\n");
@@ -172,7 +166,7 @@ static int rp2040_nmi(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int rp2040_pendsv(int irq, FAR void *context, FAR void *arg)
+static int rp2040_pendsv(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! PendSV received\n");
@@ -180,7 +174,7 @@ static int rp2040_pendsv(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int rp2040_reserved(int irq, FAR void *context, FAR void *arg)
+static int rp2040_reserved(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! Reserved interrupt\n");
@@ -470,16 +464,16 @@ int up_prioritize_irq(int irq, int priority)
 #endif
 
 /****************************************************************************
- * Name: arm_intstack_base
+ * Name: arm_intstack_top
  *
  * Description:
- *   Return a pointer to the "base" the correct interrupt stack allocation
- *   for the current CPU. NOTE: Here, the base means "top" of the stack
+ *   Return a pointer to the top the correct interrupt stack allocation
+ *   for the current CPU.
  *
  ****************************************************************************/
 
 #if defined(CONFIG_SMP) && CONFIG_ARCH_INTERRUPTSTACK > 7
-uintptr_t arm_intstack_base(void)
+uintptr_t arm_intstack_top(void)
 {
   return g_cpu_intstack_top[up_cpu_index()];
 }

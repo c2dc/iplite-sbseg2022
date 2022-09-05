@@ -29,8 +29,7 @@
 
 #include <nuttx/irq.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "nvic.h"
 
 #ifdef CONFIG_DEBUG_FEATURES
@@ -47,7 +46,7 @@
  *
  ****************************************************************************/
 
-void arm_dumpnvic(FAR const char *msg)
+void arm_dumpnvic(const char *msg)
 {
 #ifdef CONFIG_DEBUG_INFO
   irqstate_t flags;

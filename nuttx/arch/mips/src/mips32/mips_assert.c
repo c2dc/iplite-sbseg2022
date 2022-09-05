@@ -37,7 +37,6 @@
 
 #include <arch/board/board.h>
 
-#include "mips_arch.h"
 #include "sched/sched.h"
 #include "mips_internal.h"
 
@@ -73,12 +72,13 @@ static void _up_assert(void)
 
   if (CURRENT_REGS || running_task()->flink == NULL)
     {
+#if CONFIG_BOARD_RESET_ON_ASSERT >= 1
+      board_reset(CONFIG_BOARD_ASSERT_RESET_VALUE);
+#endif
+
       up_irq_save();
       for (; ; )
         {
-#if CONFIG_BOARD_RESET_ON_ASSERT >= 1
-          board_reset(CONFIG_BOARD_ASSERT_RESET_VALUE);
-#endif
 #ifdef CONFIG_ARCH_LEDS
           board_autoled_on(LED_PANIC);
           up_mdelay(250);
@@ -100,7 +100,7 @@ static void _up_assert(void)
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_USBDUMP
-static int usbtrace_syslog(FAR const char *fmt, ...)
+static int usbtrace_syslog(const char *fmt, ...)
 {
   va_list ap;
 
@@ -112,7 +112,7 @@ static int usbtrace_syslog(FAR const char *fmt, ...)
   return OK;
 }
 
-static int assert_tracecallback(FAR struct usbtrace_s *trace, FAR void *arg)
+static int assert_tracecallback(struct usbtrace_s *trace, void *arg)
 {
   usbtrace_trprintf(usbtrace_syslog, trace->event, trace->value);
   return 0;
@@ -129,10 +129,6 @@ static int assert_tracecallback(FAR struct usbtrace_s *trace, FAR void *arg)
 
 void up_assert(const char *filename, int lineno)
 {
-#if CONFIG_TASK_NAME_SIZE > 0 && defined(CONFIG_DEBUG_ALERT)
-  struct tcb_s *rtcb = running_task();
-#endif
-
   board_autoled_on(LED_ASSERTION);
 
   /* Flush any buffered SYSLOG data (from prior to the assertion) */
@@ -141,10 +137,10 @@ void up_assert(const char *filename, int lineno)
 
 #if CONFIG_TASK_NAME_SIZE > 0
   _alert("Assertion failed at file:%s line: %d task: %s\n",
-        filename, lineno, rtcb->name);
+         filename, lineno, running_task()->name);
 #else
   _alert("Assertion failed at file:%s line: %d\n",
-        filename, lineno);
+         filename, lineno);
 #endif
 
   up_dumpstate();
@@ -160,7 +156,7 @@ void up_assert(const char *filename, int lineno)
 #endif
 
 #ifdef CONFIG_BOARD_CRASHDUMP
-  board_crashdump(mips_getsp(), running_task(), filename, lineno);
+  board_crashdump(up_getsp(), running_task(), filename, lineno);
 #endif
 
   _up_assert();

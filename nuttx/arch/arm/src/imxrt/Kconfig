@@ -64,6 +64,16 @@ config ARCH_CHIP_MIMXRT1062CVL5A
 	select ARCH_FAMILY_MIMXRT106xCVL5A
 	select IMXRT_HAVE_LCD
 
+config ARCH_CHIP_MIMXRT1064DVL6A
+	bool "MIMXRT1064DVL6A"
+	select ARCH_FAMILY_MXRT106xDVL6A
+	select IMXRT_HAVE_LCD
+
+config ARCH_CHIP_MIMXRT1064CVL5A
+	bool "MIMXRT1064DVL6A"
+	select ARCH_FAMILY_MIMXRT106xCVL5A
+	select IMXRT_HAVE_LCD
+
 endchoice # i.MX RT Chip Selection
 
 # i.MX RT Families
@@ -160,6 +170,11 @@ config IMXRT_FLEXCAN
 	default n
 	select ARCH_HAVE_NETDEV_STATISTICS
 
+config IMXRT_FLEXPWM
+	bool
+	default n
+	select ARCH_HAVE_PWM_MULTICHAN
+
 config IMXRT_LPI2C
 	bool
 	default n
@@ -168,9 +183,13 @@ config IMXRT_LPSPI
 	bool
 	default n
 
+config IMXRT_FLEXSPI
+	bool
+	default n
+
 config IMXRT_ADC
-    bool
-    default n
+	bool
+	default n
 
 config IMXRT_ENC
 	bool
@@ -209,7 +228,6 @@ config IMXRT_ENET
 	bool "Ethernet"
 	default n
 	select ARCH_HAVE_PHY
-	select ARCH_PHY_INTERRUPT
 	select ARCH_HAVE_NETDEV_STATISTICS
 
 config IMXRT_LCD
@@ -340,7 +358,7 @@ config IMXRT_FLEXIO3
 	bool "FLEXIO3"
 	default n
 	select IMXRT_FLEXIO
-    ---help---
+	---help---
 		FLEXIO3 uses the FLEXIO2 clock settings.
 
 endif # ARCH_FAMILY_IMXRT106x
@@ -533,6 +551,246 @@ config FLEXCAN3_DATA_SAMPLEP
 
 endmenu # IMXRT_FLEXCAN3
 
+menu "FLEXPWM Peripherals"
+
+config IMXRT_FLEXPWM1
+	bool "FLEXPWM1"
+	default n
+	select IMXRT_FLEXPWM
+
+config IMXRT_FLEXPWM2
+	bool "FLEXPWM2"
+	default n
+	select IMXRT_FLEXPWM
+
+if ARCH_FAMILY_IMXRT105x || ARCH_FAMILY_IMXRT106x
+
+config IMXRT_FLEXPWM3
+	bool "FLEXPWM3"
+	default n
+	select IMXRT_FLEXPWM
+
+config IMXRT_FLEXPWM4
+	bool "FLEXPWM4"
+	default n
+	select IMXRT_FLEXPWM
+
+endif # ARCH_FAMILY_IMXRT105x || ARCH_FAMILY_IMXRT106x
+
+endmenu # FLEXPWM Peripherals
+
+menu "FLEXPWM1 Configuration"
+	depends on IMXRT_FLEXPWM1
+
+config IMXRT_FLEXPWM1_MOD1
+	bool "FLEXPWM1 Module 1"
+	default n
+
+if IMXRT_FLEXPWM1_MOD1
+
+config IMXRT_FLEXPWM1_MOD1_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM1_MOD2
+	bool "FLEXPWM1 Module 2"
+	default n
+
+if IMXRT_FLEXPWM1_MOD2
+
+config IMXRT_FLEXPWM1_MOD2_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM1_MOD3
+	bool "FLEXPWM1 Module 3"
+	default n
+
+if IMXRT_FLEXPWM1_MOD3
+
+config IMXRT_FLEXPWM1_MOD3_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM1_MOD4
+	bool "FLEXPWM1 Module 4"
+	default n
+
+if IMXRT_FLEXPWM1_MOD4
+
+config IMXRT_FLEXPWM1_MOD4_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+endmenu # IMXRT_FLEXPWM1
+
+menu "FLEXPWM2 Configuration"
+	depends on IMXRT_FLEXPWM2
+
+config IMXRT_FLEXPWM2_MOD1
+	bool "FLEXPWM2 Module 1"
+	default n
+
+if IMXRT_FLEXPWM2_MOD1
+
+config IMXRT_FLEXPWM2_MOD1_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM2_MOD2
+	bool "FLEXPWM2 Module 2"
+	default n
+
+if IMXRT_FLEXPWM2_MOD2
+
+config IMXRT_FLEXPWM2_MOD2_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM2_MOD3
+	bool "FLEXPWM2 Module 3"
+	default n
+
+if IMXRT_FLEXPWM2_MOD3
+
+config IMXRT_FLEXPWM2_MOD3_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM2_MOD4
+	bool "FLEXPWM2 Module 4"
+	default n
+
+if IMXRT_FLEXPWM2_MOD4
+
+config IMXRT_FLEXPWM2_MOD4_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+endmenu # IMXRT_FLEXPWM2
+
+menu "FLEXPWM3 Configuration"
+	depends on IMXRT_FLEXPWM3
+
+config IMXRT_FLEXPWM3_MOD1
+	bool "FLEXPWM3 Module 1"
+	default n
+
+if IMXRT_FLEXPWM3_MOD1
+
+config IMXRT_FLEXPWM3_MOD1_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM3_MOD2
+	bool "FLEXPWM3 Module 2"
+	default n
+
+if IMXRT_FLEXPWM3_MOD2
+
+config IMXRT_FLEXPWM3_MOD2_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM3_MOD3
+	bool "FLEXPWM3 Module 3"
+	default n
+
+if IMXRT_FLEXPWM3_MOD3
+
+config IMXRT_FLEXPWM3_MOD3_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM3_MOD4
+	bool "FLEXPWM3 Module 4"
+	default n
+
+if IMXRT_FLEXPWM3_MOD4
+
+config IMXRT_FLEXPWM3_MOD4_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+endmenu # IMXRT_FLEXPWM3
+
+menu "FLEXPWM4 Configuration"
+	depends on IMXRT_FLEXPWM4
+
+config IMXRT_FLEXPWM4_MOD1
+	bool "FLEXPWM4 Module 1"
+	default n
+
+if IMXRT_FLEXPWM4_MOD1
+
+config IMXRT_FLEXPWM4_MOD1_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM4_MOD2
+	bool "FLEXPWM4 Module 2"
+	default n
+
+if IMXRT_FLEXPWM4_MOD2
+
+config IMXRT_FLEXPWM4_MOD2_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM4_MOD3
+	bool "FLEXPWM4 Module 3"
+	default n
+
+if IMXRT_FLEXPWM4_MOD3
+
+config IMXRT_FLEXPWM4_MOD3_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+config IMXRT_FLEXPWM4_MOD4
+	bool "FLEXPWM4 Module 4"
+	default n
+
+if IMXRT_FLEXPWM4_MOD4
+
+config IMXRT_FLEXPWM4_MOD4_COMP
+	bool "Use complementary output"
+	default n
+
+endif
+
+endmenu # IMXRT_FLEXPWM4
+
 menu "LPI2C Peripherals"
 
 menuconfig IMXRT_LPI2C1
@@ -545,6 +803,11 @@ if IMXRT_LPI2C1
 config LPI2C1_BUSYIDLE
 	int "Bus idle timeout period in clock cycles"
 	default 0
+
+config LPI2C1_DMA
+	bool "Enable DMA for I2C1"
+	default n
+	depends on IMXRT_LPI2C_DMA
 
 config LPI2C1_FILTSCL
 	int "I2C master digital glitch filters for SCL input in clock cycles"
@@ -567,6 +830,11 @@ config LPI2C2_BUSYIDLE
 	int "Bus idle timeout period in clock cycles"
 	default 0
 
+config LPI2C2_DMA
+	bool "Enable DMA for I2C2"
+	default n
+	depends on IMXRT_LPI2C_DMA
+
 config LPI2C2_FILTSCL
 	int "I2C master digital glitch filters for SCL input in clock cycles"
 	default 0
@@ -588,6 +856,11 @@ config LPI2C3_BUSYIDLE
 	int "Bus idle timeout period in clock cycles"
 	default 0
 
+config LPI2C3_DMA
+	bool "Enable DMA for I2C3"
+	default n
+	depends on IMXRT_LPI2C_DMA
+
 config LPI2C3_FILTSCL
 	int "I2C master digital glitch filters for SCL input in clock cycles"
 	default 0
@@ -608,6 +881,11 @@ if IMXRT_LPI2C4
 config LPI2C4_BUSYIDLE
 	int "Bus idle timeout period in clock cycles"
 	default 0
+
+config LPI2C4_DMA
+	bool "Enable DMA for I2C4"
+	default n
+	depends on IMXRT_LPI2C_DMA
 
 config LPI2C4_FILTSCL
 	int "I2C master digital glitch filters for SCL input in clock cycles"
@@ -644,17 +922,26 @@ menuconfig IMXRT_LPSPI4
 
 endmenu # LPSPI Peripherals
 
+menu "FLEXSPI Peripherals"
+
+menuconfig IMXRT_FLEXSPI1
+	bool "FLEXSPI1"
+	default n
+	select IMXRT_FLEXSPI
+
+endmenu # FLEXSPI Peripherals
+
 menu "ADC Peripherals"
 
 menuconfig IMXRT_ADC1
-    bool "ADC1"
-    default n
-    select IMXRT_ADC
+	bool "ADC1"
+	default n
+	select IMXRT_ADC
 
 menuconfig IMXRT_ADC2
-    bool "ADC2"
-    default n
-    select IMXRT_ADC
+	bool "ADC2"
+	default n
+	select IMXRT_ADC
 
 endmenu
 
@@ -738,6 +1025,10 @@ config ENC1_HNE
 
 endif # ENC1_HIP
 
+config ENC1_XIE
+	bool "INDEX signal position capture"
+	default n
+
 config ENC1_XIP
 	bool "INDEX signal initializes position counter"
 	default n
@@ -812,6 +1103,10 @@ config ENC2_HNE
 	default n
 
 endif # ENC2_HIP
+
+config ENC2_XIE
+	bool "INDEX signal position capture"
+	default n
 
 config ENC2_XIP
 	bool "INDEX signal initializes position counter"
@@ -890,6 +1185,10 @@ config ENC3_HNE
 
 endif # ENC3_HIP
 
+config ENC3_XIE
+	bool "INDEX signal position capture"
+	default n
+
 config ENC3_XIP
 	bool "INDEX signal initializes position counter"
 	default n
@@ -964,6 +1263,10 @@ config ENC4_HNE
 	default n
 
 endif # ENC4_HIP
+
+config ENC4_XIE
+	bool "INDEX signal position capture"
+	default n
 
 config ENC4_XIP
 	bool "INDEX signal initializes position counter"
@@ -1088,6 +1391,33 @@ endif # IMXRT_GPIO_IRQ
 menu "Ethernet Configuration"
 	depends on IMXRT_ENET
 
+choice
+	prompt "i.MX RT Ethernet Interface"
+	default IMXRT_ENET1
+	depends on IMXRT_ENET
+
+config IMXRT_ENET1
+	bool "ENET 1"
+
+config IMXRT_ENET2
+	bool "ENET 2"
+
+endchoice # i.MX RT Ethernet Interface
+
+choice
+	prompt "i.MX RT Ethernet TX Clock Source"
+	default IMXRT_PROVIDES_TXC
+	depends on IMXRT_ENET
+
+config IMXRT_MAC_PROVIDES_TXC
+	bool "i.MX RT Ethernet provides TX Clock"
+
+config IMXRT_PHY_PROVIDES_TXC
+	bool "External PHY provides TX Clock"
+
+endchoice # i.MX RT Ethernet TX Clock Source
+
+
 config IMXRT_ENET_NRXBUFFERS
 	int "Number Rx buffers"
 	default 6
@@ -1114,6 +1444,16 @@ config IMXRT_ENET_PHYINIT
 		the configuration then the board specific logic must provide
 		imxrt_phy_boardinitialize();  The i.MXRT ENET driver will call this
 		function one time before it first uses the PHY.
+
+config IMXRT_PHY_POLLING
+	bool "Support network monitoring by poling the PHY"
+	default n
+	depends on IMXRT_ENET
+	select ARCH_PHY_POLLED
+	---help---
+		Some boards may not have an interrupt connected to the PHY.
+		This option allows the network monitor to be used by polling the
+		the PHY for status.
 
 endmenu # IMXRT_ENET
 
@@ -1286,6 +1626,25 @@ endmenu # Memory Configuration
 
 menu "LPI2C Configuration"
 	depends on IMXRT_LPI2C
+
+config IMXRT_LPI2C_DMA
+	bool "I2C DMA Support"
+	default n
+	depends on IMXRT_LPI2C && IMXRT_EDMA && !I2C_POLLED
+	---help---
+		This option enables the DMA for I2C transfers.
+		Note: The user can define CONFIG_I2C_DMAPRIO: a custom priority value
+		for the I2C dma streams, else the default priority level is set to
+		medium.
+
+config IMXRT_LPI2C_DMA_MAXMSG
+	int "Maximum number messages that will be DMAed"
+	default 8
+	depends on IMXRT_LPI2C_DMA
+	---help---
+		This option set the mumber of mesg that can be in a transfer.
+		It is used to allocate space for the 16 bit LPI2C commands
+		that will be DMA-ed to the LPI2C device.
 
 config IMXRT_LPI2C_DYNTIMEO
 	bool "Use dynamic timeouts"
@@ -1466,6 +1825,55 @@ config IMXRT_EDMA_EDBG
 
 endmenu # eDMA Global Configuration
 
+menu "LPSPI Configuration"
+	depends on IMXRT_LPSPI
+
+config IMXRT_LPSPI_DMA
+	bool "LPSPI DMA"
+	depends on IMXRT_EDMA
+	default n
+	---help---
+		Use DMA to improve LPSPI transfer performance.
+
+config IMXRT_LPSPI_DMATHRESHOLD
+	int "LPSPI DMA threshold"
+	default 4
+	depends on IMXRT_LPSPI_DMA
+	---help---
+		When SPI DMA is enabled, small DMA transfers will still be performed
+		by polling logic.  But we need a threshold value to determine what
+		is small.
+
+config IMXRT_LPSPI1_DMA
+	bool "LPSPI1 DMA"
+	default n
+	depends on IMXRT_LPSPI1 && IMXRT_LPSPI_DMA
+	---help---
+		Use DMA to improve LPSPI1 transfer performance.
+
+config IMXRT_LPSPI2_DMA
+	bool "LPSPI2 DMA"
+	default n
+	depends on IMXRT_LPSPI2 && IMXRT_LPSPI_DMA
+	---help---
+		Use DMA to improve LPSPI2 transfer performance.
+
+config IMXRT_LPSPI3_DMA
+	bool "LPSPI3 DMA"
+	default n
+	depends on IMXRT_LPSPI3 && IMXRT_LPSPI_DMA
+	---help---
+		Use DMA to improve LPSPI3 transfer performance.
+
+config IMXRT_LPSPI4_DMA
+	bool "LPSPI4 DMA"
+	default n
+	depends on IMXRT_LPSPI4 && IMXRT_LPSPI_DMA
+	---help---
+		Use DMA to improve SPI4 transfer performance.
+
+endmenu # LPSPI Configuration
+
 if PM
 
 config IMXRT_PM_SERIAL_ACTIVITY
@@ -1641,6 +2049,31 @@ config IMXRT_DATA_RISING_EDGE
 
 endmenu # LCD Configuration
 
+menu "Timer Configuration"
+
+if SCHED_TICKLESS
+
+config IMXRT_TICKLESS_TIMER
+	int "Tickless hardware timer"
+	default 1
+	range 1 2
+	---help---
+		If the Tickless OS feature is enabled, then one clock must be
+		assigned to provided the GPT timer needed by the OS.
+
+config IMXRT_TICKLESS_CHANNEL
+	int "Tickless timer channel"
+	default 1
+	range 1 3
+	---help---
+		If the Tickless OS feature is enabled, the one clock must be
+		assigned to provided the free-running timer needed by the OS
+		and one channel on that clock is needed to handle intervals.
+
+endif # SCHED_TICKLESS
+
+endmenu # Timer Configuration
+
 if IMXRT_USBOTG && USBHOST
 
 menu "USB host controller driver (HCD) options"
@@ -1683,24 +2116,24 @@ if IMXRT_USBDEV
 menu "USB device controller driver (DCD) options"
 
 config IMXRT_USBDEV_NOVBUS
-    bool "No USB VBUS sensing"
-    default n
+	bool "No USB VBUS sensing"
+	default n
 
 config IMXRT_USBDEV_FRAME_INTERRUPT
-    bool "USB frame interrupt"
-    default n
-    ---help---
-        Handle USB Start-Of-Frame events.  Enable reading SOF from interrupt
-        handler vs. simply reading on demand. Probably a bad idea... Unless
-        there is some issue with sampling the SOF from hardware asynchronously.
+	bool "USB frame interrupt"
+	default n
+	---help---
+		Handle USB Start-Of-Frame events.  Enable reading SOF from interrupt
+		handler vs. simply reading on demand. Probably a bad idea... Unless
+		there is some issue with sampling the SOF from hardware asynchronously.
 
 config IMXRT_USBDEV_REGDEBUG
-    bool "Register level debug"
-    depends on DEBUG_USB_INFO
-    default n
-    ---help---
-        Output detailed register-level USB device debug information.  Requires
-        also CONFIG_DEBUG_USB_INFO.
+	bool "Register level debug"
+	depends on DEBUG_USB_INFO
+	default n
+	---help---
+		Output detailed register-level USB device debug information.  Requires
+		also CONFIG_DEBUG_USB_INFO.
 
 endmenu # USB device controller driver (DCD) options
 endif # IMXRT_USBDEV

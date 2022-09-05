@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_STM32F7_HARDWARE_STM32F74XX77XX_ADC_H
-#define __ARCH_ARM_SRC_STM32F7_HARDWARE_STM32F74XX77XX_ADC_H
+#ifndef __ARCH_ARM_SRC_STM32F7_HARDWARE_STM32F74XX73XX_ADC_H
+#define __ARCH_ARM_SRC_STM32F7_HARDWARE_STM32F74XX73XX_ADC_H
 
 /****************************************************************************
  * Included Files
@@ -372,8 +372,10 @@
 #define ADC_JSQR_JSQ3_MASK           (0x1f << ADC_JSQR_JSQ3_SHIFT)
 #define ADC_JSQR_JSQ4_SHIFT          (15)      /* Bits 19-15: 4th conversion in injected sequence */
 #define ADC_JSQR_JSQ4_MASK           (0x1f << ADC_JSQR_JSQ4_SHIFT)
+#define ADC_JSQR_JSQ_SHIFT           (5)       /* Shift between JSQx bits */
 #define ADC_JSQR_JL_SHIFT            (20)      /* Bits 21-20: Injected Sequence length */
 #define ADC_JSQR_JL_MASK             (3 << ADC_JSQR_JL_SHIFT)
+#  define ADC_JSQR_JL(n)             (((n) - 1) << ADC_JSQR_JL_SHIFT) /* n=1..4 */
 
 /* ADC injected data register 1-4 */
 
@@ -480,4 +482,4 @@
  * Public Function Prototypes
  ****************************************************************************/
 
-#endif /* __ARCH_ARM_SRC_STM32F7_HARDWARE_STM32F74XX77XX_ADC_H */
+#endif /* __ARCH_ARM_SRC_STM32F7_HARDWARE_STM32F74XX73XX_ADC_H */

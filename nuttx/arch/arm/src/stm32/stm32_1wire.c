@@ -1,35 +1,20 @@
 /****************************************************************************
  * arch/arm/src/stm32/stm32_1wire.c
  *
- *   Copyright (C) 2016 Aleksandr Vyhovanec. All rights reserved.
- *   Author: Aleksandr Vyhovanec <www.desh@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -48,6 +33,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -56,12 +42,11 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/clock.h>
 #include <nuttx/semaphore.h>
-#include <nuttx/drivers/1wire.h>
+#include <nuttx/1wire/1wire.h>
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "stm32_rcc.h"
 #include "stm32_1wire.h"
 
@@ -160,28 +145,28 @@ static void stm32_1wire_send(struct stm32_1wire_priv_s *priv, int ch);
 static void stm32_1wire_set_baud(struct stm32_1wire_priv_s *priv);
 static void stm32_1wire_set_apb_clock(struct stm32_1wire_priv_s *priv,
                                       bool on);
-static int stm32_1wire_init(FAR struct stm32_1wire_priv_s *priv);
-static int stm32_1wire_deinit(FAR struct stm32_1wire_priv_s *priv);
-static inline void stm32_1wire_sem_init(FAR struct stm32_1wire_priv_s *priv);
+static int stm32_1wire_init(struct stm32_1wire_priv_s *priv);
+static int stm32_1wire_deinit(struct stm32_1wire_priv_s *priv);
+static inline void stm32_1wire_sem_init(struct stm32_1wire_priv_s *priv);
 static inline void stm32_1wire_sem_destroy(
-       FAR struct stm32_1wire_priv_s *priv);
-static inline int  stm32_1wire_sem_wait(FAR struct stm32_1wire_priv_s *priv);
-static inline void stm32_1wire_sem_post(FAR struct stm32_1wire_priv_s *priv);
+       struct stm32_1wire_priv_s *priv);
+static inline int  stm32_1wire_sem_wait(struct stm32_1wire_priv_s *priv);
+static inline void stm32_1wire_sem_post(struct stm32_1wire_priv_s *priv);
 static int stm32_1wire_process(struct stm32_1wire_priv_s *priv,
-                               FAR const struct stm32_1wire_msg_s *msgs,
+                               const struct stm32_1wire_msg_s *msgs,
                                int count);
 static int stm32_1wire_isr(int irq, void *context, void *arg);
-static int stm32_1wire_reset(FAR struct onewire_dev_s *dev);
-static int stm32_1wire_write(FAR struct onewire_dev_s *dev,
+static int stm32_1wire_reset(struct onewire_dev_s *dev);
+static int stm32_1wire_write(struct onewire_dev_s *dev,
                              const uint8_t *buffer, int buflen);
-static int stm32_1wire_read(FAR struct onewire_dev_s *dev, uint8_t *buffer,
+static int stm32_1wire_read(struct onewire_dev_s *dev, uint8_t *buffer,
                             int buflen);
-static int stm32_1wire_exchange(FAR struct onewire_dev_s *dev, bool reset,
+static int stm32_1wire_exchange(struct onewire_dev_s *dev, bool reset,
                                 const uint8_t *txbuffer, int txbuflen,
                                 uint8_t *rxbuffer, int rxbuflen);
-static int stm32_1wire_writebit(FAR struct onewire_dev_s *dev,
+static int stm32_1wire_writebit(struct onewire_dev_s *dev,
                                 const uint8_t *bit);
-static int stm32_1wire_readbit(FAR struct onewire_dev_s *dev, uint8_t *bit);
+static int stm32_1wire_readbit(struct onewire_dev_s *dev, uint8_t *bit);
 
 /****************************************************************************
  * Private Data
@@ -606,7 +591,7 @@ static void stm32_1wire_set_apb_clock(struct stm32_1wire_priv_s *priv,
  *
  ****************************************************************************/
 
-static int stm32_1wire_init(FAR struct stm32_1wire_priv_s *priv)
+static int stm32_1wire_init(struct stm32_1wire_priv_s *priv)
 {
   const struct stm32_1wire_config_s *config = priv->config;
   uint32_t regval;
@@ -681,7 +666,7 @@ static int stm32_1wire_init(FAR struct stm32_1wire_priv_s *priv)
  *
  ****************************************************************************/
 
-static int stm32_1wire_deinit(FAR struct stm32_1wire_priv_s *priv)
+static int stm32_1wire_deinit(struct stm32_1wire_priv_s *priv)
 {
   const struct stm32_1wire_config_s *config = priv->config;
   uint32_t regval;
@@ -726,7 +711,7 @@ static int stm32_1wire_deinit(FAR struct stm32_1wire_priv_s *priv)
  *
  ****************************************************************************/
 
-static inline void stm32_1wire_sem_init(FAR struct stm32_1wire_priv_s *priv)
+static inline void stm32_1wire_sem_init(struct stm32_1wire_priv_s *priv)
 {
   nxsem_init(&priv->sem_excl, 0, 1);
   nxsem_init(&priv->sem_isr, 0, 0);
@@ -747,7 +732,7 @@ static inline void stm32_1wire_sem_init(FAR struct stm32_1wire_priv_s *priv)
  ****************************************************************************/
 
 static inline void stm32_1wire_sem_destroy(
-       FAR struct stm32_1wire_priv_s *priv)
+       struct stm32_1wire_priv_s *priv)
 {
   nxsem_destroy(&priv->sem_excl);
   nxsem_destroy(&priv->sem_isr);
@@ -761,7 +746,7 @@ static inline void stm32_1wire_sem_destroy(
  *
  ****************************************************************************/
 
-static inline int stm32_1wire_sem_wait(FAR struct stm32_1wire_priv_s *priv)
+static inline int stm32_1wire_sem_wait(struct stm32_1wire_priv_s *priv)
 {
   return nxsem_wait_uninterruptible(&priv->sem_excl);
 }
@@ -774,7 +759,7 @@ static inline int stm32_1wire_sem_wait(FAR struct stm32_1wire_priv_s *priv)
  *
  ****************************************************************************/
 
-static inline void stm32_1wire_sem_post(FAR struct stm32_1wire_priv_s *priv)
+static inline void stm32_1wire_sem_post(struct stm32_1wire_priv_s *priv)
 {
   nxsem_post(&priv->sem_excl);
 }
@@ -787,11 +772,10 @@ static inline void stm32_1wire_sem_post(FAR struct stm32_1wire_priv_s *priv)
  ****************************************************************************/
 
 static int stm32_1wire_process(struct stm32_1wire_priv_s *priv,
-                               FAR const struct stm32_1wire_msg_s *msgs,
+                               const struct stm32_1wire_msg_s *msgs,
                                int count)
 {
   irqstate_t irqs;
-  struct timespec abstime;
   int indx;
   int ret;
 
@@ -829,9 +813,7 @@ static int stm32_1wire_process(struct stm32_1wire_priv_s *priv,
 
           /* Wait.  Break on timeout if TX line closed to GND */
 
-          clock_gettime(CLOCK_REALTIME, &abstime);
-          abstime.tv_sec += BUS_TIMEOUT;
-          nxsem_timedwait(&priv->sem_isr, &abstime);
+          nxsem_tickwait(&priv->sem_isr, SEC2TICK(BUS_TIMEOUT));
           break;
 
         case ONEWIRETASK_WRITE:
@@ -854,9 +836,7 @@ static int stm32_1wire_process(struct stm32_1wire_priv_s *priv,
 
           /* Wait.  Break on timeout if TX line closed to GND */
 
-          clock_gettime(CLOCK_REALTIME, &abstime);
-          abstime.tv_sec += BUS_TIMEOUT;
-          nxsem_timedwait(&priv->sem_isr, &abstime);
+          nxsem_tickwait(&priv->sem_isr, SEC2TICK(BUS_TIMEOUT));
           break;
 
         case ONEWIRETASK_READ:
@@ -878,9 +858,7 @@ static int stm32_1wire_process(struct stm32_1wire_priv_s *priv,
 
           /* Wait.  Break on timeout if TX line closed to GND */
 
-          clock_gettime(CLOCK_REALTIME, &abstime);
-          abstime.tv_sec += BUS_TIMEOUT;
-          nxsem_timedwait(&priv->sem_isr, &abstime);
+          nxsem_tickwait(&priv->sem_isr, SEC2TICK(BUS_TIMEOUT));
           break;
         }
 
@@ -1059,7 +1037,7 @@ static int stm32_1wire_isr(int irq, void *context, void *arg)
  *
  ****************************************************************************/
 
-static int stm32_1wire_reset(FAR struct onewire_dev_s *dev)
+static int stm32_1wire_reset(struct onewire_dev_s *dev)
 {
   struct stm32_1wire_priv_s *priv = ((struct stm32_1wire_inst_s *)dev)->priv;
   const struct stm32_1wire_msg_s msgs[1] =
@@ -1078,7 +1056,7 @@ static int stm32_1wire_reset(FAR struct onewire_dev_s *dev)
  *
  ****************************************************************************/
 
-static int stm32_1wire_write(FAR struct onewire_dev_s *dev,
+static int stm32_1wire_write(struct onewire_dev_s *dev,
                              const uint8_t *buffer, int buflen)
 {
   struct stm32_1wire_priv_s *priv = ((struct stm32_1wire_inst_s *)dev)->priv;
@@ -1100,7 +1078,7 @@ static int stm32_1wire_write(FAR struct onewire_dev_s *dev,
  *
  ****************************************************************************/
 
-static int stm32_1wire_read(FAR struct onewire_dev_s *dev, uint8_t *buffer,
+static int stm32_1wire_read(struct onewire_dev_s *dev, uint8_t *buffer,
                             int buflen)
 {
   struct stm32_1wire_priv_s *priv = ((struct stm32_1wire_inst_s *)dev)->priv;
@@ -1124,9 +1102,9 @@ static int stm32_1wire_read(FAR struct onewire_dev_s *dev, uint8_t *buffer,
  *
  ****************************************************************************/
 
-static int stm32_1wire_exchange(FAR struct onewire_dev_s *dev, bool reset,
-                           const uint8_t *txbuffer, int txbuflen,
-                           uint8_t *rxbuffer, int rxbuflen)
+static int stm32_1wire_exchange(struct onewire_dev_s *dev, bool reset,
+                                const uint8_t *txbuffer, int txbuflen,
+                                uint8_t *rxbuffer, int rxbuflen)
 {
   int result = ERROR;
   struct stm32_1wire_priv_s *priv = ((struct stm32_1wire_inst_s *)dev)->priv;
@@ -1175,7 +1153,7 @@ static int stm32_1wire_exchange(FAR struct onewire_dev_s *dev, bool reset,
  *
  ****************************************************************************/
 
-static int stm32_1wire_writebit(FAR struct onewire_dev_s *dev,
+static int stm32_1wire_writebit(struct onewire_dev_s *dev,
                                 const uint8_t *bit)
 {
   struct stm32_1wire_priv_s *priv = ((struct stm32_1wire_inst_s *)dev)->priv;
@@ -1199,7 +1177,7 @@ static int stm32_1wire_writebit(FAR struct onewire_dev_s *dev,
  *
  ****************************************************************************/
 
-static int stm32_1wire_readbit(FAR struct onewire_dev_s *dev, uint8_t *bit)
+static int stm32_1wire_readbit(struct onewire_dev_s *dev, uint8_t *bit)
 {
   struct stm32_1wire_priv_s *priv = ((struct stm32_1wire_inst_s *)dev)->priv;
   const struct stm32_1wire_msg_s msgs[1] =
@@ -1233,7 +1211,7 @@ static int stm32_1wire_readbit(FAR struct onewire_dev_s *dev, uint8_t *bit)
  *
  ****************************************************************************/
 
-FAR struct onewire_dev_s *stm32_1wireinitialize(int port)
+struct onewire_dev_s *stm32_1wireinitialize(int port)
 {
   struct stm32_1wire_priv_s *priv = NULL;  /* Private data of device with multiple instances */
   struct stm32_1wire_inst_s *inst = NULL;  /* Device, single instance */
@@ -1331,7 +1309,7 @@ FAR struct onewire_dev_s *stm32_1wireinitialize(int port)
  *
  ****************************************************************************/
 
-int stm32_1wireuninitialize(FAR struct onewire_dev_s *dev)
+int stm32_1wireuninitialize(struct onewire_dev_s *dev)
 {
   struct stm32_1wire_priv_s *priv = ((struct stm32_1wire_inst_s *)dev)->priv;
   int irqs;

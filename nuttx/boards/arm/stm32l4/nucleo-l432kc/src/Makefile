@@ -72,12 +72,16 @@ ifeq ($(CONFIG_TIMER),y)
 CSRCS += stm32_timer.c
 endif
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += stm32_appinit.c
 endif
 
 ifeq ($(CONFIG_NUCLEOL432KC_SPWM),y)
 CSRCS += stm32_spwm.c
+endif
+
+ifeq ($(CONFIG_NUCLEOL432KC_DAC_WGEN),y)
+CSRCS += stm32_dac_wgen.c
 endif
 
 include $(TOPDIR)/boards/Board.mk

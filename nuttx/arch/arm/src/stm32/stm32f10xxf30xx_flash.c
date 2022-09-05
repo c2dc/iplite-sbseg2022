@@ -41,8 +41,7 @@
 #include "stm32_flash.h"
 #include "stm32_rcc.h"
 #include "stm32_waste.h"
-
-#include "arm_arch.h"
+#include "arm_internal.h"
 
 /* Only for the STM32F[1|3]0xx family. */
 
@@ -56,7 +55,7 @@
 #define FLASH_KEY2                 0xcdef89ab
 #define FLASH_OPTKEY1              0x08192a3b
 #define FLASH_OPTKEY2              0x4c5d6e7f
-#define FLASH_ERASEDVALUE          0xff
+#define FLASH_ERASEDVALUE          0xffu
 
 #if defined(STM32_FLASH_DUAL_BANK)
 /* Bank 0 is 512Kb; Bank 1 is up to 512Kb */
@@ -384,6 +383,11 @@ ssize_t up_progmem_write(size_t addr, const void *buf, size_t count)
 
   sem_unlock();
   return written;
+}
+
+uint8_t up_progmem_erasestate(void)
+{
+  return FLASH_ERASEDVALUE;
 }
 
 #endif /* defined(CONFIG_STM32_STM32F10XX) || defined(CONFIG_STM32_STM32F30XX) */

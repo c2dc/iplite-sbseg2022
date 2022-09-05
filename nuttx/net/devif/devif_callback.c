@@ -31,6 +31,7 @@
 #include <debug.h>
 #include <assert.h>
 
+#include <nuttx/kmalloc.h>
 #include <nuttx/net/netconfig.h>
 #include <nuttx/net/net.h>
 #include <nuttx/net/netdev.h>
@@ -42,7 +43,9 @@
  * Private Data
  ****************************************************************************/
 
+#ifndef CONFIG_NET_ALLOC_CONNS
 static struct devif_callback_s g_cbprealloc[CONFIG_NET_NACTIVESOCKETS];
+#endif
 static FAR struct devif_callback_s *g_cbfreelist = NULL;
 
 /****************************************************************************
@@ -62,7 +65,8 @@ static FAR struct devif_callback_s *g_cbfreelist = NULL;
 
 static void devif_callback_free(FAR struct net_driver_s *dev,
                                 FAR struct devif_callback_s *cb,
-                                FAR struct devif_callback_s **list)
+                                FAR struct devif_callback_s **list_head,
+                                FAR struct devif_callback_s **list_tail)
 {
   FAR struct devif_callback_s *prev;
   FAR struct devif_callback_s *curr;
@@ -116,29 +120,47 @@ static void devif_callback_free(FAR struct net_driver_s *dev,
        * it is supposed to be in the data notification list.
        */
 
-      if (list)
+      if (list_head)
         {
-          /* Find the callback structure in the connection event list */
-
-          for (prev = NULL, curr = *list;
-               curr && curr != cb;
-               prev = curr, curr = curr->nxtconn)
-            {
-            }
+          prev = cb->prevconn;
 
           /* Remove the structure from the connection event list */
 
-          DEBUGASSERT(curr);
-          if (curr)
+          if (prev)
             {
-              if (prev)
+              /* The item to be removed is not in the head. */
+
+              prev->nxtconn = cb->nxtconn;
+
+              if (cb->nxtconn)
                 {
-                  prev->nxtconn = cb->nxtconn;
+                  /* The item to be removed is not in the tail. */
+
+                  cb->nxtconn->prevconn = prev;
                 }
-              else
+            }
+          else
+            {
+              /* The item to be removed is in the head. */
+
+              *list_head = cb->nxtconn;
+
+              if (cb->nxtconn)
                 {
-                  *list = cb->nxtconn;
+                  /* There are more items besides the head item. */
+
+                  cb->nxtconn->prevconn = NULL;
                 }
+            }
+
+          if (!cb->nxtconn)
+            {
+              /* If the tail item is being removed,
+               * update the tail pointer.
+               */
+
+              DEBUGASSERT(list_tail);
+              *list_tail = prev;
             }
         }
 
@@ -208,6 +230,7 @@ static bool devif_event_trigger(uint16_t events, uint16_t triggers)
 
 void devif_callback_init(void)
 {
+#ifndef CONFIG_NET_ALLOC_CONNS
   int i;
 
   for (i = 0; i < CONFIG_NET_NACTIVESOCKETS; i++)
@@ -215,6 +238,7 @@ void devif_callback_init(void)
       g_cbprealloc[i].nxtconn = g_cbfreelist;
       g_cbfreelist = &g_cbprealloc[i];
     }
+#endif
 }
 
 /****************************************************************************
@@ -235,14 +259,56 @@ void devif_callback_init(void)
 
 FAR struct devif_callback_s *
   devif_callback_alloc(FAR struct net_driver_s *dev,
-                       FAR struct devif_callback_s **list)
+                       FAR struct devif_callback_s **list_head,
+                       FAR struct devif_callback_s **list_tail)
 {
   FAR struct devif_callback_s *ret;
-
-  /* Check  the head of the free list */
+#ifdef CONFIG_NET_ALLOC_CONNS
+  int i;
+#endif
 
   net_lock();
-  ret  = g_cbfreelist;
+
+  /* Verify that the device pointer is valid, i.e., that it still
+   * points to a registered network device and also that the network
+   * device in the UP state.
+   */
+
+  /* Note: dev->d_flags may be asynchronously changed by netdev_ifdown()
+   * (in net/netdev/netdev_ioctl.c). Nevertheless, net_lock() / net_unlock()
+   * are not required in netdev_ifdown() to prevent dev->d_flags from
+   * asynchronous change here. There is not an issue because net_lock() and
+   * net_unlock() present inside of devif_dev_event(). That should be enough
+   * to de-allocate connection callbacks reliably on NETDEV_DOWN event.
+   */
+
+  if (dev && !netdev_verify(dev) && (dev->d_flags & IFF_UP) != 0)
+    {
+      net_unlock();
+      return NULL;
+    }
+
+  /* Allocate the callback entry from heap */
+
+#ifdef CONFIG_NET_ALLOC_CONNS
+  if (g_cbfreelist == NULL)
+    {
+      ret = kmm_zalloc(sizeof(struct devif_callback_s) *
+                       CONFIG_NET_NACTIVESOCKETS);
+      if (ret != NULL)
+        {
+          for (i = 0; i < CONFIG_NET_NACTIVESOCKETS; i++)
+            {
+              ret[i].nxtconn = g_cbfreelist;
+              g_cbfreelist = &ret[i];
+            }
+        }
+    }
+#endif
+
+  /* Check the head of the free list */
+
+  ret = g_cbfreelist;
   if (ret)
     {
       /* Remove the next instance from the head of the free list */
@@ -256,32 +322,33 @@ FAR struct devif_callback_s *
 
       if (dev)
         {
-          /* Verify that the device pointer is valid, i.e., that it still
-           * points to a registered network device and also that the network
-           * device in in the UP state.
-           *
-           * And if it does, should that device also not be in the UP state?
-           */
-
-          if (!netdev_verify(dev) && (dev->d_flags & IFF_UP) != 0)
-            {
-              /* No.. release the callback structure and fail */
-
-              devif_callback_free(NULL, NULL, list);
-              net_unlock();
-              return NULL;
-            }
-
           ret->nxtdev  = dev->d_devcb;
           dev->d_devcb = ret;
         }
 
-      /* Add the newly allocated instance to the head of the specified list */
+      /* Add the newly allocated instance to the tail of the specified list */
 
-      if (list)
+      if (list_head && list_tail)
         {
-           ret->nxtconn = *list;
-           *list = ret;
+          ret->nxtconn = NULL;
+          ret->prevconn = *list_tail;
+
+          if (*list_tail)
+            {
+              /* If the list is not empty, add the item to the tail. */
+
+              (*list_tail)->nxtconn = ret;
+            }
+          else
+            {
+              /* If the list is empty, add the first item to the list. */
+
+              *list_head = ret;
+            }
+
+          /* Update the tail pointer */
+
+          *list_tail = ret;
         }
     }
 #ifdef CONFIG_DEBUG_FEATURES
@@ -315,7 +382,8 @@ FAR struct devif_callback_s *
 
 void devif_conn_callback_free(FAR struct net_driver_s *dev,
                               FAR struct devif_callback_s *cb,
-                              FAR struct devif_callback_s **list)
+                              FAR struct devif_callback_s **list_head,
+                              FAR struct devif_callback_s **list_tail)
 {
   /* Check if the device pointer is still valid.  It could be invalid if, for
    * example, the device were unregistered between the time when the callback
@@ -331,7 +399,7 @@ void devif_conn_callback_free(FAR struct net_driver_s *dev,
 
   /* Then free the callback */
 
-  devif_callback_free(dev, cb, list);
+  devif_callback_free(dev, cb, list_head, list_tail);
 }
 
 /****************************************************************************
@@ -357,7 +425,8 @@ void devif_conn_callback_free(FAR struct net_driver_s *dev,
 void devif_dev_callback_free(FAR struct net_driver_s *dev,
                              FAR struct devif_callback_s *cb)
 {
-  FAR struct devif_callback_s **list;
+  FAR struct devif_callback_s **list_head;
+  FAR struct devif_callback_s **list_tail;
 
   /* Check if the device pointer is still valid.  It could be invalid if, for
    * example, the device were unregistered between the time when the callback
@@ -366,23 +435,25 @@ void devif_dev_callback_free(FAR struct net_driver_s *dev,
 
   if (dev != NULL && netdev_verify(dev))
     {
-      /* The device reference is valid.. the use the list pointer in the
+      /* The device reference is valid. Then use the list pointer in the
        * device structure as well.
        */
 
-      list = &dev->d_conncb;
+      list_head = &dev->d_conncb;
+      list_tail = &dev->d_conncb_tail;
     }
   else
     {
       /* The device reference is longer valid */
 
       dev  = NULL;
-      list = NULL;
+      list_head = NULL;
+      list_tail = NULL;
     }
 
   /* Then free the callback */
 
-  devif_callback_free(dev, cb, list);
+  devif_callback_free(dev, cb, list_head, list_tail);
 }
 
 /****************************************************************************
@@ -394,9 +465,6 @@ void devif_dev_callback_free(FAR struct net_driver_s *dev,
  * Input Parameters:
  *   dev - The network device state structure associated with the network
  *     device that initiated the callback event.
- *   pvconn - Holds a reference to the TCP connection structure or the UDP
- *     port structure.  May be NULL if the even is not related to a TCP
- *     connection or UDP port.
  *   flags - The bit set of events to be notified.
  *   list - The list to traverse in performing the notifications
  *
@@ -408,8 +476,8 @@ void devif_dev_callback_free(FAR struct net_driver_s *dev,
  *
  ****************************************************************************/
 
-uint16_t devif_conn_event(FAR struct net_driver_s *dev, void *pvconn,
-                          uint16_t flags, FAR struct devif_callback_s *list)
+uint16_t devif_conn_event(FAR struct net_driver_s *dev, uint16_t flags,
+                          FAR struct devif_callback_s *list)
 {
   FAR struct devif_callback_s *next;
 
@@ -436,7 +504,7 @@ uint16_t devif_conn_event(FAR struct net_driver_s *dev, void *pvconn,
            * beginning of the list (which will be ignored on this pass)
            */
 
-          flags = list->event(dev, pvconn, list->priv, flags);
+          flags = list->event(dev, list->priv, flags);
         }
 
       /* Set up for the next time through the loop */
@@ -457,9 +525,6 @@ uint16_t devif_conn_event(FAR struct net_driver_s *dev, void *pvconn,
  * Input Parameters:
  *   dev - The network device state structure associated with the network
  *     device that initiated the callback event.
- *   pvconn - Holds a reference to the TCP connection structure or the UDP
- *     port structure.  May be NULL if the even is not related to a TCP
- *     connection or UDP port.
  *   flags - The bit set of events to be notified.
  *
  * Returned Value:
@@ -470,8 +535,7 @@ uint16_t devif_conn_event(FAR struct net_driver_s *dev, void *pvconn,
  *
  ****************************************************************************/
 
-uint16_t devif_dev_event(FAR struct net_driver_s *dev, void *pvconn,
-                         uint16_t flags)
+uint16_t devif_dev_event(FAR struct net_driver_s *dev, uint16_t flags)
 {
   FAR struct devif_callback_s *cb;
   FAR struct devif_callback_s *next;
@@ -499,7 +563,7 @@ uint16_t devif_dev_event(FAR struct net_driver_s *dev, void *pvconn,
            * beginning of the list (which will be ignored on this pass)
            */
 
-          flags = cb->event(dev, pvconn, cb->priv, flags);
+          flags = cb->event(dev, cb->priv, flags);
         }
     }
 

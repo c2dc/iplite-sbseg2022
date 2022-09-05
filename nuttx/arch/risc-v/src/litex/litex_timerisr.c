@@ -30,10 +30,10 @@
 
 #include <nuttx/arch.h>
 #include <nuttx/clock.h>
+#include <nuttx/spinlock.h>
 #include <arch/board/board.h>
 
-#include "riscv_arch.h"
-
+#include "riscv_internal.h"
 #include "litex.h"
 #include "litex_clockconfig.h"
 
@@ -133,7 +133,7 @@ static void litex_reload_mtimecmp(void)
  * Name:  litex_timerisr
  ****************************************************************************/
 
-static int litex_timerisr(int irq, void *context, FAR void *arg)
+static int litex_timerisr(int irq, void *context, void *arg)
 {
   litex_reload_mtimecmp();
 
@@ -160,7 +160,7 @@ void up_timer_initialize(void)
 {
   /* Attach timer interrupt handler */
 
-  irq_attach(LITEX_IRQ_MTIMER, litex_timerisr, NULL);
+  irq_attach(RISCV_IRQ_MTIMER, litex_timerisr, NULL);
 
   /* Reload CLINT mtimecmp */
 
@@ -168,5 +168,5 @@ void up_timer_initialize(void)
 
   /* And enable the timer interrupt */
 
-  up_enable_irq(LITEX_IRQ_MTIMER);
+  up_enable_irq(RISCV_IRQ_MTIMER);
 }

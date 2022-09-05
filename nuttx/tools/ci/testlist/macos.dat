@@ -17,13 +17,13 @@
 
 # RISC-V
 
-/risc-v/bl602/bl602evb/configs/wifi,CONFIG_RV32IM_TOOLCHAIN_GNU_RVGL
+/risc-v/bl602/bl602evb/configs/wifi
 
-/risc-v/esp32c3/esp32c3-devkit/configs/wapi,CONFIG_RV32IM_TOOLCHAIN_GNU_RVGL
+/risc-v/esp32c3/esp32c3-devkit/configs/wapi
 
 # ARM
 
-/arm/stm32/stm32f4discovery/configs/nsh,CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL
+/arm/stm32/stm32f4discovery/configs/nsh,CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI
 
 # XTENSA
 
@@ -36,3 +36,9 @@
 # x86_64
 
 /x86_64/intel64/qemu-intel64/configs/nsh
+
+# The gcc 11.2 toolcain for MACOS maybe fail when compile 
+# with float, disable the cibuild check for MACOS
+# it will be enbaled while new toolchain release
+
+# /arm64/qemu/qemu-a53/configs/nsh_smp

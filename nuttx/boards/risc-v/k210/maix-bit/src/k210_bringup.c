@@ -26,13 +26,14 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#include <syslog.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/board.h>
 #include <nuttx/fs/fs.h>
 
 #include "k210.h"
+#include "maix-bit.h"
 
 /****************************************************************************
  * Public Functions
@@ -53,6 +54,15 @@ int k210_bringup(void)
   if (ret < 0)
     {
       serr("ERROR: Failed to mount procfs at %s: %d\n", "/proc", ret);
+    }
+#endif
+
+#ifdef CONFIG_DEV_GPIO
+  ret = k210_gpio_init();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "Failed to initialize GPIO Driver: %d\n", ret);
+      return ret;
     }
 #endif
 

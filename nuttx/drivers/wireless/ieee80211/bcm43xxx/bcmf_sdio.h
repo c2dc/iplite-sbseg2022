@@ -1,40 +1,25 @@
 /****************************************************************************
  * drivers/wireless/ieee80211/bcm43xxx/bcmf_sdio.h
  *
- *   Copyright (C) 2017-2018 Gregory Nutt. All rights reserved.
- *   Author: Simon Piriou <spiriou31@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
-#ifndef __DRIVERS_WIRELESS_IEEE80211_BCMF_SDIO_H
-#define __DRIVERS_WIRELESS_IEEE80211_BCMF_SDIO_H
+#ifndef __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_SDIO_H
+#define __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_SDIO_H
 
 /****************************************************************************
  * Included Files
@@ -44,11 +29,12 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <queue.h>
 
+#include <nuttx/list.h>
 #include <nuttx/sdio.h>
 #include <nuttx/semaphore.h>
 
+#include "bcmf_chip_data.h"
 #include "bcmf_driver.h"
 #include "bcmf_sdio_core.h"
 
@@ -56,38 +42,15 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define HEADER_SIZE        0x12 /* Default sdpcm + bdc header size */
+#define HEADER_SIZE          0x12 /* Default sdpcm + bdc header size */
+#define FIRST_WORD_SIZE      4
+#define FC_UPDATE_PKT_LENGTH 12
 
-/* TODO move to Kconfig */
-
-#define BCMF_PKT_POOL_SIZE 4    /* Frame pool size */
+#define BCMF_UPLOAD_TRANSFER_SIZE (64 * 256)
 
 /****************************************************************************
  * Public Types
  ****************************************************************************/
-
-/* SDIO chip configuration structure */
-
-struct bcmf_sdio_chip
-{
-  uint32_t ram_size;
-  uint32_t core_base[MAX_CORE_ID];
-
-  /* In-memory file images */
-
-  FAR uint8_t *nvram_image;
-  FAR unsigned int *nvram_image_size;
-
-#ifndef CONFIG_IEEE80211_BROADCOM_FWFILES
-  FAR uint8_t *firmware_image;
-  FAR unsigned int *firmware_image_size;
-
-#ifdef CONFIG_IEEE80211_BROADCOM_HAVE_CLM
-  FAR uint8_t *clm_blob_image;
-  FAR unsigned int *clm_blob_image_size;
-#endif
-#endif
-};
 
 /* SDIO bus structure extension */
 
@@ -98,14 +61,15 @@ struct bcmf_sdio_dev_s
   int minor;                       /* Device minor number */
 
   int  cur_chip_id;                /* Chip ID read from the card */
-  struct bcmf_sdio_chip *chip;     /* Chip specific configuration */
+  struct bcmf_chip_data *chip;     /* Chip specific configuration */
 
   volatile bool ready;             /* Current device status */
   bool sleeping;                   /* Current sleep status */
+  bool kso_enable;                 /* Current Keep sdio on status */
+  bool support_sr;                 /* Firmware support save restore */
 
-  int thread_id;                   /* Processing thread id */
+  pid_t thread_id;                 /* Processing thread id */
   sem_t thread_signal;             /* Semaphore for processing thread event */
-  struct wdog_s waitdog;           /* Processing thread waitdog */
 
   uint32_t backplane_current_addr; /* Current function 1 backplane base addr */
 
@@ -115,31 +79,21 @@ struct bcmf_sdio_dev_s
   uint8_t max_seq;                 /* Maximum transmit sequence allowed */
   uint8_t tx_seq;                  /* Transmit sequence number (next) */
   uint8_t rx_seq;                  /* Receive sequence number (expected) */
+  bool    flow_ctrl;               /* Current flow control status */
 
   sem_t queue_mutex;               /* Lock for TX/RX/free queues */
-  dq_queue_t free_queue;           /* Queue of available frames */
-  dq_queue_t tx_queue;             /* Queue of frames to transmit */
-  dq_queue_t rx_queue;             /* Queue of frames used to receive */
+  struct list_node tx_queue;       /* Queue of frames to transmit */
+  struct list_node rx_queue;       /* Queue of frames used to receive */
   volatile int tx_queue_count;     /* Count of items in TX queue */
-};
-
-/* Structure used to manage SDIO frames */
-
-struct bcmf_sdio_frame
-{
-  struct bcmf_frame_s header;
-  bool                tx;
-  dq_entry_t          list_entry;
-  uint8_t             data[HEADER_SIZE + MAX_NETDEV_PKTSIZE +
-                           CONFIG_NET_GUARDSIZE];
 };
 
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
 
-int bcmf_bus_sdio_initialize(FAR struct bcmf_dev_s *priv,
-          int minor, FAR struct sdio_dev_s *dev);
+int bcmf_sdio_initialize(int minor, FAR struct sdio_dev_s *dev);
+
+int bcmf_bus_sdio_active(FAR struct bcmf_dev_s *priv, bool active);
 
 /* FIXME: Low level bus data transfer function
  * To avoid bus error, len will be aligned to:
@@ -148,8 +102,8 @@ int bcmf_bus_sdio_initialize(FAR struct bcmf_dev_s *priv,
  */
 
 int bcmf_transfer_bytes(FAR struct bcmf_sdio_dev_s *sbus, bool write,
-                         uint8_t function, uint32_t address,
-                         uint8_t *buf, unsigned int len);
+                        uint8_t function, uint32_t address,
+                        uint8_t *buf, unsigned int len);
 
 int bcmf_read_reg(FAR struct bcmf_sdio_dev_s *sbus, uint8_t function,
                   uint32_t address, uint8_t *reg);
@@ -157,10 +111,4 @@ int bcmf_read_reg(FAR struct bcmf_sdio_dev_s *sbus, uint8_t function,
 int bcmf_write_reg(FAR struct bcmf_sdio_dev_s *sbus, uint8_t function,
                    uint32_t address, uint8_t reg);
 
-struct bcmf_sdio_frame *bcmf_sdio_allocate_frame(FAR struct bcmf_dev_s *priv,
-                                                 bool block, bool tx);
-
-void bcmf_sdio_free_frame(FAR struct bcmf_dev_s *priv,
-                          struct bcmf_sdio_frame *sframe);
-
-#endif /* __DRIVERS_WIRELESS_IEEE80211_BCMF_SDIO_H */
+#endif /* __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_SDIO_H */

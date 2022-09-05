@@ -1,35 +1,20 @@
 /****************************************************************************
  * boards/arm/stm32/mikroe-stm32f4/src/stm32_vs1053.c
  *
- *   Copyright (C) 2013 Ken Pettit. All rights reserved.
- *   Author: Ken Pettit <pettitkd@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -41,6 +26,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/spi/spi.h>
@@ -50,7 +36,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "mikroe-stm32f4.h"
 
 #ifdef CONFIG_AUDIO_VS1053
@@ -78,19 +64,19 @@ struct stm32_lower_s
 {
   const struct vs1053_lower_s lower;    /* Low-level MCU interface */
   xcpt_t                      handler;  /* VS1053 interrupt handler */
-  FAR void                   *arg;      /* Interrupt handler argument */
+  void                       *arg;      /* Interrupt handler argument */
 };
 
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
 
-static int  up_attach(FAR const struct vs1053_lower_s *lower, xcpt_t handler,
-                      FAR void *arg);
-static void up_enable(FAR const struct vs1053_lower_s *lower);
-static void up_disable(FAR const struct vs1053_lower_s *lower);
-static void up_reset(FAR const struct vs1053_lower_s *lower, bool state);
-static int  up_read_dreq(FAR const struct vs1053_lower_s *lower);
+static int  up_attach(const struct vs1053_lower_s *lower, xcpt_t handler,
+                      void *arg);
+static void up_enable(const struct vs1053_lower_s *lower);
+static void up_disable(const struct vs1053_lower_s *lower);
+static void up_reset(const struct vs1053_lower_s *lower, bool state);
+static int  up_read_dreq(const struct vs1053_lower_s *lower);
 
 /****************************************************************************
  * Private Data
@@ -124,36 +110,36 @@ static struct stm32_lower_s g_vs1053lower =
  * Name: struct vs1053_lower_s methods
  ****************************************************************************/
 
-static int up_attach(FAR const struct vs1053_lower_s *lower, xcpt_t handler,
-                     FAR void *arg)
+static int up_attach(const struct vs1053_lower_s *lower, xcpt_t handler,
+                     void *arg)
 {
-  FAR struct stm32_lower_s *priv = (FAR struct stm32_lower_s *)lower;
+  struct stm32_lower_s *priv = (struct stm32_lower_s *)lower;
 
   priv->handler = handler;    /* Save the handler for later */
   priv->arg     = arg;        /* Along with the handler argument */
   return 0;
 }
 
-static void up_enable(FAR const struct vs1053_lower_s *lower)
+static void up_enable(const struct vs1053_lower_s *lower)
 {
-  FAR struct stm32_lower_s *priv = (FAR struct stm32_lower_s *)lower;
+  struct stm32_lower_s *priv = (struct stm32_lower_s *)lower;
 
   DEBUGASSERT(priv->handler);
   stm32_gpiosetevent(GPIO_VS1053_DREQ, true, false, false,
                      priv->handler, priv->arg);
 }
 
-static void up_disable(FAR const struct vs1053_lower_s *lower)
+static void up_disable(const struct vs1053_lower_s *lower)
 {
   stm32_gpiosetevent(GPIO_VS1053_DREQ, false, false, false, NULL, NULL);
 }
 
-static void up_reset(FAR const struct vs1053_lower_s *lower, bool state)
+static void up_reset(const struct vs1053_lower_s *lower, bool state)
 {
   stm32_gpiowrite(GPIO_VS1053_RST, state);
 }
 
-static int up_read_dreq(FAR const struct vs1053_lower_s *lower)
+static int up_read_dreq(const struct vs1053_lower_s *lower)
 {
   return stm32_gpioread(GPIO_VS1053_DREQ);
 }
@@ -166,11 +152,11 @@ static int up_read_dreq(FAR const struct vs1053_lower_s *lower)
  * Name: up_vs1053initialize
  ****************************************************************************/
 
-void up_vs1053initialize(FAR struct spi_dev_s * spi)
+void up_vs1053initialize(struct spi_dev_s * spi)
 {
   int   ret;
-  char  name[8];
-  FAR struct audio_lowerhalf_s *PVS1053;
+  char  name[16];
+  struct audio_lowerhalf_s *PVS1053;
 
   /* Assumptions:
    * 1) SPI pins were configured in up_spi.c early in the boot-up phase.
@@ -184,7 +170,7 @@ void up_vs1053initialize(FAR struct spi_dev_s * spi)
    *        until the RST line is asserted.
    */
 
-  /* (void)stm32_configgpio(GPIO_VS1053_RST); */
+  /* stm32_configgpio(GPIO_VS1053_RST); */
 
   /* Initialize the VS1053 DREQ GPIO line */
 
@@ -202,7 +188,7 @@ void up_vs1053initialize(FAR struct spi_dev_s * spi)
 
   /* Now register the audio device */
 
-  sprintf(name, "vs1053d%d", VS1053_DEVNO);
+  snprintf(name, sizeof(name), "vs1053d%d", VS1053_DEVNO);
   ret = audio_register(name, PVS1053);
   if (ret < 0)
     {

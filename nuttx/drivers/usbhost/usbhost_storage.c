@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2037,8 +2038,8 @@ static ssize_t usbhost_read(FAR struct inode *inode, unsigned char *buffer,
   DEBUGASSERT(priv->usbclass.hport);
   hport = priv->usbclass.hport;
 
-  uinfo("startsector: %" PRIu32 " nsectors: %u sectorsize: %" PRIu16 "\n",
-        startsector, nsectors, priv->blocksize);
+  uinfo("startsector: %" PRIuOFF " nsectors: %u "
+        "sectorsize: %" PRIu16 "\n", startsector, nsectors, priv->blocksize);
 
   /* Check if the mass storage device is still connected */
 
@@ -2144,7 +2145,7 @@ static ssize_t usbhost_write(FAR struct inode *inode,
   ssize_t nbytes;
   int ret;
 
-  uinfo("sector: %" PRIu32 " nsectors: %u\n", startsector, nsectors);
+  uinfo("sector: %" PRIuOFF " nsectors: %u\n", startsector, nsectors);
 
   DEBUGASSERT(inode && inode->i_private);
   priv = (FAR struct usbhost_state_s *)inode->i_private;
@@ -2271,8 +2272,8 @@ static int usbhost_geometry(FAR struct inode *inode,
           geometry->geo_sectorsize    = priv->blocksize;
           usbhost_givesem(&priv->exclsem);
 
-          uinfo("nsectors: %ld sectorsize: %" PRIi16 "n",
-                 (long)geometry->geo_nsectors, geometry->geo_sectorsize);
+          uinfo("nsectors: %" PRIdOFF " sectorsize: %" PRIi16 "\n",
+                geometry->geo_nsectors, geometry->geo_sectorsize);
         }
     }
 
@@ -2293,7 +2294,7 @@ static int usbhost_ioctl(FAR struct inode *inode, int cmd, unsigned long arg)
 
   uinfo("Entry\n");
   DEBUGASSERT(inode && inode->i_private);
-  priv  = (FAR struct usbhost_state_s *)inode->i_private;
+  priv = (FAR struct usbhost_state_s *)inode->i_private;
 
   /* Check if the mass storage device is still connected */
 
@@ -2434,16 +2435,15 @@ int usbhost_msc_notifier_setup(worker_t worker, uint8_t event, char sdchar,
  *         usbhost_msc_notifier_setup().
  *
  * Returned Value:
- *   Zero (OK) is returned on success; a negated errno value is returned on
- *   any failure.
+ *   None.
  *
  ****************************************************************************/
 
-int usbhost_msc_notifier_teardown(int key)
+void usbhost_msc_notifier_teardown(int key)
 {
   /* This is just a simple wrapper around work_notifier_teardown(). */
 
-  return work_notifier_teardown(key);
+  work_notifier_teardown(key);
 }
 
 /****************************************************************************

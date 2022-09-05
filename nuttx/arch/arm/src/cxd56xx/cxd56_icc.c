@@ -34,10 +34,11 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include "cxd56_cpufifo.h"
 #include "cxd56_icc.h"
@@ -106,7 +107,7 @@ struct iccdev_s
     cxd56_iccsighandler_t sighandler;
   } u;
 
-  FAR void *userdata;
+  void *userdata;
   sem_t rxwait;
   struct wdog_s rxtimeout;
 
@@ -115,8 +116,8 @@ struct iccdev_s
   /* for POSIX signal */
 
   int signo;
-  int pid;
-  FAR void *sigdata;
+  pid_t pid;
+  void *sigdata;
 
   struct sq_queue_s recvq;
   struct sq_queue_s freelist;
@@ -128,9 +129,9 @@ struct iccdev_s
  ****************************************************************************/
 
 static int icc_sighandler(int cpuid, int protoid, uint32_t pdata,
-                          uint32_t data, FAR void *userdata);
+                          uint32_t data, void *userdata);
 static int icc_msghandler(int cpuid, int protoid, uint32_t pdata,
-                          uint32_t data, FAR void *userdata);
+                          uint32_t data, void *userdata);
 static int icc_irqhandler(int cpuid, uint32_t word[2]);
 
 /****************************************************************************
@@ -159,7 +160,7 @@ static void icc_semgive(sem_t *semid)
   nxsem_post(semid);
 }
 
-static FAR struct iccdev_s *icc_getprotocol(int protoid)
+static struct iccdev_s *icc_getprotocol(int protoid)
 {
   if (protoid < 0 || protoid >= NPROTOCOLS)
     {
@@ -169,7 +170,7 @@ static FAR struct iccdev_s *icc_getprotocol(int protoid)
   return g_protocol[protoid];
 }
 
-static FAR struct iccdev_s *icc_getcpu(int cpuid)
+static struct iccdev_s *icc_getcpu(int cpuid)
 {
   if (cpuid < 0 || cpuid >= NCPUS)
     {
@@ -181,8 +182,8 @@ static FAR struct iccdev_s *icc_getcpu(int cpuid)
 
 static int icc_irqhandler(int cpuid, uint32_t word[2])
 {
-  FAR struct iccdev_s *priv;
-  FAR struct iccreq_s *req;
+  struct iccdev_s *priv;
+  struct iccreq_s *req;
   int protoid;
 
   protoid = GET_PROTOCOLID(word);
@@ -221,7 +222,7 @@ static int icc_irqhandler(int cpuid, uint32_t word[2])
         }
     }
 
-  req = (FAR struct iccreq_s *)sq_remfirst(&priv->freelist);
+  req = (struct iccreq_s *)sq_remfirst(&priv->freelist);
   if (!req)
     {
       iccerr("Receive buffer is full.\n");
@@ -231,7 +232,7 @@ static int icc_irqhandler(int cpuid, uint32_t word[2])
   req->word[0] = word[0];
   req->word[1] = word[1];
 
-  sq_addlast((FAR sq_entry_t *)req, &priv->recvq);
+  sq_addlast((sq_entry_t *)req, &priv->recvq);
 
   icc_semgive(&priv->rxwait);
 
@@ -239,7 +240,6 @@ static int icc_irqhandler(int cpuid, uint32_t word[2])
    * process.
    */
 
-#ifndef CONFIG_DISABLE_SIGNAL
   if (priv->pid != INVALID_PROCESS_ID)
     {
       union sigval value;
@@ -247,15 +247,14 @@ static int icc_irqhandler(int cpuid, uint32_t word[2])
       value.sival_ptr = priv->sigdata;
       nxsig_queue(priv->pid, priv->signo, value);
     }
-#endif
 
   return OK;
 }
 
 static int icc_sighandler(int cpuid, int protoid, uint32_t pdata,
-                          uint32_t data, FAR void *userdata)
+                          uint32_t data, void *userdata)
 {
-  FAR struct iccdev_s *priv = icc_getcpu(cpuid);
+  struct iccdev_s *priv = icc_getcpu(cpuid);
 
   if (!priv)
     {
@@ -283,7 +282,7 @@ static int icc_sighandler(int cpuid, int protoid, uint32_t pdata,
 }
 
 static int icc_msghandler(int cpuid, int protoid, uint32_t pdata,
-                               uint32_t data, FAR void *userdata)
+                          uint32_t data, void *userdata)
 {
   /* Do nothing. This handler used for reserve MSG protocol handler.
    * This handler returns -1 to indicate not consumed the passed
@@ -295,13 +294,13 @@ static int icc_msghandler(int cpuid, int protoid, uint32_t pdata,
 
 static void icc_rxtimeout(wdparm_t arg)
 {
-  FAR struct iccdev_s *priv = (FAR struct iccdev_s *)arg;
+  struct iccdev_s *priv = (struct iccdev_s *)arg;
   icc_semgive(&priv->rxwait);
 }
 
-static int icc_recv(FAR struct iccdev_s *priv, FAR iccmsg_t *msg, int32_t ms)
+static int icc_recv(struct iccdev_s *priv, iccmsg_t *msg, int32_t ms)
 {
-  FAR struct iccreq_s *req;
+  struct iccreq_s *req;
   irqstate_t flags;
   int ret = OK;
 
@@ -331,7 +330,7 @@ static int icc_recv(FAR struct iccdev_s *priv, FAR iccmsg_t *msg, int32_t ms)
     }
 
   flags = enter_critical_section();
-  req   = (FAR struct iccreq_s *)sq_remfirst(&priv->recvq);
+  req   = (struct iccreq_s *)sq_remfirst(&priv->recvq);
 
   if (req)
     {
@@ -339,7 +338,7 @@ static int icc_recv(FAR struct iccdev_s *priv, FAR iccmsg_t *msg, int32_t ms)
       msg->data  = req->msg.data;
       msg->cpuid = req->msg.cpuid;
       msg->protodata = req->msg.pdata;
-      sq_addlast((FAR sq_entry_t *)req, &priv->freelist);
+      sq_addlast((sq_entry_t *)req, &priv->freelist);
     }
   else
     {
@@ -351,9 +350,9 @@ static int icc_recv(FAR struct iccdev_s *priv, FAR iccmsg_t *msg, int32_t ms)
   return ret;
 }
 
-static FAR struct iccdev_s *icc_devnew(void)
+static struct iccdev_s *icc_devnew(void)
 {
-  FAR struct iccdev_s *priv;
+  struct iccdev_s *priv;
   int i;
 
   priv = (struct iccdev_s *)kmm_malloc(sizeof(struct iccdev_s));
@@ -374,7 +373,7 @@ static FAR struct iccdev_s *icc_devnew(void)
 
   for (i = 0; i < NBUFFERS; i++)
     {
-      sq_addlast((FAR sq_entry_t *)&priv->pool[i], &priv->freelist);
+      sq_addlast((sq_entry_t *)&priv->pool[i], &priv->freelist);
     }
 
   priv->pid = INVALID_PROCESS_ID;
@@ -382,7 +381,7 @@ static FAR struct iccdev_s *icc_devnew(void)
   return priv;
 }
 
-static void icc_devfree(FAR struct iccdev_s *priv)
+static void icc_devfree(struct iccdev_s *priv)
 {
   wd_cancel(&priv->rxtimeout);
   kmm_free(priv);
@@ -393,9 +392,9 @@ static void icc_devfree(FAR struct iccdev_s *priv)
  ****************************************************************************/
 
 int cxd56_iccregisterhandler(int protoid, cxd56_icchandler_t handler,
-                             FAR void *data)
+                             void *data)
 {
-  FAR struct iccdev_s *priv;
+  struct iccdev_s *priv;
   irqstate_t flags;
   int ret = OK;
 
@@ -417,9 +416,9 @@ int cxd56_iccregisterhandler(int protoid, cxd56_icchandler_t handler,
 }
 
 int cxd56_iccregistersighandler(int cpuid, cxd56_iccsighandler_t handler,
-                                FAR void *data)
+                                void *data)
 {
-  FAR struct iccdev_s *priv;
+  struct iccdev_s *priv;
   irqstate_t flags;
   int ret = OK;
 
@@ -440,9 +439,9 @@ int cxd56_iccregistersighandler(int cpuid, cxd56_iccsighandler_t handler,
   return ret;
 }
 
-int cxd56_iccsend(int protoid, FAR iccmsg_t *msg, int32_t ms)
+int cxd56_iccsend(int protoid, iccmsg_t *msg, int32_t ms)
 {
-  FAR struct iccdev_s *priv;
+  struct iccdev_s *priv;
   struct iccreq_s req;
 
   if (!msg)
@@ -467,14 +466,14 @@ int cxd56_iccsend(int protoid, FAR iccmsg_t *msg, int32_t ms)
   return cxd56_cfpush(req.word);
 }
 
-int cxd56_iccsendmsg(FAR iccmsg_t *msg, int32_t ms)
+int cxd56_iccsendmsg(iccmsg_t *msg, int32_t ms)
 {
   return cxd56_iccsend(CXD56_PROTO_MSG, msg, ms);
 }
 
-int cxd56_iccrecv(int protoid, FAR iccmsg_t *msg, int32_t ms)
+int cxd56_iccrecv(int protoid, iccmsg_t *msg, int32_t ms)
 {
-  FAR struct iccdev_s *priv;
+  struct iccdev_s *priv;
 
   if (!msg)
     {
@@ -490,9 +489,9 @@ int cxd56_iccrecv(int protoid, FAR iccmsg_t *msg, int32_t ms)
   return icc_recv(priv, msg, ms);
 }
 
-int cxd56_iccrecvmsg(FAR iccmsg_t *msg, int32_t ms)
+int cxd56_iccrecvmsg(iccmsg_t *msg, int32_t ms)
 {
-  FAR struct iccdev_s *priv;
+  struct iccdev_s *priv;
 
   if (!msg)
     {
@@ -527,9 +526,9 @@ int cxd56_iccsignal(int8_t cpuid, int8_t signo, int16_t sigdata,
   return cxd56_cfpush(req.word);
 }
 
-int cxd56_iccnotify(int cpuid, int signo, FAR void *sigdata)
+int cxd56_iccnotify(int cpuid, int signo, void *sigdata)
 {
-  FAR struct iccdev_s *priv;
+  struct iccdev_s *priv;
 
   priv = icc_getcpu(cpuid);
   if (!priv)
@@ -546,7 +545,7 @@ int cxd56_iccnotify(int cpuid, int signo, FAR void *sigdata)
 
 int cxd56_iccinit(int protoid)
 {
-  FAR struct iccdev_s *priv;
+  struct iccdev_s *priv;
 
   if (protoid < 0 || protoid >= NPROTOCOLS)
     {
@@ -571,7 +570,7 @@ int cxd56_iccinit(int protoid)
 
 int cxd56_iccinitmsg(int cpuid)
 {
-  FAR struct iccdev_s *priv;
+  struct iccdev_s *priv;
 
   if (cpuid < 0 || cpuid >= NCPUS)
     {
@@ -596,7 +595,7 @@ int cxd56_iccinitmsg(int cpuid)
 
 void cxd56_iccuninit(int protoid)
 {
-  FAR struct iccdev_s *priv;
+  struct iccdev_s *priv;
   irqstate_t flags;
 
   if (protoid < 0 || protoid >= NPROTOCOLS)
@@ -617,7 +616,7 @@ void cxd56_iccuninit(int protoid)
 
 void cxd56_iccuninitmsg(int cpuid)
 {
-  FAR struct iccdev_s *priv;
+  struct iccdev_s *priv;
   irqstate_t flags;
 
   if (cpuid < 0 || cpuid >= NCPUS)

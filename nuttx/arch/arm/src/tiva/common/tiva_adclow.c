@@ -80,7 +80,6 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "tiva_gpio.h"
 #include "tiva_adc.h"
@@ -138,8 +137,8 @@
 
 /* Upper level ADC driver ***************************************************/
 
-static int  tiva_adc_bind(FAR struct adc_dev_s *dev,
-                          FAR const struct adc_callback_s *callback);
+static int  tiva_adc_bind(struct adc_dev_s *dev,
+                          const struct adc_callback_s *callback);
 static void tiva_adc_reset(struct adc_dev_s *dev);
 static int  tiva_adc_setup(struct adc_dev_s *dev);
 static void tiva_adc_shutdown(struct adc_dev_s *dev);
@@ -391,8 +390,8 @@ static void tiva_adc_irqinitialize(struct tiva_adc_cfg_s *cfg)
  *
  ****************************************************************************/
 
-static int tiva_adc_bind(FAR struct adc_dev_s *dev,
-                         FAR const struct adc_callback_s *callback)
+static int tiva_adc_bind(struct adc_dev_s *dev,
+                         const struct adc_callback_s *callback)
 {
   struct tiva_adc_s *priv = (struct tiva_adc_s *)dev->ad_priv;
 
@@ -957,7 +956,7 @@ int tiva_adc_initialize(const char *devpath, struct tiva_adc_cfg_s *cfg,
  *
  ****************************************************************************/
 
-int tiva_adc_lock(FAR struct tiva_adc_s *priv, int sse)
+int tiva_adc_lock(struct tiva_adc_s *priv, int sse)
 {
   struct tiva_adc_sse_s *s = g_sses[SSE_IDX(priv->devno, sse)];
 
@@ -973,7 +972,7 @@ int tiva_adc_lock(FAR struct tiva_adc_s *priv, int sse)
  *
  ****************************************************************************/
 
-void tiva_adc_unlock(FAR struct tiva_adc_s *priv, int sse)
+void tiva_adc_unlock(struct tiva_adc_s *priv, int sse)
 {
   struct tiva_adc_sse_s *s = g_sses[SSE_IDX(priv->devno, sse)];
   ainfo("Unlocking\n");

@@ -334,19 +334,6 @@ There are two version of the FPU support built into the STM32 port.
    file:
 
      CONFIG_ARCH_FPU=y
-     CONFIG_ARMV7M_LAZYFPU=y
-
-CFLAGS
-------
-
-Only recent GCC toolchains have built-in support for the Cortex-M4 FPU.  You will see
-the following lines in each Make.defs file:
-
-  ifeq ($(CONFIG_ARCH_FPU),y)
-    ARCHCPUFLAGS = -mcpu=cortex-m4 -mthumb -march=armv7e-m -mfpu=fpv4-sp-d16 -mfloat-abi=hard
-  else
-    ARCHCPUFLAGS = -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-  endif
 
 STM32F4DIS-BB
 =============
@@ -984,7 +971,7 @@ STM32F4Discovery-specific Configuration Options
     CONFIG_STM32_SPI_INTERRUPTS - Select to enable interrupt driven SPI
       support. Non-interrupt-driven, poll-waiting is recommended if the
       interrupt rate would be to high in the interrupt driven case.
-    CONFIG_STM32_SPI_DMA - Use DMA to improve SPI transfer performance.
+    CONFIG_STM32_SPIx_DMA - Use DMA to improve SPIx transfer performance.
       Cannot be used with CONFIG_STM32_SPI_INTERRUPT.
 
   STM32F4Discovery DMA Configuration
@@ -1189,7 +1176,6 @@ Press Reset pin of the board and you will see:
 
     nsh>
 
-
 Just type helloxx:
 
     nsh> helloxx
@@ -1371,7 +1357,7 @@ Configuration Sub-directories
 
        CONFIG_HOST_WINDOWS=y                   : Windows
        CONFIG_WINDOWS_CYGWIN=y                 : Cygwin environment on Windows
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
     2. By default, this project assumes that you are *NOT* using the DFU
        bootloader.
@@ -1389,12 +1375,11 @@ Configuration Sub-directories
        build uClibc with the following additions to the configuration file
        (from Leo aloe3132):
 
-       CONFIG_C99_BOOL8=y
-       CONFIG_HAVE_CXXINITIALIZE=y
+              CONFIG_HAVE_CXXINITIALIZE=y
 
        CONFIG_UCLIBCXX=y
        CONFIG_CXX_EXCEPTION=y
-       CONFIG_CXX_LIBSUPCXX=y
+       CONFIG_LIBSUPCXX=y
        CONFIG_UCLIBCXX_BUFSIZE=32
 
        CONFIG_EXAMPLES_ELF_CXX=y
@@ -1623,7 +1608,7 @@ Configuration Sub-directories
 
        CONFIG_HOST_WINDOWS=y                   : Windows
        CONFIG_WINDOWS_CYGWIN=y                 : Cygwin environment on Windows
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
        This is easily changed by modifying the configuration.
 
@@ -1783,7 +1768,7 @@ Configuration Sub-directories
 
        CONFIG_HOST_WINDOWS=y                   : Builds under Windows
        CONFIG_WINDOWS_CYGWIN=y                 : Using Cygwin
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
     2. To use this configuration with the STM32F4DIS-BB baseboard you
        should:
@@ -1928,7 +1913,7 @@ Configuration Sub-directories
          CONFIG_FS_FAT=y          : Needed by the USB host mass storage class.
 
        Board Selection ->
-         CONFIG_LIB_BOARDCTL=y    : Needed for CONFIG_NSH_ARCHINIT
+         CONFIG_BOARDCTL=y    : Needed for CONFIG_NSH_ARCHINIT
 
        Application Configuration -> NSH Library
          CONFIG_NSH_ARCHINIT=y    : Architecture specific USB initialization
@@ -2085,7 +2070,7 @@ Configuration Sub-directories
     An example using the NuttX graphics system (NX).   This example focuses on
     placing lines on the background in various orientations.
 
-      CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+      CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
       CONFIG_LCD_LANDSCAPE=y                  : 320x240 landscape orientation
 
     The STM32F4Discovery board does not have any graphics capability.  This
@@ -2161,7 +2146,7 @@ Configuration Sub-directories
 
          CONFIG_HOST_WINDOWS=y                   : Windows
          CONFIG_WINDOWS_CYGWIN=y                 : Cygwin
-         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
     2. CONFIG_ARCH_CUSTOM_PMINIT and CONFIG_ARCH_IDLE_CUSTOM are necessary
        parts of the PM configuration:
@@ -2211,7 +2196,7 @@ Configuration Sub-directories
 
        CONFIG_HOST_WINDOWS=y                   : Builds under windows
        CONFIG_WINDOWS_CYGWIN=y                 : Using Cygwin and
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : Generic ARM EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : Generic ARM EABI toolchain for Windows
 
     2. By default, this project assumes that you are *NOT* using the DFU
        bootloader.
@@ -2327,7 +2312,7 @@ Configuration Sub-directories
        Further, the configuration assumes that executable files reside on the
        remotely mounted file system:
 
-       CONFIG_LIB_ENVPATH=y
+       CONFIG_LIBC_ENVPATH=y
        CONFIG_PATH_INITIAL="/mnt/nfs/bin"
 
     3 'ping' support
@@ -2351,7 +2336,7 @@ Configuration Sub-directories
 
        CONFIG_HOST_WINDOWS=y                   : Builds under Windows
        CONFIG_WINDOWS_CYGWIN=y                 : Using Cygwin
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
     2. This configuration does have USART2 output enabled and set up as
        the system logging device:
@@ -2415,7 +2400,7 @@ Configuration Sub-directories
        usable as of this writing.  The windows native build logic is currently
        separate and must be started by:
 
-        make -f Makefile.win
+        make -f Win.mk
 
       This build:
 
@@ -2430,7 +2415,7 @@ Configuration Sub-directories
 
        CONFIG_HOST_WINDOWS=y                   : Windows
        CONFIG_WINDOWS_NATIVE=y                 : Native Windows environment
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
       Build Tools.  The build still relies on some Unix-like commands.  I use
       the GNUWin32 tools that can be downloaded from http://gnuwin32.sourceforge.net/.

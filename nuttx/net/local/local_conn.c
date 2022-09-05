@@ -36,23 +36,63 @@
 #include "local/local.h"
 
 /****************************************************************************
+ * Private Data
+ ****************************************************************************/
+
+/* A list of all allocated packet socket connections */
+
+static dq_queue_t g_local_connections;
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
 /****************************************************************************
- * Name: local_initialize
+ * Name: local_nextconn
  *
  * Description:
- *   Initialize the local, Unix domain connection structures.  Called once
- *   and only from the common network initialization logic.
+ *   Traverse the list of local connections
+ *
+ * Assumptions:
+ *   This function must be called with the network locked.
  *
  ****************************************************************************/
 
-void local_initialize(void)
+FAR struct local_conn_s *local_nextconn(FAR struct local_conn_s *conn)
 {
-#ifdef CONFIG_NET_LOCAL_STREAM
-  dq_init(&g_local_listeners);
-#endif
+  if (!conn)
+    {
+      return (FAR struct local_conn_s *)g_local_connections.head;
+    }
+
+  return (FAR struct local_conn_s *)conn->lc_conn.node.flink;
+}
+
+/****************************************************************************
+ * Name: local_peerconn
+ *
+ * Description:
+ *   Traverse the connections list to find the peer
+ *
+ * Assumptions:
+ *   This function must be called with the network locked.
+ *
+ ****************************************************************************/
+
+FAR struct local_conn_s *local_peerconn(FAR struct local_conn_s *conn)
+{
+  FAR struct local_conn_s *peer = NULL;
+
+  while ((peer = local_nextconn(peer)) != NULL)
+    {
+      if (conn->lc_proto == peer->lc_proto && conn != peer &&
+          !strncmp(conn->lc_path, peer->lc_path, UNIX_PATH_MAX - 1))
+        {
+          return peer;
+        }
+    }
+
+  return NULL;
 }
 
 /****************************************************************************
@@ -84,7 +124,23 @@ FAR struct local_conn_s *local_alloc(void)
 
       nxsem_init(&conn->lc_waitsem, 0, 0);
       nxsem_set_protocol(&conn->lc_waitsem, SEM_PRIO_NONE);
+
+      nxsem_init(&conn->lc_donesem, 0, 0);
+      nxsem_set_protocol(&conn->lc_donesem, SEM_PRIO_NONE);
+
 #endif
+
+      /* This semaphore is used for sending safely in multithread.
+       * Make sure data will not be garbled when multi-thread sends.
+       */
+
+      nxsem_init(&conn->lc_sendsem, 0, 1);
+
+      /* Add the connection structure to the list of listeners */
+
+      net_lock();
+      dq_addlast(&conn->lc_conn.node, &g_local_connections);
+      net_unlock();
     }
 
   return conn;
@@ -101,7 +157,26 @@ FAR struct local_conn_s *local_alloc(void)
 
 void local_free(FAR struct local_conn_s *conn)
 {
+#ifdef CONFIG_NET_LOCAL_SCM
+  int i;
+#endif /* CONFIG_NET_LOCAL_SCM */
+
   DEBUGASSERT(conn != NULL);
+
+  /* Remove the server from the list of listeners. */
+
+  net_lock();
+  dq_rem(&conn->lc_conn.node, &g_local_connections);
+
+#ifdef CONFIG_NET_LOCAL_SCM
+  if (local_peerconn(conn) && conn->lc_peer)
+    {
+      conn->lc_peer->lc_peer = NULL;
+      conn->lc_peer = NULL;
+    }
+#endif /* CONFIG_NET_LOCAL_SCM */
+
+  net_unlock();
 
   /* Make sure that the read-only FIFO is closed */
 
@@ -119,12 +194,31 @@ void local_free(FAR struct local_conn_s *conn)
       conn->lc_outfile.f_inode = NULL;
     }
 
+#ifdef CONFIG_NET_LOCAL_SCM
+  /* Free the pending control file pointer */
+
+  for (i = 0; i < conn->lc_cfpcount; i++)
+    {
+      if (conn->lc_cfps[i])
+        {
+          file_close(conn->lc_cfps[i]);
+          kmm_free(conn->lc_cfps[i]);
+          conn->lc_cfps[i] = NULL;
+        }
+    }
+#endif /* CONFIG_NET_LOCAL_SCM */
+
 #ifdef CONFIG_NET_LOCAL_STREAM
   /* Destroy all FIFOs associted with the connection */
 
   local_release_fifos(conn);
   nxsem_destroy(&conn->lc_waitsem);
+  nxsem_destroy(&conn->lc_donesem);
 #endif
+
+  /* Destory sem associated with the connection */
+
+  nxsem_destroy(&conn->lc_sendsem);
 
   /* And free the connection structure */
 

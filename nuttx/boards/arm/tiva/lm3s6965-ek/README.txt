@@ -426,6 +426,17 @@ Where <subdir> is one of the following:
         -nic user,id=user0 \
         -serial mon:stdio -nographic
 
+  qemu-kostest:
+    An example config with PROTECTED memory model to run on qemu.
+
+        ./tools/configure.sh lm3s6965-ek:qemu-kostest
+        make
+        qemu-system-arm -semihosting \
+        -M lm3s6965evb \
+        -device loader,file=nuttx.bin,addr=0x00000000 \
+        -device loader,file=nuttx_user.bin,addr=0x00020000 \
+        -serial mon:stdio -nographic
+
   qemu-protected:
     An example config with PROTECTED memory model to run on qemu.
 
@@ -457,7 +468,7 @@ Where <subdir> is one of the following:
     2. Default platform/toolchain:
 
        CONFIG_HOST_LINUX=y                     : Linux
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL=y     : GNU EABI toolchain for Linux
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Linux
        CONFIG_RAW_BINARY=y                     : Output formats: ELF and raw binary
 
     3. As it is configured now, you MUST have a network connected.

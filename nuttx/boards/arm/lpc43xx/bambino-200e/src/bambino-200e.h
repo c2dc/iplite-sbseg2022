@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __BOARDS_ARM_LPC43X_BAMBINO_200E_SRC_BAMBINO_H
-#define __BOARDS_ARM_LPC43X_BAMBINO_200E_SRC_BAMBINO_H
+#ifndef __BOARDS_ARM_LPC43X_BAMBINO_200E_SRC_BAMBINO_200E_H
+#define __BOARDS_ARM_LPC43X_BAMBINO_200E_SRC_BAMBINO_200E_H
 
 /****************************************************************************
  * Included Files
@@ -167,7 +167,7 @@ void weak_function lpc43_sspdev_initialize(void);
  *
  ****************************************************************************/
 
-int lpc43_max31855initialize(FAR const char *devpath, int bus,
+int lpc43_max31855initialize(const char *devpath, int bus,
                              uint16_t devid);
 
 /****************************************************************************
@@ -185,4 +185,4 @@ int lpc43_timerinitialize(void);
 #endif
 
 #endif /* __ASSEMBLY__ */
-#endif /* __BOARDS_ARM_LPC43X_BAMBINO_200E_SRC_BAMBINO_H */
+#endif /* __BOARDS_ARM_LPC43X_BAMBINO_200E_SRC_BAMBINO_200E_H */

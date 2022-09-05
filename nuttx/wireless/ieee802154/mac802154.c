@@ -1,40 +1,20 @@
 /****************************************************************************
  * wireless/ieee802154/mac802154.c
  *
- *   Copyright (C) 2016 Sebastien Lorquet. All rights reserved.
- *   Copyright (C) 2017 Gregory Nutt. All rights reserved.
- *   Copyright (C) 2017 Verge Inc. All rights reserved.
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- *   Author: Sebastien Lorquet <sebastien@lorquet.fr>
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *   Author: Anthony Merlino <anthony@vergeaero.com>
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -262,7 +242,7 @@ void mac802154_createdatareq(FAR struct ieee802154_privmac_s *priv,
 
   /* Allocate an IOB to put the frame in */
 
-  iob = iob_alloc(false, IOBUSER_WIRELESS_MAC802154);
+  iob = iob_alloc(false);
   DEBUGASSERT(iob != NULL);
 
   iob->io_flink  = NULL;
@@ -349,7 +329,7 @@ void mac802154_createdatareq(FAR struct ieee802154_privmac_s *priv,
    * progession.
    */
 
-  memcpy(&txdesc->destaddr, &coordaddr, sizeof(struct ieee802154_addr_s));
+  memcpy(&txdesc->destaddr, coordaddr, sizeof(struct ieee802154_addr_s));
 
   /* Save a reference of the tx descriptor */
 
@@ -437,8 +417,7 @@ static void mac802154_notify_worker(FAR void *arg)
 
           if (dispose)
             {
-              iob_free(primitive->u.dataind.frame,
-                       IOBUSER_WIRELESS_MAC802154);
+              iob_free(primitive->u.dataind.frame);
               ieee802154_primitive_free(primitive);
             }
         }
@@ -771,7 +750,7 @@ static void mac802154_purge_worker(FAR void *arg)
 
           /* Free the IOB, the notification, and the tx descriptor */
 
-          iob_free(txdesc->frame, IOBUSER_WIRELESS_MAC802154);
+          iob_free(txdesc->frame);
           ieee802154_primitive_free((FAR struct ieee802154_primitive_s *)
                                     txdesc->conf);
           mac802154_txdesc_free(priv, txdesc);
@@ -1012,7 +991,7 @@ static void mac802154_txdone_worker(FAR void *arg)
 
       /* Free the IOB and the tx descriptor */
 
-      iob_free(txdesc->frame, IOBUSER_WIRELESS_MAC802154);
+      iob_free(txdesc->frame);
       mac802154_txdesc_free(priv, txdesc);
     }
 
@@ -1536,7 +1515,7 @@ static void mac802154_rxdatareq(FAR struct ieee802154_privmac_s *priv,
             }
           else
             {
-              DEBUGASSERT(false);
+              DEBUGPANIC();
             }
         }
 
@@ -1553,7 +1532,7 @@ static void mac802154_rxdatareq(FAR struct ieee802154_privmac_s *priv,
 
   /* Allocate an IOB to put the frame in */
 
-  iob = iob_alloc(false, IOBUSER_WIRELESS_MAC802154);
+  iob = iob_alloc(false);
   DEBUGASSERT(iob != NULL);
 
   iob->io_flink  = NULL;
@@ -1598,7 +1577,7 @@ static void mac802154_rxdatareq(FAR struct ieee802154_privmac_s *priv,
     }
   else
     {
-      DEBUGASSERT(false);
+      DEBUGPANIC();
     }
 
   /* Set the destination addr mode inside the frame control field */

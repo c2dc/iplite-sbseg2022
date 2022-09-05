@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -89,7 +90,6 @@ static void icmpv6_router_terminate(FAR struct icmpv6_router_s *state,
  ****************************************************************************/
 
 static uint16_t icmpv6_router_eventhandler(FAR struct net_driver_s *dev,
-                                           FAR void *pvconn,
                                            FAR void *priv, uint16_t flags)
 {
   FAR struct icmpv6_router_s *state = (FAR struct icmpv6_router_s *)priv;
@@ -189,7 +189,7 @@ static int icmpv6_send_message(FAR struct net_driver_s *dev, bool advertise)
 
   /* Remember the routing device name */
 
-  strncpy((FAR char *)state.snd_ifname, (FAR const char *)dev->d_ifname,
+  strlcpy((FAR char *)state.snd_ifname, (FAR const char *)dev->d_ifname,
           IFNAMSIZ);
 
   /* Allocate resources to receive a callback.  This and the following
@@ -197,7 +197,9 @@ static int icmpv6_send_message(FAR struct net_driver_s *dev, bool advertise)
    * want anything to happen until we are ready.
    */
 
-  state.snd_cb = devif_callback_alloc(dev, &dev->d_conncb);
+  state.snd_cb = devif_callback_alloc(dev,
+                                      &dev->d_conncb,
+                                      &dev->d_conncb_tail);
   if (!state.snd_cb)
     {
       nerr("ERROR: Failed to allocate a cllback\n");
@@ -311,10 +313,10 @@ int icmpv6_autoconfig(FAR struct net_driver_s *dev)
   icmpv6_linkipaddr(dev, lladdr);
 
   ninfo("lladdr=%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x\n",
-        ntohs(lladdr[0]), ntohs(lladdr[1]),
-        ntohs(lladdr[2]), ntohs(lladdr[3]),
-        ntohs(lladdr[4]), ntohs(lladdr[5]),
-        ntohs(lladdr[6]), ntohs(lladdr[7]));
+        NTOHS(lladdr[0]), NTOHS(lladdr[1]),
+        NTOHS(lladdr[2]), NTOHS(lladdr[3]),
+        NTOHS(lladdr[4]), NTOHS(lladdr[5]),
+        NTOHS(lladdr[6]), NTOHS(lladdr[7]));
 
 #ifdef CONFIG_NET_ICMPv6_NEIGHBOR
   /* 2. Link-Local Address Uniqueness Test:  The node tests to ensure that

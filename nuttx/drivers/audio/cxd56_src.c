@@ -22,16 +22,16 @@
  * Included Files
  ****************************************************************************/
 
+#include <debug.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <math.h>
 #include <queue.h>
 #include <stdio.h>
 #include <string.h>
 
 #include <nuttx/arch.h>
 #include <nuttx/config.h>
-#include <nuttx/irq.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/mqueue.h>
 
@@ -110,7 +110,7 @@ extern void src_float_to_short_array (const float *in, short *out, int len);
 extern void src_int_to_float_array (const int *in, float *out, int len);
 extern void src_float_to_int_array (const float *in, int *out, int len);
 
-static struct ap_buffer_s *cxd56_src_get_apb()
+static struct ap_buffer_s *cxd56_src_get_apb(void)
 {
   struct ap_buffer_s *src_apb;
   irqstate_t flags;
@@ -200,7 +200,7 @@ static int cxd56_src_process(FAR struct ap_buffer_s *apb)
       int float_in_left;
       int frames_in;
 
-      short *apb_addr = (const short *)(apb->samp + apb->curbyte);
+      const short *apb_addr = (const short *)(apb->samp + apb->curbyte);
 
       /* Fill up incoming float buffer */
 
@@ -427,7 +427,8 @@ int cxd56_src_init(FAR struct cxd56_dev_s *dev,
   g_src.bytewidth = dev->bitwidth / 8;
   g_src.channels = dev->channels;
   g_src.float_in_offset = 0;
-  snprintf(g_src.mqname, sizeof(g_src.mqname), "/tmp/%X", &g_src);
+  snprintf(g_src.mqname, sizeof(g_src.mqname), "/tmp/%X",
+           (unsigned int) &g_src);
 
   audinfo("SRC: Init (rate = %d, channels = %d, width = %d)\n",
           dev->samplerate, g_src.channels, g_src.bytewidth);
@@ -461,9 +462,9 @@ int cxd56_src_init(FAR struct cxd56_dev_s *dev,
 
   pthread_attr_init(&t_attr);
   sparam.sched_priority = sched_get_priority_max(SCHED_FIFO) - 3;
-  (void)pthread_attr_setschedparam(&t_attr, &sparam);
-  (void)pthread_attr_setstacksize(&t_attr,
-                                  CONFIG_CXD56_AUDIO_SRC_STACKSIZE);
+  pthread_attr_setschedparam(&t_attr, &sparam);
+  pthread_attr_setstacksize(&t_attr,
+                            CONFIG_CXD56_AUDIO_SRC_STACKSIZE);
 
   ret = pthread_create(&g_src.threadid, &t_attr, cxd56_src_thread,
                        (pthread_addr_t)&g_src);
@@ -486,7 +487,7 @@ int cxd56_src_init(FAR struct cxd56_dev_s *dev,
   g_src.src_state = src_new(SRC_LINEAR, g_src.channels, &error);
   if (g_src.src_state == NULL)
     {
-      auderr("ERROR: Could not initialize SRC (%d)\n", src_strerror(error));
+      auderr("ERROR: Could not initialize SRC (%s)\n", src_strerror(error));
       ret = error;
     }
 
@@ -530,6 +531,8 @@ int cxd56_src_deinit(void)
     file_close(&dump_file_post);
 #endif
 
+  file_mq_close(&g_src.mq);
+
   return OK;
 }
 
@@ -546,7 +549,7 @@ int cxd56_src_enqueue(FAR struct ap_buffer_s *apb)
   int ret;
   struct audio_msg_s msg;
 
-  audinfo("SRC: Enqueue %x\n", apb);
+  audinfo("SRC: Enqueue %x\n", (unsigned int) apb);
 
   msg.msg_id = AUDIO_MSG_ENQUEUE;
   msg.u.ptr = apb;

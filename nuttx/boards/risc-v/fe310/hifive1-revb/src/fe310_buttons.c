@@ -28,7 +28,8 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#include <syslog.h>
+#include <assert.h>
+#include <debug.h>
 #include <errno.h>
 
 #include "fe310_gpio.h"
@@ -105,7 +106,7 @@ uint32_t board_buttons(void)
       b0 = b1;
     }
 
-  iinfo("b=%d n=%d \n", b0, n);
+  iinfo("b=%d n=%d\n", b0, n);
 
   /* Low value means that the button is pressed */
 
@@ -130,7 +131,7 @@ uint32_t board_buttons(void)
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_IRQBUTTONS
-int board_button_irq(int id, xcpt_t irqhandler, FAR void *arg)
+int board_button_irq(int id, xcpt_t irqhandler, void *arg)
 {
   int ret = -EINVAL;
   ASSERT(id == 0);

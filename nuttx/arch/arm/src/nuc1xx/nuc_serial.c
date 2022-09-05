@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -43,9 +44,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "hardware/nuc_uart.h"
 #include "nuc_lowputc.h"

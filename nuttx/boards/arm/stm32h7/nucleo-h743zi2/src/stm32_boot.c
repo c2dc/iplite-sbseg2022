@@ -29,7 +29,7 @@
 #include <nuttx/board.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32_start.h"
 #include "nucleo-h743zi2.h"
 
@@ -50,6 +50,10 @@
 
 void stm32_boardinitialize(void)
 {
+#ifdef CONFIG_SCHED_IRQMONITOR
+  up_perf_init((void *)STM32_SYSCLK_FREQUENCY);
+#endif
+
 #ifdef CONFIG_ARCH_LEDS
   /* Configure on-board LEDs if LED support has been selected. */
 
@@ -80,7 +84,7 @@ void stm32_boardinitialize(void)
 #ifdef CONFIG_BOARD_LATE_INITIALIZE
 void board_late_initialize(void)
 {
-#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_LIB_BOARDCTL)
+#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_BOARDCTL)
   /* Perform board bring-up here instead of from the
    * board_app_initialize().
    */

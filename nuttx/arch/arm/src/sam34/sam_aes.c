@@ -1,35 +1,20 @@
 /****************************************************************************
  * arch/arm/src/sam34/sam_aes.c
  *
- *   Copyright (C) 2014 Gregory Nutt. All rights reserved.
- *   Author:  Max Nekludov <macscomp@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -52,8 +37,6 @@
 #include <arch/board/board.h>
 
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "chip.h"
 #include "sam_periphclks.h"
 #include "sam_aes.h"
@@ -97,19 +80,19 @@ static void samaes_unlock(void)
   nxsem_post(&g_samaes_lock);
 }
 
-static void samaes_memcpy(FAR void *out, FAR const void *in, size_t size)
+static void samaes_memcpy(void *out, const void *in, size_t size)
 {
   size_t i;
   size_t wcount = size / 4;
 
   for (i = 0; i < wcount;
-       i++, out = (FAR uint8_t *)out + 4, in = (FAR uint8_t *)in + 4)
+       i++, out = (uint8_t *)out + 4, in = (uint8_t *)in + 4)
     {
-      *(FAR uint32_t *)out = *(FAR uint32_t *)in;
+      *(uint32_t *)out = *(uint32_t *)in;
     }
 }
 
-static void samaes_encryptblock(FAR void *out, FAR const void *in)
+static void samaes_encryptblock(void *out, const void *in)
 {
   samaes_memcpy((void *)SAM_AES_IDATAR, in, AES_BLOCK_SIZE);
 
@@ -192,8 +175,8 @@ static int samaes_initialize(void)
   return OK;
 }
 
-int aes_cypher(FAR void *out, FAR const void *in, uint32_t size,
-               FAR const void *iv, FAR const void *key, uint32_t keysize,
+int aes_cypher(void *out, const void *in, size_t size,
+               const void *iv, const void *key, size_t keysize,
                int mode, int encrypt)
 {
   int ret = OK;
@@ -223,10 +206,10 @@ int aes_cypher(FAR void *out, FAR const void *in, uint32_t size,
       return ret;
     }
 
-  samaes_memcpy((FAR void *)SAM_AES_KEYWR, key, keysize);
+  samaes_memcpy((void *)SAM_AES_KEYWR, key, keysize);
   if (iv != NULL)
     {
-      samaes_memcpy((FAR void *)SAM_AES_IVR, iv, AES_BLOCK_SIZE);
+      samaes_memcpy((void *)SAM_AES_IVR, iv, AES_BLOCK_SIZE);
     }
 
   while (size)
@@ -234,7 +217,7 @@ int aes_cypher(FAR void *out, FAR const void *in, uint32_t size,
       if ((mode & AES_MODE_MAC) == 0)
         {
           samaes_encryptblock(out, in);
-          out = (FAR char *)out + AES_BLOCK_SIZE;
+          out = (char *)out + AES_BLOCK_SIZE;
         }
       else if (size == AES_BLOCK_SIZE)
         {
@@ -245,7 +228,7 @@ int aes_cypher(FAR void *out, FAR const void *in, uint32_t size,
           samaes_encryptblock(NULL, in);
         }
 
-      in    = (FAR char *)in + AES_BLOCK_SIZE;
+      in    = (char *)in + AES_BLOCK_SIZE;
       size -= AES_BLOCK_SIZE;
     }
 

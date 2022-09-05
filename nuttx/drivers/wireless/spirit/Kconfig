@@ -7,6 +7,7 @@ config WL_SPIRIT
 	bool "STMicro Spirit Radio Library"
 	default n
 	select SPI
+	depends on ALLOW_BSD_COMPONENTS
 	---help---
 		Enable support for the STMicro Spirit Radio Library
 
@@ -17,7 +18,7 @@ config WL_SPIRIT_SPIFREQUENCY
 	default 10000000
 	---help---
 		Frequency at which to operate the SPI interface to the Spirit part.
-		The default is the absolution maximum and you may likely have to
+		The default is the absolute maximum and you may likely have to
 		reduce this for your board.
 
 config WL_SPIRIT_REGDEBUG
@@ -37,4 +38,4 @@ config WL_SPIRIT_FIFODUMP
 
 endif
 
-source drivers/wireless/spirit/drivers/Kconfig
+source "drivers/wireless/spirit/drivers/Kconfig"

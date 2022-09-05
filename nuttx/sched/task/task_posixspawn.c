@@ -26,7 +26,9 @@
 
 #include <sys/wait.h>
 #include <spawn.h>
+#include <assert.h>
 #include <debug.h>
+#include <errno.h>
 
 #include <nuttx/sched.h>
 #include <nuttx/kthread.h>
@@ -54,7 +56,7 @@
  *     child task in the variable pointed to by a non-NULL 'pid' argument.|
  *
  *   path - The 'path' argument identifies the file to execute.  If
- *     CONFIG_LIB_ENVPATH is defined, this may be either a relative or
+ *     CONFIG_LIBC_ENVPATH is defined, this may be either a relative or
  *     or an absolute path.  Otherwise, it must be an absolute path.
  *
  *   attr - If the value of the 'attr' parameter is NULL, the all default
@@ -83,7 +85,8 @@
 
 static int nxposix_spawn_exec(FAR pid_t *pidp, FAR const char *path,
                               FAR const posix_spawnattr_t *attr,
-                              FAR char * const argv[])
+                              FAR char * const argv[],
+                              FAR char * const envp[])
 {
   FAR const struct symtab_s *symtab;
   int nsymbols;
@@ -105,7 +108,7 @@ static int nxposix_spawn_exec(FAR pid_t *pidp, FAR const char *path,
 
   /* Start the task */
 
-  pid = exec_spawn(path, (FAR char * const *)argv, symtab, nsymbols, attr);
+  pid = exec_spawn(path, argv, envp, symtab, nsymbols, attr);
   if (pid < 0)
     {
       ret = -pid;
@@ -182,7 +185,8 @@ static int nxposix_spawn_proxy(int argc, FAR char *argv[])
       /* Start the task */
 
       ret = nxposix_spawn_exec(g_spawn_parms.pid, g_spawn_parms.u.posix.path,
-                               g_spawn_parms.attr, g_spawn_parms.argv);
+                               g_spawn_parms.attr, g_spawn_parms.argv,
+                               g_spawn_parms.envp);
 
 #ifdef CONFIG_SCHED_HAVE_PARENT
       if (ret == OK)
@@ -238,7 +242,7 @@ static int nxposix_spawn_proxy(int argc, FAR char *argv[])
  *     directories passed as the environment variable PATH.
  *
  *     NOTE: NuttX provides only one implementation:  If
- *     CONFIG_LIB_ENVPATH is defined, then only posix_spawnp() behavior
+ *     CONFIG_LIBC_ENVPATH is defined, then only posix_spawnp() behavior
  *     is supported; otherwise, only posix_spawn behavior is supported.
  *
  *   file_actions - If 'file_actions' is a null pointer, then file
@@ -272,12 +276,8 @@ static int nxposix_spawn_proxy(int argc, FAR char *argv[])
  *     array of pointers to null-terminated strings. The list is terminated
  *     with a null pointer.
  *
- *   envp - The envp[] argument is not used by NuttX and may be NULL.  In
- *     standard implementations, envp[] is an array of character pointers to
- *     null-terminated strings that provide the environment for the new
- *     process image. The environment array is terminated by a null pointer.
- *     In NuttX, the envp[] argument is ignored and the new task will simply
- *     inherit the environment of the parent task.
+ *   envp - envp[] is an array of character pointers to null-terminated
+ *     strings that provide the environment for the new process image.
  *
  * Returned Value:
  *   posix_spawn() and posix_spawnp() will return zero on success.
@@ -290,11 +290,9 @@ static int nxposix_spawn_proxy(int argc, FAR char *argv[])
  *
  * Assumptions/Limitations:
  *   - NuttX provides only posix_spawn() or posix_spawnp() behavior
- *     depending upon the setting of CONFIG_LIB_ENVPATH: If
- *     CONFIG_LIB_ENVPATH is defined, then only posix_spawnp() behavior
+ *     depending upon the setting of CONFIG_LIBC_ENVPATH: If
+ *     CONFIG_LIBC_ENVPATH is defined, then only posix_spawnp() behavior
  *     is supported; otherwise, only posix_spawn behavior is supported.
- *   - The 'envp' argument is not used and the 'environ' variable is not
- *     altered (NuttX does not support the 'environ' variable).
  *   - Process groups are not supported (POSIX_SPAWN_SETPGROUP).
  *   - Effective user IDs are not supported (POSIX_SPAWN_RESETIDS).
  *   - Signal default actions cannot be modified in the newly task executed
@@ -308,20 +306,13 @@ static int nxposix_spawn_proxy(int argc, FAR char *argv[])
  *
  ****************************************************************************/
 
-#ifdef CONFIG_LIB_ENVPATH
-int posix_spawnp(FAR pid_t *pid, FAR const char *path,
-                 FAR const posix_spawn_file_actions_t *file_actions,
-                 FAR const posix_spawnattr_t *attr,
-                 FAR char * const argv[], FAR char * const envp[])
-#else
 int posix_spawn(FAR pid_t *pid, FAR const char *path,
                 FAR const posix_spawn_file_actions_t *file_actions,
                 FAR const posix_spawnattr_t *attr,
                 FAR char * const argv[], FAR char * const envp[])
-#endif
 {
   struct sched_param param;
-  pid_t proxy;
+  int proxy;
 #ifdef CONFIG_SCHED_WAITPID
   int status;
 #endif
@@ -340,7 +331,7 @@ int posix_spawn(FAR pid_t *pid, FAR const char *path,
   if ((file_actions == NULL || *file_actions == NULL) &&
       (attr == NULL || (attr->flags & POSIX_SPAWN_SETSIGMASK) == 0))
     {
-      return nxposix_spawn_exec(pid, path, attr, argv);
+      return nxposix_spawn_exec(pid, path, attr, argv, envp);
     }
 
   /* Otherwise, we will have to go through an intermediary/proxy task in
@@ -370,6 +361,7 @@ int posix_spawn(FAR pid_t *pid, FAR const char *path,
   g_spawn_parms.file_actions = file_actions ? *file_actions : NULL;
   g_spawn_parms.attr         = attr;
   g_spawn_parms.argv         = argv;
+  g_spawn_parms.envp         = envp;
   g_spawn_parms.u.posix.path = path;
 
   /* Get the priority of this (parent) task */
@@ -415,7 +407,7 @@ int posix_spawn(FAR pid_t *pid, FAR const char *path,
    * for use within the OS.
    */
 
-  ret = nx_waitpid(proxy, &status, 0);
+  ret = nx_waitpid((pid_t)proxy, &status, 0);
   if (ret < 0)
     {
       serr("ERROR: waitpid() failed: %d\n", ret);

@@ -42,8 +42,8 @@
  * Broadcom 802.11abg Networking Device Driver
  */
 
-#ifndef __DRIVERS_WIRELESS_IEEE80211_BCMF_IOCTL_H
-#define __DRIVERS_WIRELESS_IEEE80211_BCMF_IOCTL_H
+#ifndef __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_IOCTL_H
+#define __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_IOCTL_H
 
 /****************************************************************************
  * Included Files
@@ -61,7 +61,7 @@ typedef struct wl_action_frame
 {
   struct ether_addr da;
   uint16_t          len;
-  uint32_t          packetId;
+  uint32_t          packet_id;
   uint8_t           data[ACTION_FRAME_SIZE];
 } wl_action_frame_t;
 
@@ -87,7 +87,7 @@ typedef struct wl_bss_info
   struct ether_addr BSSID;
   uint16_t      beacon_period;          /* units are Kusec */
   uint16_t      capability;             /* Capability information */
-  uint8_t       SSID_len;
+  uint8_t       ssid_len;
   uint8_t       SSID[32];
   struct
   {
@@ -123,7 +123,7 @@ typedef struct wl_bss_info
 
 typedef struct wlc_ssid
 {
-  uint32_t SSID_len;
+  uint32_t ssid_len;
   uint8_t  SSID[32];
 } wlc_ssid_t;
 
@@ -224,9 +224,12 @@ typedef struct wl_uint32_list
   uint32_t element[1];
 } wl_uint32_list_t;
 
+/* scan params for extended join */
+
 typedef struct wl_join_scan_params
 {
   uint8_t scan_type;    /* 0 use default, active or passive scan */
+  uint8_t pad[3];
   int32_t nprobes;      /* -1 use default, number of probes per channel */
   int32_t active_time;  /* -1 use default, dwell time per channel for
                          * active scanning */
@@ -235,6 +238,40 @@ typedef struct wl_join_scan_params
   int32_t home_time;    /* -1 use default, dwell time for the home channel
                          * between channel scans */
 } wl_join_scan_params_t;
+
+/** used for association with a specific BSSID and chanspec list */
+
+typedef struct wl_assoc_params
+{
+  struct ether_addr bssid;            /* 00:00:00:00:00:00: broadcast scan */
+  uint16_t          bssid_cnt;        /* 0: use chanspec_num, and the single bssid,
+                                       * otherwise count of chanspecs in chanspec_list
+                                       * AND paired bssids following chanspec_list
+                                       * also, chanspec_num has to be set to zero
+                                       * for bssid list to be used
+                                       */
+  int32_t           chanspec_num;     /* 0: all available channels,
+                                       * otherwise count of chanspecs in chanspec_list */
+  chanspec_t        chanspec_list[1]; /* list of chanspecs */
+} wl_assoc_params_t;
+
+/** used for association to a specific BSSID and channel */
+
+typedef wl_assoc_params_t wl_join_assoc_params_t;
+
+/** extended join params */
+
+typedef struct wl_extjoin_params
+{
+  wlc_ssid_t             ssid;  /* {0, ""}: wildcard scan */
+  wl_join_scan_params_t  scan;
+  wl_join_assoc_params_t assoc; /* optional field, but it must include the fixed portion
+                                 * of the wl_join_assoc_params_t struct when it does
+                                 * present. */
+} wl_extjoin_params_t;
+
+#define WL_EXTJOIN_PARAMS_FIXED_SIZE \
+  (offset(wl_extjoin_params_t, assoc) + WL_JOIN_ASSOC_PARAMS_FIXED_SIZE)
 
 #define NRATE_MCS_INUSE            (0x00000080)
 #define NRATE_RATE_MASK         (0x0000007f)
@@ -544,6 +581,7 @@ typedef struct
 {
   uint32_t val;
   struct ether_addr ea;
+  uint16_t pad;
 } scb_val_t;
 
 #define BCM_MAC_STATUS_INDICATION    (0x40010200L)
@@ -724,6 +762,13 @@ typedef struct wlc_iov_trx_s
 #define IOVAR_STR_AMPDU_RX_FACTOR        "ampdu_rx_factor"
 #define IOVAR_STR_MIMO_BW_CAP            "mimo_bw_cap"
 #define IOVAR_STR_CLMLOAD                "clmload"
+#define IOVAR_STR_CLVER                  "clmver"
+#define IOVAR_STR_JOIN                   "join"
+#define IOVAR_STR_GPIOOUT                "gpioout"
+#define IOVAR_STR_CCGPIOCTRL             "ccgpioctrl"
+#define IOVAR_STR_CCGPIOIN               "ccgpioin"
+#define IOVAR_STR_CCGPIOOUT              "ccgpioout"
+#define IOVAR_STR_CCGPIOPUTEN            "ccgpioputen"
 
 #define WLC_IOCTL_MAGIC                    ( 0x14e46c77 )
 #define WLC_IOCTL_VERSION                  (          1 )
@@ -1210,13 +1255,13 @@ typedef struct
   uint8_t txpwr_local_constraint;
   uint8_t txpwr_chan_reg_max;
   uint8_t txpwr_target[2][NUM_PWRCTRL_RATES];
-  uint8_t txpwr_est_Pout[2];
+  uint8_t txpwr_est_pout[2];
   uint8_t txpwr_opo[NUM_PWRCTRL_RATES];
   uint8_t txpwr_bphy_cck_max[NUM_PWRCTRL_RATES];
   uint8_t txpwr_bphy_ofdm_max;
   uint8_t txpwr_aphy_max[NUM_PWRCTRL_RATES];
   int8_t txpwr_antgain[2];
-  uint8_t txpwr_est_Pout_gofdm;
+  uint8_t txpwr_est_pout_gofdm;
 } tx_power_legacy_t;
 
 #define WL_TX_POWER_RATES         45
@@ -1246,8 +1291,8 @@ typedef struct
   uint8_t local_constraint;
   int8_t antgain[2];
   uint8_t rf_cores;
-  uint8_t est_Pout[4];
-  uint8_t est_Pout_cck;
+  uint8_t est_pout[4];
+  uint8_t est_pout_cck;
   uint8_t user_limit[WL_TX_POWER_RATES];
   uint8_t reg_limit[WL_TX_POWER_RATES];
   uint8_t board_limit[WL_TX_POWER_RATES];
@@ -1256,8 +1301,8 @@ typedef struct
 
 typedef struct tx_inst_power
 {
-  uint8_t txpwr_est_Pout[2];
-  uint8_t txpwr_est_Pout_gofdm;
+  uint8_t txpwr_est_pout[2];
+  uint8_t txpwr_est_pout_gofdm;
 } tx_inst_power_t;
 
 #define WLC_MEASURE_TPC           1
@@ -2161,18 +2206,18 @@ typedef struct
   uint32_t rxampdu_stbc;
   uint32_t rxmpdu_sgi;
   uint32_t rxmpdu_stbc;
-  uint32_t rxmcs0_40M;
-  uint32_t rxmcs1_40M;
-  uint32_t rxmcs2_40M;
-  uint32_t rxmcs3_40M;
-  uint32_t rxmcs4_40M;
-  uint32_t rxmcs5_40M;
-  uint32_t rxmcs6_40M;
-  uint32_t rxmcs7_40M;
-  uint32_t rxmcs32_40M;
-  uint32_t txfrmsnt_20Mlo;
-  uint32_t txfrmsnt_20Mup;
-  uint32_t txfrmsnt_40M;
+  uint32_t rxmcs0_40;
+  uint32_t rxmcs1_40;
+  uint32_t rxmcs2_40;
+  uint32_t rxmcs3_40;
+  uint32_t rxmcs4_40;
+  uint32_t rxmcs5_40;
+  uint32_t rxmcs6_40;
+  uint32_t rxmcs7_40;
+  uint32_t rxmcs32_40;
+  uint32_t txfrmsnt_20lo;
+  uint32_t txfrmsnt_20up;
+  uint32_t txfrmsnt_40;
   uint32_t rx_20ul;
 } wl_cnt_ext_t;
 #define    WL_RXDIV_STATS_T_VERSION    1
@@ -2674,6 +2719,13 @@ typedef struct wl_rssi_event
   int8_t rssi_levels[MAX_RSSI_LEVELS];
 } wl_rssi_event_t;
 
+typedef struct wl_sta_rssi
+{
+  uint32_t          rssi;
+  struct ether_addr sta_addr;
+  uint16_t          foo;
+} wl_sta_rssi_t;
+
 #define WLFEATURE_DISABLE_11N          0x00000001
 #define WLFEATURE_DISABLE_11N_STBC_TX  0x00000002
 #define WLFEATURE_DISABLE_11N_STBC_RX  0x00000004
@@ -2687,20 +2739,20 @@ typedef struct wl_rssi_event
 
 typedef struct sta_prbreq_wps_ie_hdr
 {
-  struct ether_addr staAddr;
-  uint16_t ieLen;
+  struct ether_addr sta_addr;
+  uint16_t ie_len;
 } sta_prbreq_wps_ie_hdr_t;
 
 typedef struct sta_prbreq_wps_ie_data
 {
   sta_prbreq_wps_ie_hdr_t hdr;
-  uint8_t ieData[1];
+  uint8_t ie_data[1];
 } sta_prbreq_wps_ie_data_t;
 
 typedef  struct sta_prbreq_wps_ie_list
 {
-  uint32_t totLen;
-  uint8_t ieDataList[1];
+  uint32_t tot_len;
+  uint8_t ie_data_list[1];
 } sta_prbreq_wps_ie_list_t;
 
 /* EDCF related items from 802.11.h */
@@ -3053,4 +3105,4 @@ typedef enum
   WLC_E_REASON_FORCE_32_BIT     = 0x7ffffffe                     /* Force enum to be stored in 32 bit variable */
 } wl_event_reason_t;
 
-#endif /* __DRIVERS_WIRELESS_IEEE80211_BCMF_IOCTL_H */
+#endif /* __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_IOCTL_H */

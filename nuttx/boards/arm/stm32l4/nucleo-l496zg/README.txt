@@ -112,50 +112,7 @@ Hardware
       in effect but will assume the factory default settings.
 
   Our main concern is establishing a console and LED utilization for
-  debugging. Because so many pins can be multiplexed with so many functions,
-  the above mentioned graphic may be helpful in identifying a serial port.
-
-  There are 4 choices that can be made from the menuconfig:
-
-  CONFIG_NUCLEO_CONSOLE_ARDUINO or CONFIG_NUCLEO_CONSOLE_MORPHO or
-  CONFIG_NUCLEO_CONSOLE_VIRTUAL or CONFIG_NUCLEO_CONSOLE_NONE
-
-  The CONFIG_NUCLEO_CONSOLE_NONE makes no preset for the console. You should still visit
-  the U[S]ART selection and Device Drivers to disable any U[S]ART remaining.
-
-  The CONFIG_NUCLEO_CONSOLE_ARDUINO configurations assume that you are using a
-  standard Arduino RS-232 shield with the serial interface with RX on pin D0 and
-  TX on pin D1 from USART6:
-
-            -------- ---------------
-                        STM32F7
-            ARDUIONO FUNCTION  GPIO
-            -- ----- --------- -----
-            DO RX    USART6_RX PG9
-            D1 TX    USART6_TX PG14
-            -- ----- --------- -----
-
-  The CONFIG_NUCLEO_CONSOLE_MORPHO configurations uses Serial Port 8 (USART8)
-  with TX on PE1 and RX on PE0.
-
-            Serial
-            ------
-            SERIAL_RX         PE_0
-            SERIAL_TX         PE_1
-
-  The CONFIG_NUCLEO_CONSOLE_VIRTUAL configurations uses Serial Port 3 (USART3)
-  with TX on PD8 and RX on PD9.
-
-            Serial
-            ------
-            SERIAL_RX         PD9
-            SERIAL_TX         PD8
-
-  These signals are internally connected to the on board ST-Link
-
-  Of course if your design has used those pins you can choose a completely
-  different U[S]ART to use as the console. In that Case, you will need to edit
-  the include/board.h to select different U[S]ART and / or pin selections.
+  debugging.
 
   Buttons
   -------
@@ -190,7 +147,6 @@ Hardware
   LED_PANIC            The system has crashed    ON   OFF   OFF (flashing 2Hz)
   LED_IDLE             MCU is is sleep mode      ON   OFF   OFF
 
-
 OFF -    means that the OS is still initializing. Initialization is very fast
          so if you see this at all, it probably means that the system is
          hanging up somewhere in the initialization phases.
@@ -207,7 +163,6 @@ VIOLET - If a recovered assertion occurs, the RED and blue LED will be
 
 Flashing RED - In the event of a fatal crash, all other LEDs will be
           extinguished and RED LED will FLASH at a 2Hz rate.
-
 
   Thus if the GREEN LED is lit, NuttX has successfully booted and is,
   apparently, running normally.  If the RED LED is flashing at
@@ -263,8 +218,8 @@ Serial Consoles
   ----------------
   Yet another option is to use LPUART1 and the USB virtual COM port.  This
   option may be more convenient for long term development, but is painful
-  to use during board bring-up. However as LPUART peripheral has not been
-  implemented for STM32L4, this cannot currently be used.
+  to use during board bring-up. However the LPUART peripheral has not yet
+  been tested for this board.
 
   Solder Bridges.  This configuration requires:
 
@@ -336,7 +291,7 @@ nsh:
      for Linux.  That can easily be reconfigured, of course.
 
      CONFIG_HOST_LINUX=y                     : Builds under Linux
-     CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL=y     : ARM GNU for Linux
+     CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : ARM GNU for Linux
 
   3. Although the default console is LPUART1 (which would correspond to
      the Virtual COM port) I have done all testing with the console

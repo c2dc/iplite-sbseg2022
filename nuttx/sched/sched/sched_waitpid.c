@@ -26,6 +26,7 @@
 
 #include <sys/wait.h>
 #include <signal.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/sched.h>
@@ -54,8 +55,6 @@ pid_t nx_waitpid(pid_t pid, int *stat_loc, int options)
   bool mystat = false;
   int ret;
 
-  DEBUGASSERT(stat_loc);
-
   /* NOTE: sched_lock() is not enough for SMP
    * because the child task is running on another CPU
    */
@@ -80,7 +79,11 @@ pid_t nx_waitpid(pid_t pid, int *stat_loc, int options)
   /* Then the task group corresponding to this PID */
 
   group = ctcb->group;
-  DEBUGASSERT(group);
+  if (group == NULL)
+    {
+      ret = -ECHILD;
+      goto errout;
+    }
 
   /* Lock this group so that it cannot be deleted until the wait completes */
 
@@ -166,8 +169,8 @@ errout:
 /****************************************************************************
  *
  * If CONFIG_SCHED_HAVE_PARENT is defined, then waitpid will use the SIGCHLD
- * signal.  It can also handle the pid == (pid_t)-1 argument.  This is
- * slightly more spec-compliant.
+ * signal.  It can also handle the pid == INVALID_PROCESS_ID argument.  This
+ * is slightly more spec-compliant.
  *
  * But then I have to be concerned about the fact that NuttX does not queue
  * signals.  This means that a flurry of signals can cause signals to be
@@ -188,8 +191,6 @@ pid_t nx_waitpid(pid_t pid, int *stat_loc, int options)
   FAR struct siginfo info;
   sigset_t set;
   int ret;
-
-  DEBUGASSERT(stat_loc);
 
   /* Create a signal set that contains only SIGCHLD */
 
@@ -222,14 +223,14 @@ pid_t nx_waitpid(pid_t pid, int *stat_loc, int options)
       ret = -ECHILD;
       goto errout;
     }
-  else if (pid != (pid_t)-1)
+  else if (pid != INVALID_PROCESS_ID)
     {
       /* Get the TCB corresponding to this PID.  NOTE: If the child has
        * already exited, then the PID will not map to a valid TCB.
        */
 
       ctcb = nxsched_get_tcb(pid);
-      if (ctcb != NULL)
+      if (ctcb && ctcb->group)
         {
           /* Make sure that the thread it is our child. */
 
@@ -265,15 +266,14 @@ pid_t nx_waitpid(pid_t pid, int *stat_loc, int options)
       ret = -ECHILD;
       goto errout;
     }
-  else if (pid != (pid_t)-1)
+  else if (pid != INVALID_PROCESS_ID)
     {
       /* Get the TCB corresponding to this PID and make sure that the
        * thread it is our child.
        */
 
       ctcb = nxsched_get_tcb(pid);
-
-      if (ctcb == NULL || ctcb->group->tg_ppid != rtcb->group->tg_pid)
+      if (!ctcb || !ctcb->group || ctcb->group->tg_ppid != rtcb->pid)
         {
           ret = -ECHILD;
           goto errout;
@@ -293,7 +293,7 @@ pid_t nx_waitpid(pid_t pid, int *stat_loc, int options)
        * instead).
        */
 
-      if (pid == (pid_t)-1)
+      if (pid == INVALID_PROCESS_ID)
         {
           /* We are waiting for any child, check if there are still
            * children.
@@ -308,7 +308,11 @@ pid_t nx_waitpid(pid_t pid, int *stat_loc, int options)
 
               /* The child has exited. Return the saved exit status */
 
-              *stat_loc = child->ch_status << 8;
+              if (stat_loc != NULL)
+                {
+                  *stat_loc = child->ch_status << 8;
+                }
+
               pid = child->ch_pid;
 
               /* Discard the child entry and break out of the loop */
@@ -336,7 +340,10 @@ pid_t nx_waitpid(pid_t pid, int *stat_loc, int options)
             {
               /* The child has exited. Return the saved exit status */
 
-              *stat_loc = child->ch_status << 8;
+              if (stat_loc != NULL)
+                {
+                  *stat_loc = child->ch_status << 8;
+                }
 
               /* Discard the child entry and break out of the loop */
 
@@ -375,7 +382,7 @@ pid_t nx_waitpid(pid_t pid, int *stat_loc, int options)
        */
 
       if (rtcb->group->tg_nchildren == 0 ||
-          (pid != (pid_t)-1 && nxsig_kill(pid, 0) < 0))
+          (pid != INVALID_PROCESS_ID && nxsig_kill(pid, 0) < 0))
         {
           /* We know that the child task was running okay when we started,
            * so we must have lost the signal.  What can we do?
@@ -403,15 +410,19 @@ pid_t nx_waitpid(pid_t pid, int *stat_loc, int options)
         }
 
       /* Was this the death of the thread we were waiting for? In the of
-       * pid == (pid_t)-1, we are waiting for any child thread.
+       * pid == INVALID_PROCESS_ID, we are waiting for any child thread.
        */
 
       if (info.si_signo == SIGCHLD &&
-         (pid == (pid_t)-1 || info.si_pid == pid))
+         (pid == INVALID_PROCESS_ID || info.si_pid == pid))
         {
           /* Yes... return the status and PID (in the event it was -1) */
 
-          *stat_loc = info.si_status << 8;
+          if (stat_loc != NULL)
+            {
+              *stat_loc = info.si_status << 8;
+            }
+
           pid = info.si_pid;
 
 #ifdef CONFIG_SCHED_CHILD_STATUS
@@ -420,7 +431,6 @@ pid_t nx_waitpid(pid_t pid, int *stat_loc, int options)
               /* Recover the exiting child */
 
               child = group_find_child(rtcb->group, info.si_pid);
-              DEBUGASSERT(child != NULL);
 
               /* Discard the child entry, if we have one */
 

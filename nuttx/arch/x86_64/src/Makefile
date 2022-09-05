@@ -19,7 +19,7 @@
 ############################################################################
 
 include $(TOPDIR)/Make.defs
--include chip/Make.defs
+include chip/Make.defs
 
 ifeq ($(CONFIG_ARCH_INTEL64),y)
 ARCH_SUBDIR = intel64
@@ -37,11 +37,7 @@ CFLAGS += $(INCLUDES)
 CXXFLAGS += $(INCLUDES)
 AFLAGS += $(INCLUDES)
 
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  NUTTX = "${shell cygpath -w $(TOPDIR)$(DELIM)nuttx$(EXEEXT)}"
-else
-  NUTTX = "$(TOPDIR)$(DELIM)nuttx$(EXEEXT)"
-endif
+NUTTX = $(call CONVERT_PATH,$(TOPDIR)$(DELIM)nuttx$(EXEEXT))
 
 ASRCS = $(CHIP_ASRCS) $(CMN_ASRCS)
 AOBJS = $(ASRCS:.S=$(OBJEXT))
@@ -60,23 +56,14 @@ BIN  = libarch$(LIBEXT)
 LDSTARTGROUP ?= --start-group
 LDENDGROUP ?= --end-group
 
-LDFLAGS += -z max-page-size=0x1000 $(ARCHSCRIPT)
+LDFLAGS += -z max-page-size=0x1000 $(addprefix -T,$(call CONVERT_PATH,$(ARCHSCRIPT)))
 LOADER_LDFLAGS += $(LOADER_ARCHSCRIPT)
 
 BOARDMAKE = $(if $(wildcard board$(DELIM)Makefile),y,)
 
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  LIBPATHS += -L"${shell cygpath -w "$(TOPDIR)$(DELIM)staging"}"
+LIBPATHS += -L $(call CONVERT_PATH,$(TOPDIR)$(DELIM)staging)
 ifeq ($(BOARDMAKE),y)
-  LIBPATHS += -L"${shell cygpath -w "$(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)board"}"
-endif
-
-else
-  LIBPATHS += -L"$(TOPDIR)$(DELIM)staging"
-ifeq ($(BOARDMAKE),y)
-  LIBPATHS += -L"$(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)board"
-endif
-
+  LIBPATHS += -L $(call CONVERT_PATH,$(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src$(DELIM)board)
 endif
 
 LDLIBS = $(patsubst %.a,%,$(patsubst lib%,-l%,$(LINKLIBS)))
@@ -86,17 +73,14 @@ endif
 
 # Add the builtin library
 
-EXTRA_LIBS += -lgcc
-EXTRA_LIBPATHS += -L "${dir ${shell $(CC) $(ARCHCPUFLAGS) --print-libgcc-file-name}}"
+EXTRA_LIBS += ${wildcard ${shell $(CC) $(ARCHCPUFLAGS) --print-libgcc-file-name}}
 
 ifneq ($(CONFIG_LIBM),y)
-  EXTRA_LIBS += -lm
-  EXTRA_LIBPATHS += -L "${dir ${shell $(CC) $(ARCHCPUFLAGS) --print-file-name=libm.a}}"
+  EXTRA_LIBS += ${wildcard ${shell $(CC) $(ARCHCPUFLAGS) --print-file-name=libm.a}}
 endif
 
-ifeq ($(CONFIG_CXX_LIBSUPCXX),y)
-  EXTRA_LIBS += -lsupc++
-  EXTRA_LIBPATHS += -L "${dir ${shell $(CC) $(ARCHCPUFLAGS) --print-file-name=libsupc++.a}}"
+ifeq ($(CONFIG_LIBSUPCXX),y)
+  EXTRA_LIBS += ${wildcard ${shell $(CC) $(ARCHCPUFLAGS) --print-file-name=libsupc++.a}}
 endif
 
 VPATH = chip:common:$(ARCH_SUBDIR)
@@ -125,7 +109,7 @@ $(KBIN): $(OBJS)
 board/libboard$(LIBEXT):
 	$(Q) $(MAKE) -C board libboard$(LIBEXT) EXTRAFLAGS="$(EXTRAFLAGS)"
 
-nuttx$(EXEEXT): board/libboard$(LIBEXT)
+nuttx$(EXEEXT): board/libboard$(LIBEXT) $(ARCHSCRIPT)
 	@echo "LD: nuttx$(EXEEXT)"
 	$(Q) $(LD) $(LDFLAGS) $(LIBPATHS) $(EXTRA_LIBPATHS) \
 		-o $(NUTTX) $(EXTRA_OBJS) \
@@ -138,7 +122,7 @@ endif
 
 # This is part of the top-level export target
 
-export_startup: board/libboard$(LIBEXT) $(STARTUP_OBJS)
+export_startup: $(STARTUP_OBJS)
 	$(Q) if [ -d "$(EXPORT_DIR)/startup" ]; then \
 		cp -f $(STARTUP_OBJS) "$(EXPORT_DIR)/startup"; \
 	 else \
@@ -163,8 +147,6 @@ depend: .depend
 
 context::
 
-clean_context::
-
 clean:
 ifeq ($(BOARDMAKE),y)
 	$(Q) $(MAKE) -C board clean
@@ -172,7 +154,7 @@ endif
 	$(call DELFILE, libarch$(LIBEXT))
 	$(call CLEAN)
 
-distclean: clean
+distclean:: clean
 ifeq ($(BOARDMAKE),y)
 	$(Q) $(MAKE) -C board distclean
 endif

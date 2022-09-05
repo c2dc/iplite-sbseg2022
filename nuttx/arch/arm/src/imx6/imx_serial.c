@@ -29,20 +29,23 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
+#ifdef CONFIG_SERIAL_TERMIOS
+#  include <termios.h>
+#endif
+
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/init.h>
 #include <nuttx/fs/ioctl.h>
-#include <nuttx/semaphore.h>
 #include <nuttx/serial/serial.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "gic.h"
 #include "hardware/imx_uart.h"
 #include "imx_config.h"
@@ -187,13 +190,18 @@ struct imx_uart_s
 {
   uint32_t uartbase;    /* Base address of UART registers */
   uint32_t baud;        /* Configured baud */
+  uint32_t ie;          /* Saved enabled interrupts */
   uint32_t ucr1;        /* Saved UCR1 value */
   uint8_t  irq;         /* IRQ associated with this UART */
   uint8_t  parity;      /* 0=none, 1=odd, 2=even */
   uint8_t  bits;        /* Number of bits (7 or 8) */
   uint8_t  stopbits2:1; /* 1: Configure with 2 stop bits vs 1 */
-  uint8_t  hwfc:1;      /* 1: Hardware flow control */
-  uint8_t  reserved:6;
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+  uint8_t  iflow:1;     /* input flow control (RTS) enabled */
+#endif
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+  uint8_t  oflow:1;     /* output flow control (CTS) enabled */
+#endif
 };
 
 /****************************************************************************
@@ -214,7 +222,7 @@ static int  imx_setup(struct uart_dev_s *dev);
 static void imx_shutdown(struct uart_dev_s *dev);
 static int  imx_attach(struct uart_dev_s *dev);
 static void imx_detach(struct uart_dev_s *dev);
-static int  imx_interrupt(int irq, void *context, FAR void *arg);
+static int  imx_interrupt(int irq, void *context, void *arg);
 static int  imx_ioctl(struct file *filep, int cmd, unsigned long arg);
 static int  imx_receive(struct uart_dev_s *dev, unsigned int *status);
 static void imx_rxint(struct uart_dev_s *dev, bool enable);
@@ -227,10 +235,6 @@ static bool imx_txempty(struct uart_dev_s *dev);
 /****************************************************************************
  * Private Data
  ****************************************************************************/
-
-/* Used to assure mutually exclusive access up_putc() */
-
-static sem_t g_putc_lock = SEM_INITIALIZER(1);
 
 /* Serial driver UART operations */
 
@@ -627,7 +631,7 @@ static void imx_detach(struct uart_dev_s *dev)
  *
  ****************************************************************************/
 
-static int imx_interrupt(int irq, void *context, FAR void *arg)
+static int imx_interrupt(int irq, void *context, void *arg)
 {
   struct uart_dev_s *dev = (struct uart_dev_s *)arg;
   struct imx_uart_s *priv;
@@ -688,9 +692,10 @@ static int imx_interrupt(int irq, void *context, FAR void *arg)
 
 static int imx_ioctl(struct file *filep, int cmd, unsigned long arg)
 {
-#ifdef CONFIG_SERIAL_TIOCSERGSTRUCT
+#if defined(CONFIG_SERIAL_TIOCSERGSTRUCT) || defined(CONFIG_SERIAL_TERMIOS)
   struct inode *inode = filep->f_inode;
   struct uart_dev_s *dev   = inode->i_private;
+  irqstate_t flags;
 #endif
   int ret   = OK;
 
@@ -711,6 +716,176 @@ static int imx_ioctl(struct file *filep, int cmd, unsigned long arg)
        }
        break;
 #endif
+
+#ifdef CONFIG_SERIAL_TERMIOS
+    case TCGETS:
+      {
+        struct termios  *termiosp = (struct termios *)arg;
+        struct imx_uart_s *priv = (struct imx_uart_s *)dev->priv;
+
+        if (!termiosp)
+          {
+            ret = -EINVAL;
+            break;
+          }
+
+        /* Return parity */
+
+        termiosp->c_cflag = ((priv->parity != 0) ? PARENB : 0) |
+                            ((priv->parity == 1) ? PARODD : 0);
+
+        /* Return stop bits */
+
+        termiosp->c_cflag |= (priv->stopbits2) ? CSTOPB : 0;
+
+        /* Return flow control */
+
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+        termiosp->c_cflag |= ((priv->oflow) ? CCTS_OFLOW : 0);
+#endif
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+        termiosp->c_cflag |= ((priv->iflow) ? CRTS_IFLOW : 0);
+#endif
+        /* Return baud */
+
+        cfsetispeed(termiosp, priv->baud);
+
+        /* Return number of bits */
+
+        switch (priv->bits)
+          {
+          case 5:
+            termiosp->c_cflag |= CS5;
+            break;
+
+          case 6:
+            termiosp->c_cflag |= CS6;
+            break;
+
+          case 7:
+            termiosp->c_cflag |= CS7;
+            break;
+
+          default:
+          case 8:
+            termiosp->c_cflag |= CS8;
+            break;
+
+#if defined(CS9)
+          case 9:
+            termiosp->c_cflag |= CS9;
+            break;
+#endif
+          }
+      }
+      break;
+
+    case TCSETS:
+      {
+        struct termios  *termiosp = (struct termios *)arg;
+        struct imx_uart_s *priv = (struct imx_uart_s *)dev->priv;
+        uint32_t baud;
+        uint32_t ie;
+        uint8_t parity;
+        uint8_t nbits;
+        bool stop2;
+
+        if ((!termiosp)
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+            || ((termiosp->c_cflag & CCTS_OFLOW) && (priv->cts_gpio == 0))
+#endif
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+            || ((termiosp->c_cflag & CRTS_IFLOW) && (priv->rts_gpio == 0))
+#endif
+           )
+          {
+            ret = -EINVAL;
+            break;
+          }
+
+        /* Decode baud. */
+
+        ret = OK;
+        baud = cfgetispeed(termiosp);
+
+        /* Decode number of bits */
+
+        switch (termiosp->c_cflag & CSIZE)
+          {
+          case CS5:
+            nbits = 5;
+            break;
+
+          case CS6:
+            nbits = 6;
+            break;
+
+          case CS7:
+            nbits = 7;
+            break;
+
+          case CS8:
+            nbits = 8;
+            break;
+
+#if defined(CS9)
+          case CS9:
+            nbits = 9;
+            break;
+#endif
+          default:
+            ret = -EINVAL;
+            break;
+          }
+
+        /* Decode parity */
+
+        if ((termiosp->c_cflag & PARENB) != 0)
+          {
+            parity = (termiosp->c_cflag & PARODD) ? 1 : 2;
+          }
+        else
+          {
+            parity = 0;
+          }
+
+        /* Decode stop bits */
+
+        stop2 = (termiosp->c_cflag & CSTOPB) != 0;
+
+        /* Verify that all settings are valid before committing */
+
+        if (ret == OK)
+          {
+            /* Commit */
+
+            priv->baud      = baud;
+            priv->parity    = parity;
+            priv->bits      = nbits;
+            priv->stopbits2 = stop2;
+#ifdef CONFIG_SERIAL_OFLOWCONTROL
+            priv->oflow     = (termiosp->c_cflag & CCTS_OFLOW) != 0;
+#endif
+#ifdef CONFIG_SERIAL_IFLOWCONTROL
+            priv->iflow     = (termiosp->c_cflag & CRTS_IFLOW) != 0;
+#endif
+            /* effect the changes immediately - note that we do not
+             * implement TCSADRAIN / TCSAFLUSH
+             */
+
+            flags  = spin_lock_irqsave(NULL);
+            imx_disableuartint(priv, &ie);
+            ret = imx_setup(dev);
+
+            /* Restore the interrupt state */
+
+            imx_restoreuartint(priv, ie);
+            priv->ie = ie;
+            spin_unlock_irqrestore(NULL, flags);
+          }
+      }
+      break;
+#endif /* CONFIG_SERIAL_TERMIOS */
 
     case TIOCSBRK:  /* BSD compatibility: Turn break on, unconditionally */
     case TIOCCBRK:  /* BSD compatibility: Turn break off, unconditionally */
@@ -941,30 +1116,12 @@ int up_putc(int ch)
 {
   struct imx_uart_s *priv = (struct imx_uart_s *)CONSOLE_DEV.priv;
   uint32_t ier;
-  bool locked;
-  int ret;
-
-  /* Only one thread may enter up_putc at a time. */
-
-  locked = false;
-
-  if (!up_interrupt_context() && g_nx_initstate >= OSINIT_HARDWARE)
-    {
-      ret = nxsem_wait(&g_putc_lock);
-      if (ret < 0)
-        {
-          return ret;
-        }
-
-      locked = true;
-    }
 
   /* Disable UART interrupts and wait until the hardware is ready to send
    * a byte.
    */
 
   imx_disableuartint(priv, &ier);
-  imx_waittxready(priv);
 
   /* Check for LF */
 
@@ -972,18 +1129,11 @@ int up_putc(int ch)
     {
       /* Add CR */
 
-      imx_serialout(priv, UART_TXD_OFFSET, (uint32_t)'\r');
-      imx_waittxready(priv);
+      imx_lowputc('\r');
     }
 
-  imx_serialout(priv, UART_TXD_OFFSET, (uint32_t)ch);
-  imx_waittxready(priv);
+  imx_lowputc(ch);
   imx_restoreuartint(priv, ier);
-
-  if (locked)
-    {
-      nxsem_post(&g_putc_lock);
-    }
 
   return ch;
 }

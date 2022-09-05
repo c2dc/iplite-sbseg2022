@@ -79,24 +79,16 @@ to be resolved.  General problems are listed below.  But see the STATUS
 section associated with each configuration for additional issues specific
 to a particular configuration.
 
-  1. HSCMI. CONFIG_MMCSD_MULTIBLOCK_DISABLE=y is set to disable multi-block
+  1. HSCMI. CONFIG_MMCSD_MULTIBLOCK_LIMIT=1 is set to disable multi-block
      transfers only because I have not yet had a chance to verify this.  The
      is very low priority to me but might be important to you if you are need
      very high performance SD card accesses.
 
-  2. HSMCI TX DMA is currently disabled for the SAMV7.  There is some
-     issue with the TX DMA setup.  This is a bug that needs to be resolved.
-
-     DMA is enabled by these settings in the file arch/arm/src/samv7/sam_hsmci.c:
-
-     #undef  HSCMI_NORXDMA              /* Define to disable RX DMA */
-     #define HSCMI_NOTXDMA            1 /* Define to disable TX DMA */
-
-  3. There may also be some issues with removing and re-inserting SD cards
+  2. There may also be some issues with removing and re-inserting SD cards
      (of course with appropriate mounting and unmounting).  I all not sure
      of this and need to do more testing to characterize if the issue.
 
-  4. There is a port of the SAMA5D4-EK Ethernet driver to the SAMV71-XULT.
+  3. There is a port of the SAMA5D4-EK Ethernet driver to the SAMV71-XULT.
      This driver appears to be 100% functional with the following caveats:
 
      - There is a compiler optimization issue.  At -O2, there is odd
@@ -116,7 +108,7 @@ to a particular configuration.
        Setting write through mode eliminates the need for cleaning the D-Cache.
        If only reloading and invalidating are done, then there is no problem.
 
-  5. The USBHS device controller driver (DCD) is also fully functional.  It
+  4. The USBHS device controller driver (DCD) is also fully functional.  It
      has only be tested with the CDC/ACM driver as described below. Like
      the Ethernet driver:
 
@@ -129,29 +121,29 @@ to a particular configuration.
        only detects bus reset events.  This is probably some issue with
        480MHZ high speed clock setup, but I have not yet found the issue.
 
-  6. The full port for audio support is code complete:  WM8904 driver,
+  5. The full port for audio support is code complete:  WM8904 driver,
      SSC/I2C driver, and CS2100-CP driver.  But this code is untested.  The
      WM8904 interface was taken directly from the SAMA5D4-EK and may well
      need modification due to differences with the physical WM8904
      interface.
 
-  7. An MCAN driver as added and verified on 2015-08-08 using the loopback
+  6. An MCAN driver as added and verified on 2015-08-08 using the loopback
      test at apps/examples/can.  Like the Ethernet driver, the MCAN driver
      does not work if the D-Cache is configured in write-back mode; write-
      through mode is required.
 
-  8. An SPI slave driver as added on 2015-08-09 but has not been verified
+  7. An SPI slave driver as added on 2015-08-09 but has not been verified
      as of this writing. See discussion in include/nuttx/spi/slave.h and
      in the section entitle "SPI Slave" below.
 
-  9. A QSPI FLASH driver was added and verified on 2015-11-10.  This driver
+  8. A QSPI FLASH driver was added and verified on 2015-11-10.  This driver
      operated in the memory mapped Serial Memory Mode (SMM).  See the
      "S25FL116K QuadSPI FLASH" section below for further information.
 
- 10. On-chip FLASH support as added and verified on 2015-11-13.  See the
+  9. On-chip FLASH support as added and verified on 2015-11-13.  See the
      "Program FLASH Access" section below for further information.
 
- 11. The knsh "protected mode" configuration was added on 2015-11-18.  The
+ 10. The knsh "protected mode" configuration was added on 2015-11-18.  The
      configuration has not been tested as of this writing.
 
 Serial Console
@@ -159,6 +151,18 @@ Serial Console
 
 The SAMV71-XULT has no on-board RS-232 drivers so it will be necessary to
 use either the VCOM or an external RS-232 driver.  Here are some options.
+
+  - VCOM.  The Virtual Com Port gateway is available on USART1 and it is the
+    default console.  Besides PB04 is by default connected to debug pin TDI,
+    both JTAG port and EDBG can only be used in SWD mode in this board.
+
+    ------ --------
+    SAMV71 SAMV71
+    PIO    Function
+    ------ --------
+    PB04   TXD1
+    PA21   RXD1
+    ------ --------
 
   - Arduino Serial Shield:  One option is to use an Arduino-compatible
     serial shield.  This will use the RXD and TXD signals available at pins
@@ -219,27 +223,12 @@ use either the VCOM or an external RS-232 driver.  Here are some options.
     13   USART_RX PA21   RXD1
     14   USART_TX PB04   TXD1
 
-  - VCOM.  The Virtual Com Port gateway is available on USART1:
-
-    ------ --------
-    SAMV71 SAMV71
-    PIO    Function
-    ------ --------
-    PB04   TXD1
-    PA21   RXD1
-    ------ --------
-
 Any of these options can be selected as the serial console by:
 
   1. Enabling the UART/USART peripheral in the
      "System Type -> Peripheral Selection" menu, then
   2. Configuring the peripheral in the "Drivers -> Serial Configuration"
      menu.
-
-NOTE: If USART1 is used (TXD1, RXD1), then PB4 must be reconfigured in the
-SUPC.  Normally, PB4 is TDI.  When it is reconfigured for use with USART1,
-the capability to debug is lost!  If you plan to debug you should most
-certainly not use USART1.
 
 SD Card
 =======
@@ -278,7 +267,7 @@ Enabling HSMCI support. The SAMV7-XULT provides a one, full-size SD memory card 
   Device Drivers -> MMC/SD Driver Support
     CONFIG_MMCSD=y                        : Enable MMC/SD support
     CONFIG_MMSCD_NSLOTS=1                 : One slot per driver instance
-    CONFIG_MMCSD_MULTIBLOCK_DISABLE=y     : (REVISIT)
+    CONFIG_MMCSD_MULTIBLOCK_LIMIT=1     : (REVISIT)
     CONFIG_MMCSD_HAVE_CARDDETECT=y         : Supports card-detect PIOs
     CONFIG_MMCSD_MMCSUPPORT=n             : Interferes with some SD cards
     CONFIG_MMCSD_SPI=n                    : No SPI-based MMC/SD support
@@ -352,12 +341,12 @@ Auto-Mounter
       CONFIG_FS_AUTOMOUNTER=y
 
     Board-Specific Options
-      CONFIG_SAMV71XULT_HSMCI0_AUTOMOUNT=y
-      CONFIG_SAMV71XULT_HSMCI0_AUTOMOUNT_FSTYPE="vfat"
-      CONFIG_SAMV71XULT_HSMCI0_AUTOMOUNT_BLKDEV="/dev/mmcsd0"
-      CONFIG_SAMV71XULT_HSMCI0_AUTOMOUNT_MOUNTPOINT="/mnt/sdcard"
-      CONFIG_SAMV71XULT_HSMCI0_AUTOMOUNT_DDELAY=1000
-      CONFIG_SAMV71XULT_HSMCI0_AUTOMOUNT_UDELAY=2000
+      CONFIG_SAMV7_HSMCI0_AUTOMOUNT=y
+      CONFIG_SAMV7_HSMCI0_AUTOMOUNT_FSTYPE="vfat"
+      CONFIG_SAMV7_HSMCI0_AUTOMOUNT_BLKDEV="/dev/mmcsd0"
+      CONFIG_SAMV7_HSMCI0_AUTOMOUNT_MOUNTPOINT="/mnt/sdcard"
+      CONFIG_SAMV7_HSMCI0_AUTOMOUNT_DDELAY=1000
+      CONFIG_SAMV7_HSMCI0_AUTOMOUNT_UDELAY=2000
 
   WARNING:  SD cards should never be removed without first unmounting
   them.  This is to avoid data and possible corruption of the file
@@ -1067,7 +1056,6 @@ Testing has also been performed using the maXTouch Xplained Pro LCD
   *                                                                        *
   **************************************************************************
 
-
 maXTouch Xplained Pro Standard Extension Header
 -----------------------------------------------
 The LCD could be connected either via EXT1 or EXT2 using the 2x10 20-pin
@@ -1355,7 +1343,7 @@ MCAN1 Loopback Test
 SPI Slave
 =========
 
-  An interrutp driven SPI slave driver as added on 2015-08-09 but has not
+  An interrupt driven SPI slave driver as added on 2015-08-09 but has not
   been verified as of this writing. See discussion in include/nuttx/spi/slave.h
   and below.
 
@@ -1703,7 +1691,7 @@ NOTES:
        CONFIG_WINDOWS_CYGWIN=y             : Cywin under Windows
 
      System Type -> Toolchain:
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y : GNU ARM EABI toolchain
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : GNU ARM EABI toolchain
 
 Configuration sub-directories
 -----------------------------
@@ -2090,7 +2078,7 @@ Configuration sub-directories
 
          CONFIG_SCHED_HPWORKSTACKSIZE=2048
          CONFIG_IDLETHREAD_STACKSIZE=1024
-         CONFIG_USERMAIN_STACKSIZE=2048
+         CONFIG_INIT_STACKSIZE=2048
          CONFIG_PTHREAD_STACK_MIN=256
          CONFIG_PTHREAD_STACK_DEFAULT=2048
          CONFIG_POSIX_SPAWN_PROXY_STACKSIZE=1024
@@ -2203,7 +2191,7 @@ Configuration sub-directories
 
          CONFIG_ARCH_INTERRUPTSTACK=2048
          CONFIG_IDLETHREAD_STACKSIZE=1024
-         CONFIG_USERMAIN_STACKSIZE=2048
+         CONFIG_INIT_STACKSIZE=2048
          CONFIG_PTHREAD_STACK_DEFAULT=2048
          ... and others ...
 
@@ -2565,7 +2553,7 @@ Configuration sub-directories
 
            while (sem_wait(&session->queuesem) < 0)
            ...
-           rect = (FAR struct vnc_fbupdate_s *)sq_remfirst(&session->updqueue);
+           rect = (struct vnc_fbupdate_s *)sq_remfirst(&session->updqueue);
            DEBUGASSERT(rect != NULL);
 
          I would think that could mean only that the semaphore counting is
@@ -2575,3 +2563,178 @@ Configuration sub-directories
          probably means some kind of memory corruption.
 
        2017-01-30: knsh configuration does not yet run correctly.
+
+  mcuboot-loader:
+    This configuration exercises the port of MCUboot loader to NuttX.
+
+    In this configuration both primary, secondary and scratch partitions are
+    mapped into the internal flash.
+    Relevant configuration settings:
+
+      CONFIG_BOARD_LATE_INITIALIZE=y
+
+      CONFIG_BOOT_MCUBOOT=y
+      CONFIG_MCUBOOT_BOOTLOADER=y
+
+      CONFIG_SAMV7_FORMAT_MCUBOOT=y
+      CONFIG_INIT_ENTRYPOINT="mcuboot_loader_main"
+
+      Flash bootloader using embedded debugger:
+      openocd -f interface/cmsis-dap.cfg \
+              -c 'transport select swd' \
+	      -c 'set CHIPNAME atsamv71q21' \
+	      -f target/atsamv.cfg \
+	      -c 'reset_config srst_only' \
+	      -c init -c targets \
+	      -c 'reset halt' \
+	      -c 'program nuttx.bin 0x400000' \
+	      -c 'reset halt' \
+	      -c 'atsamv gpnvm set 1' \
+	      -c 'reset run' -c shutdown
+
+  mcuboot-swap-test:
+    This configuration exercises the MCUboot compatible application swap image
+    example. The application is NuttX nsh with some special commands.
+
+    Generate signed binaries for MCUboot compatible application:
+
+      ./apps/boot/mcuboot/mcuboot/scripts/imgtool.py sign \
+        --key apps/boot/mcuboot/mcuboot/root-rsa-2048.pem --align 8 \
+        --version 1.0.0 --header-size 0x200 --pad-header --slot-size 0xe0000 \
+        nuttx/nuttx.bin mcuboot_nuttx.app.swap.test.confirm-v1.bin
+
+      ./apps/boot/mcuboot/mcuboot/scripts/imgtool.py sign \
+        --key apps/boot/mcuboot/mcuboot/root-rsa-2048.pem --align 8 \
+        --version 2.0.0 --header-size 0x200 --pad-header --slot-size 0xe0000 \
+        nuttx/nuttx.bin mcuboot_nuttx.app.swap.test.confirm-v2.bin
+
+      Flash application version 1.0.0 at MCUboot Slot-0:
+
+      openocd -f interface/cmsis-dap.cfg \
+              -c 'transport select swd' \
+	      -c 'set CHIPNAME atsamv71q21' \
+	      -f target/atsamv.cfg \
+	      -c 'reset_config srst_only' \
+	      -c init -c targets \
+	      -c 'reset halt' \
+	      -c 'program mcuboot_nuttx.app.swap.test.confirm-v1.bin 0x420000' \
+	      -c 'reset halt' \
+	      -c 'atsamv gpnvm set 1' \
+	      -c 'reset run' -c shutdown
+
+      Flash version 2.0.0 at MCUboot Slot-1:
+
+      openocd -f interface/cmsis-dap.cfg \
+              -c 'transport select swd' \
+	      -c 'set CHIPNAME atsamv71q21' \
+	      -f target/atsamv.cfg \
+	      -c 'reset_config srst_only' \
+	      -c init -c targets \
+	      -c 'reset halt' \
+	      -c 'program mcuboot_nuttx.app.swap.test.confirm-v2.bin 0x500000' \
+	      -c 'reset halt' \
+	      -c 'atsamv gpnvm set 1' \
+	      -c 'reset run' -c shutdown
+
+    Relevant configuration settings:
+
+      CONFIG_EXAMPLES_MCUBOOT_SWAP_TEST=y
+
+      CONFIG_SAMV7_FORMAT_MCUBOOT=y
+      CONFIG_INIT_ENTRYPOINT="nsh_main"
+
+  mcuboot-agent:
+    This configuration exercises the MCUboot firmware upgrade example. The
+    application is NuttX nsh with some special commands.
+
+    Generate signed binaries for MCUboot compatible application:
+
+      ./apps/boot/mcuboot/mcuboot/scripts/imgtool.py sign \
+        --key apps/boot/mcuboot/mcuboot/root-rsa-2048.pem --align 8 \
+        --version 1.0.0 --header-size 0x200 --pad-header --slot-size 0xe0000 \
+        --confirm nuttx/nuttx.bin mcuboot_nuttx.update.agent.bin
+
+      Flash agent application at MCUboot Slot-0:
+
+      openocd -f interface/cmsis-dap.cfg \
+              -c 'transport select swd' \
+	      -c 'set CHIPNAME atsamv71q21' \
+	      -f target/atsamv.cfg \
+	      -c 'reset_config srst_only' \
+	      -c init -c targets \
+	      -c 'reset halt' \
+	      -c 'program mcuboot_nuttx.update.agent.bin 0x420000' \
+	      -c 'reset halt' \
+	      -c 'atsamv gpnvm set 1' \
+	      -c 'reset run' -c shutdown
+
+    The board is ready to perform an upgrade. However, this example requires
+    use an image to be used as new application. You can use the Confirm example,
+    which will be used in the download process.
+
+    See mcuboot-confirm for more information.
+
+    Relevant configuration settings:
+
+      CONFIG_EXAMPLES_MCUBOOT_UPDATE_AGENT=y
+
+      CONFIG_SAMV7_FORMAT_MCUBOOT=y
+      CONFIG_INIT_ENTRYPOINT="nsh_main"
+
+  mcuboot-confirm:
+
+      ./apps/boot/mcuboot/mcuboot/scripts/imgtool.py sign \
+        --key apps/boot/mcuboot/mcuboot/root-rsa-2048.pem --align 8 \
+        --version 2.0.0 --header-size 0x200 --pad-header --slot-size 0xe0000 \
+        nuttx/nuttx.bin mcuboot_nuttx.slot.confirm.bin
+
+    The mcuboot_nuttx.app.confirm.bin would be used at http server in your
+    network to be downloaded by Agent at MCUboot Slot-1.
+
+    Using Python to create a http server at your NuttX workspace:
+
+    sudo python -m http.server 8080 &
+
+    Test download:
+
+    wget <your PC IP>:8080/mcuboot_nuttx.slot.confirm.bin -O test.bin
+
+    Check MD5:
+
+    md5sum mcuboot_nuttx.slot.confirm.bin test.bin
+    958b523f1049696aba73354615868b7f  mcuboot_nuttx.slot.confirm.bin test.bin
+    958b523f1049696aba73354615868b7f  test.bin
+    rm test.bin
+
+    The OTA config uses DHCP client to get local ip address. This way your board
+    will have automatically access to your network. Let's check board.
+
+    ping <your PC IP>
+    PING xxx.xxx.xxx.xxx 56 bytes of data
+    56 bytes from xxx.xxx.xxx.xxx: icmp_seq=0 time=0 ms
+    56 bytes from xxx.xxx.xxx.xxx: icmp_seq=1 time=0 ms
+    ...
+    56 bytes from xxx.xxx.xxx.xxx: icmp_seq=9 time=0 ms
+    10 packets transmitted, 10 received, 0% packet loss, time 10100 ms
+
+    nsh> mcuboot_agent http://xxx.xxx.xxx.xxx:8080/mcuboot_nuttx.slot.confirm.bin
+    MCUboot Update Agen192.168.10.104 - - [16/Dec/2021 19:29:08]
+    "GET /mcuboot_nuttx.slot.confirm.bin HTTP/1.0" 200 -t example
+    Downloading from http://xxx.xxx.xxx.xxx:8080/signedv2.bin
+    Firmware Update size: 194464 bytes
+    Received: 512      of 194464 bytes [0%]
+    Received: 1024     of 194464 bytes [0%]
+    ...
+    Received: 194048   of 194464 bytes [99%]
+    Received: 194468   of 194468 bytes [100%]
+    Application Image successfully downloaded!
+    Requested update for next boot. Restarting...
+    *** Booting MCUboot build 7c890f4b075aed73e4c825ccf875b2fb9ebf2ded ***
+    Application Image successfully confirmed!
+
+    Relevant configuration settings:
+
+      CONFIG_EXAMPLES_MCUBOOT_SLOT_CONFIRM=y
+
+      CONFIG_SAMV7_FORMAT_MCUBOOT=y
+      CONFIG_INIT_ENTRYPOINT="nsh_main"

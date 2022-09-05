@@ -1,37 +1,20 @@
 /****************************************************************************
  * boards/arm/stm32l4/nucleo-l496zg/src/nucleo-144.h
  *
- *   Copyright (C) 2016, 2019 Gregory Nutt. All rights reserved.
- *   Authors: Gregory Nutt <gnutt@nuttx.org>
- *            Mark Olsson <post@markolsson.se>
- *            David Sidrane <david_s5@nscdg.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -105,33 +88,18 @@
 #define GPIO_SPI_CS    (GPIO_OUTPUT | GPIO_PUSHPULL | GPIO_SPEED_50MHz | \
                         GPIO_OUTPUT_SET)
 
-#define GPIO_SPI1_CS0   (GPIO_SPI_CS | GPIO_PORTD | GPIO_PIN14)
-#define GPIO_SPI1_CS1   (GPIO_SPI_CS | GPIO_PORTC | GPIO_PIN15)
-#define GPIO_SPI1_CS2   (GPIO_SPI_CS | GPIO_PORTC | GPIO_PIN14)
-#define GPIO_SPI1_CS3   (GPIO_SPI_CS | GPIO_PORTC | GPIO_PIN2)
-#define GPIO_SPI2_CS0   (GPIO_SPI_CS | GPIO_PORTD | GPIO_PIN7)
-#define GPIO_SPI2_CS1   (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN1)
-#define GPIO_SPI2_CS2   (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN2)
-#define GPIO_SPI2_CS3   (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN3)
-#define GPIO_SPI3_CS0   (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN4)
-#define GPIO_SPI3_CS1   (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN5)
-#define GPIO_SPI3_CS2   (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN6)
-#define GPIO_SPI3_CS3   (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN7)
-
-/* Logical SPI Chip Selects used to index */
-
-#define NUCLEO_SPI_BUS1_CS0  0
-#define NUCLEO_SPI_BUS1_CS1  1
-#define NUCLEO_SPI_BUS1_CS2  2
-#define NUCLEO_SPI_BUS1_CS3  3
-#define NUCLEO_SPI_BUS2_CS0  4
-#define NUCLEO_SPI_BUS2_CS1  5
-#define NUCLEO_SPI_BUS2_CS2  6
-#define NUCLEO_SPI_BUS2_CS3  7
-#define NUCLEO_SPI_BUS3_CS0  8
-#define NUCLEO_SPI_BUS3_CS1  9
-#define NUCLEO_SPI_BUS3_CS2  10
-#define NUCLEO_SPI_BUS3_CS3  11
+#define GPIO_SPI1_CS0  (GPIO_SPI_CS | GPIO_PORTD | GPIO_PIN14)
+#define GPIO_SPI1_CS1  (GPIO_SPI_CS | GPIO_PORTC | GPIO_PIN15)
+#define GPIO_SPI1_CS2  (GPIO_SPI_CS | GPIO_PORTC | GPIO_PIN14)
+#define GPIO_SPI1_CS3  (GPIO_SPI_CS | GPIO_PORTC | GPIO_PIN2)
+#define GPIO_SPI2_CS0  (GPIO_SPI_CS | GPIO_PORTD | GPIO_PIN7)
+#define GPIO_SPI2_CS1  (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN1)
+#define GPIO_SPI2_CS2  (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN2)
+#define GPIO_SPI2_CS3  (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN3)
+#define GPIO_SPI3_CS0  (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN4)
+#define GPIO_SPI3_CS1  (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN5)
+#define GPIO_SPI3_CS2  (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN6)
+#define GPIO_SPI3_CS3  (GPIO_SPI_CS | GPIO_PORTG | GPIO_PIN7)
 
 #if defined(CONFIG_STM32L4_SDMMC1) || defined(CONFIG_STM32L4_SDMMC2)
 # define HAVE_SDIO

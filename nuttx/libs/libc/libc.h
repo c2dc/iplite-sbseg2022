@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __LIBC_LIBC_H
-#define __LIBC_LIBC_H
+#ifndef __LIBS_LIBC_LIBC_H
+#define __LIBS_LIBC_LIBC_H
 
 /****************************************************************************
  * Included Files
@@ -35,7 +35,6 @@
 #include <semaphore.h>
 
 #include <nuttx/lib/lib.h>
-#include <nuttx/kmalloc.h>
 #include <nuttx/streams.h>
 
 /****************************************************************************
@@ -48,53 +47,8 @@
  * directory.
  */
 
-#ifndef CONFIG_LIB_HOMEDIR
-# define CONFIG_LIB_HOMEDIR "/"
-#endif
-
-/* The NuttX C library an be build in two modes: (1) as a standard, C-library
- * that can be used by normal, user-space applications, or (2) as a special,
- * kernel-mode C-library only used within the OS.  If NuttX is not being
- * built as separated kernel- and user-space modules, then only the first
- * mode is supported.
- */
-
-#if !defined(CONFIG_BUILD_FLAT) && defined(__KERNEL__)
-
-  /* Domain-specific allocations */
-
-#  define lib_malloc(s)      kmm_malloc(s)
-#  define lib_zalloc(s)      kmm_zalloc(s)
-#  define lib_realloc(p,s)   kmm_realloc(p,s)
-#  define lib_memalign(p,s)  kmm_memalign(p,s)
-#  define lib_free(p)        kmm_free(p)
-
-  /* User-accessible allocations */
-
-#  define lib_umalloc(s)     kumm_malloc(s)
-#  define lib_uzalloc(s)     kumm_zalloc(s)
-#  define lib_urealloc(p,s)  kumm_realloc(p,s)
-#  define lib_umemalign(p,s) kumm_memalign(p,s)
-#  define lib_ufree(p)       kumm_free(p)
-
-#else
-
-  /* Domain-specific allocations */
-
-#  define lib_malloc(s)      malloc(s)
-#  define lib_zalloc(s)      zalloc(s)
-#  define lib_realloc(p,s)   realloc(p,s)
-#  define lib_memalign(p,s)  memalign(p,s)
-#  define lib_free(p)        free(p)
-
-  /* User-accessible allocations */
-
-#  define lib_umalloc(s)     malloc(s)
-#  define lib_uzalloc(s)     zalloc(s)
-#  define lib_urealloc(p,s)  realloc(p,s)
-#  define lib_umemalign(p,s) memalign(p,s)
-#  define lib_ufree(p)       free(p)
-
+#ifndef CONFIG_LIBC_HOMEDIR
+# define CONFIG_LIBC_HOMEDIR "/"
 #endif
 
 #define LIB_BUFLEN_UNKNOWN INT_MAX
@@ -123,8 +77,8 @@ extern "C"
 /* Defined in lib_streamsem.c */
 
 #ifdef CONFIG_FILE_STREAM
-void  stream_semtake(FAR struct streamlist *list);
-void  stream_semgive(FAR struct streamlist *list);
+void  lib_stream_semtake(FAR struct streamlist *list);
+void  lib_stream_semgive(FAR struct streamlist *list);
 #endif
 
 /* Defined in lib_dtoa.c */
@@ -204,9 +158,13 @@ ssize_t lib_parse_hostfile(FAR FILE *stream, FAR struct hostent *host,
 int lib_restoredir(void);
 #endif
 
+/* Defined in lib_cxx_initialize.c */
+
+void lib_cxx_initialize(void);
+
 #undef EXTERN
 #if defined(__cplusplus)
 }
 #endif
 
-#endif /* __LIBC_LIBC_H */
+#endif /* __LIBS_LIBC_LIBC_H */

@@ -18,13 +18,14 @@
  *
  ****************************************************************************/
 
-#ifndef _ARCH_RISCV_SRC_K210_K210_MEMORYMAP_H
-#define _ARCH_RISCV_SRC_K210_K210_MEMORYMAP_H
+#ifndef __ARCH_RISCV_SRC_K210_K210_MEMORYMAP_H
+#define __ARCH_RISCV_SRC_K210_K210_MEMORYMAP_H
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
+#include "riscv_common_memorymap.h"
 #include "hardware/k210_memorymap.h"
 #include "hardware/k210_uart.h"
 #include "hardware/k210_clint.h"
@@ -43,11 +44,7 @@
 #define K210_IDLESTACK_BASE  _ebss
 #endif
 
-#define K210_IDLESTACK_SIZE (CONFIG_IDLETHREAD_STACKSIZE & ~7)
+#define K210_IDLESTACK0_BASE (K210_IDLESTACK_BASE)
+#define K210_IDLESTACK0_TOP  (K210_IDLESTACK0_BASE + CONFIG_IDLETHREAD_STACKSIZE)
 
-#define K210_IDLESTACK0_TOP  (K210_IDLESTACK_BASE + K210_IDLESTACK_SIZE)
-#define K210_IDLESTACK1_TOP  (K210_IDLESTACK0_TOP + K210_IDLESTACK_SIZE)
-
-#define K210_IDLESTACK_TOP   (K210_IDLESTACK1_TOP)
-
-#endif /* _ARCH_RISCV_SRC_K210_K210_MEMORYMAP_H */
+#endif /* __ARCH_RISCV_SRC_K210_K210_MEMORYMAP_H */

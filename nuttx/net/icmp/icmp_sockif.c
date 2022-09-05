@@ -81,7 +81,8 @@ const struct sock_intf_s g_icmp_sockif =
   icmp_netpoll,     /* si_poll */
   icmp_sendmsg,     /* si_sendmsg */
   icmp_recvmsg,     /* si_recvmsg */
-  icmp_close        /* si_close */
+  icmp_close,       /* si_close */
+  icmp_ioctl        /* si_ioctl */
 };
 
 /****************************************************************************
@@ -161,7 +162,7 @@ static int icmp_setup(FAR struct socket *psock, int protocol)
 
 static sockcaps_t icmp_sockcaps(FAR struct socket *psock)
 {
-  return 0;
+  return SOCKCAP_NONBLOCKING;
 }
 
 /****************************************************************************
@@ -475,7 +476,7 @@ static int icmp_close(FAR struct socket *psock)
     {
       /* Yes... free any read-ahead data */
 
-      iob_free_queue(&conn->readahead, IOBUSER_NET_SOCK_ICMP);
+      iob_free_queue(&conn->readahead);
 
       /* Then free the connection structure */
 

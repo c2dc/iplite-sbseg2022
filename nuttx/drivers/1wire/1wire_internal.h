@@ -1,35 +1,20 @@
 /****************************************************************************
  * drivers/1wire/1wire_internal.h
  *
- *   Copyright (C) 2018 Haltian Ltd. All rights reserved.
- *   Author: Juha Niskanen <juha.niskanen@haltian.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -43,7 +28,7 @@
 #include <nuttx/config.h>
 
 #include <stdbool.h>
-#include <nuttx/semaphore.h>
+#include <nuttx/mutex.h>
 #include <nuttx/power/pm.h>
 
 /****************************************************************************
@@ -52,17 +37,10 @@
 
 struct onewire_dev_s;
 
-struct onewire_sem_s
-{
-  sem_t sem;
-  pid_t holder;                        /* The current holder of the semaphore */
-  int16_t count;                       /* Number of counts held */
-};
-
 struct onewire_master_s
 {
   FAR struct onewire_dev_s *dev;       /* 1-Wire lower half */
-  struct onewire_sem_s devsem;         /* Re-entrant semaphore */
+  rmutex_t devlock;                    /* Re-entrant lock */
   int nslaves;                         /* Number of 1-wire slaves */
   int maxslaves;                       /* Maximum number of 1-wire slaves */
   bool insearch;                       /* If we are in middle of 1-wire search */
@@ -81,19 +59,11 @@ struct onewire_slave_s
  * Public Function Prototypes
  ****************************************************************************/
 
-/* CRC helpers from 1wire_crc.c */
+/* Additional CRC helpers from 1wire_crc.c */
 
-uint8_t onewire_crc8(FAR const uint8_t *input, uint8_t len);
-uint16_t onewire_crc16(FAR const uint8_t *input, uint16_t len,
-                       uint16_t initial_crc);
 bool onewire_valid_rom(uint64_t rom);
-bool onewire_check_crc16(FAR const uint8_t *input, uint16_t len,
-                         FAR const uint8_t *inverted_crc);
 
 /* Rest are from 1wire.c */
-
-int  onewire_sem_wait(FAR struct onewire_master_s *master);
-void onewire_sem_post(FAR struct onewire_master_s *master);
 
 int onewire_addslave(FAR struct onewire_master_s *master,
                      FAR struct onewire_slave_s *slave);
@@ -116,7 +86,8 @@ int onewire_reset_resume(FAR struct onewire_master_s *master);
  *
  ****************************************************************************/
 
-int onewire_reset_select(FAR struct onewire_slave_s *slave);
+int onewire_reset_select(FAR struct onewire_master_s *master,
+                         uint64_t romcode);
 
 /****************************************************************************
  * Name: onewire_triplet
@@ -146,7 +117,9 @@ int onewire_triplet(FAR struct onewire_master_s *master,
  *
  * Description:
  *   Search all devices from a 1-wire network. This is the 1-wire search
- *   algorithm from Maxim Application Note 187.
+ *   algorithm from Maxim Application Note 187. Note! This is an atomic
+ *   operation. The callback 'cb_search' can't execute any function that will
+ *   lock this bus, because of the locked state as long the search is active.
  *
  * Input Parameters:
  *   master    - Pointer to the allocated 1-wire interface
@@ -166,34 +139,6 @@ int onewire_search(FAR struct onewire_master_s *master,
                    CODE void (*cb_search)(int family,
                                           uint64_t romcode,
                                           FAR void *arg),
-                   FAR  void *arg);
-
-/****************************************************************************
- * Name: onewire_initialize
- *
- * Description:
- *   Return 1-wire bus master from 1-wire lower half device.
- *
- * Input Parameters:
- *   dev       - Pointer to the allocated 1-wire lower half
- *   maxslaves - Maximum number of 1-wire slave devices
- *
- ****************************************************************************/
-
-FAR struct onewire_master_s *
-  onewire_initialize(FAR struct onewire_dev_s *dev, int maxslaves);
-
-/****************************************************************************
- * Name: onewire_uninitialize
- *
- * Description:
- *   Release 1-wire bus master.
- *
- * Input Parameters:
- *   master    - Pointer to the allocated 1-wire master
- *
- ****************************************************************************/
-
-int onewire_uninitialize(FAR struct onewire_master_s *master);
+                   FAR void *arg);
 
 #endif /* __DRIVERS_1WIRE_1WIRE_INTERNAL_H */

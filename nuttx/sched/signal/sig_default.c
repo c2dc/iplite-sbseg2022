@@ -33,7 +33,7 @@
 #include <assert.h>
 
 #include <nuttx/sched.h>
-#include <nuttx/irq.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/signal.h>
 
 #include "group/group.h"
@@ -194,13 +194,6 @@ static void nxsig_abnormal_termination(int signo)
 {
   FAR struct tcb_s *rtcb = (FAR struct tcb_s *)this_task();
 
-  /* Notify the target if the non-cancelable or deferred cancellation set */
-
-  if (nxnotify_cancellation(rtcb))
-    {
-      return;
-    }
-
   /* Careful:  In the multi-threaded task, the signal may be handled on a
    * child pthread.
    */
@@ -229,6 +222,8 @@ static void nxsig_abnormal_termination(int signo)
   else
 #endif
     {
+      UNUSED(rtcb);
+
       /* Exit to terminate the task (note that exit() vs. _exit() is used. */
 
       exit(EXIT_FAILURE);

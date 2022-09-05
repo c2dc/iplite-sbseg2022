@@ -43,6 +43,7 @@
 #include "pthread/pthread.h"
 #include "mqueue/mqueue.h"
 #include "group/group.h"
+#include "tls/tls.h"
 
 /****************************************************************************
  * Private Functions
@@ -127,6 +128,17 @@ static void group_remove(FAR struct task_group_s *group)
 
 static inline void group_release(FAR struct task_group_s *group)
 {
+#ifdef CONFIG_ARCH_ADDRENV
+  save_addrenv_t oldenv;
+  int i;
+#endif
+
+#if CONFIG_TLS_TASK_NELEM > 0
+  task_tls_destruct();
+#endif
+
+  task_uninit_info(group);
+
 #if defined(CONFIG_SCHED_HAVE_PARENT) && defined(CONFIG_SCHED_CHILD_STATUS)
   /* Free all un-reaped child exit status */
 
@@ -167,16 +179,6 @@ static inline void group_release(FAR struct task_group_s *group)
   /* Release any resource held by shared memory virtual page allocator */
 
   shm_group_release(group);
-#endif
-
-#ifdef CONFIG_ARCH_ADDRENV
-  /* Destroy the group address environment */
-
-  up_addrenv_destroy(&group->tg_addrenv);
-
-  /* Mark no address environment */
-
-  g_pid_current = INVALID_PROCESS_ID;
 #endif
 
 #if defined(HAVE_GROUP_MEMBERS) || defined(CONFIG_ARCH_ADDRENV)
@@ -233,6 +235,30 @@ static inline void group_release(FAR struct task_group_s *group)
       binfmt_exit(group->tg_bininfo);
       group->tg_bininfo = NULL;
     }
+#endif
+
+#ifdef CONFIG_ARCH_ADDRENV
+  /* Switch the addrenv and also save the current addrenv */
+
+  up_addrenv_select(&group->tg_addrenv, &oldenv);
+
+  /* Destroy the group address environment */
+
+  up_addrenv_destroy(&group->tg_addrenv);
+
+  /* Mark no address environment */
+
+  for (i = 0; i < CONFIG_SMP_NCPUS; i++)
+    {
+      if (group == g_group_current[i])
+        {
+          g_group_current[i] = NULL;
+        }
+    }
+
+  /* Restore the previous addrenv */
+
+  up_addrenv_restore(&oldenv);
 #endif
 
 #if defined(CONFIG_SCHED_WAITPID) && !defined(CONFIG_SCHED_HAVE_PARENT)

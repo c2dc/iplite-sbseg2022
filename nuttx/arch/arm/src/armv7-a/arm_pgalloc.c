@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -54,7 +55,7 @@ static uintptr_t alloc_pgtable(void)
 {
   irqstate_t flags;
   uintptr_t paddr;
-  FAR uint32_t *l2table;
+  uint32_t *l2table;
 #ifndef CONFIG_ARCH_PGPOOL_MAPPING
   uint32_t l1save;
 #endif
@@ -62,6 +63,7 @@ static uintptr_t alloc_pgtable(void)
   /* Allocate one physical page for the L2 page table */
 
   paddr = mm_pgalloc(1);
+  binfo("a new l2 page table (paddr=%x)\n", paddr);
   if (paddr)
     {
       DEBUGASSERT(MM_ISALIGNED(paddr));
@@ -71,14 +73,14 @@ static uintptr_t alloc_pgtable(void)
 #ifdef CONFIG_ARCH_PGPOOL_MAPPING
       /* Get the virtual address corresponding to the physical page address */
 
-      l2table = (FAR uint32_t *)arm_pgvaddr(paddr);
+      l2table = (uint32_t *)arm_pgvaddr(paddr);
 #else
       /* Temporarily map the page into the virtual address space */
 
       l1save = mmu_l1_getentry(ARCH_SCRATCH_VBASE);
       mmu_l1_setentry(paddr & ~SECTION_MASK, ARCH_SCRATCH_VBASE,
                       MMU_MEMFLAGS);
-      l2table = (FAR uint32_t *)(ARCH_SCRATCH_VBASE |
+      l2table = (uint32_t *)(ARCH_SCRATCH_VBASE |
                                  (paddr & SECTION_MASK));
 #endif
 
@@ -113,7 +115,7 @@ static uintptr_t alloc_pgtable(void)
  *
  ****************************************************************************/
 
-static int get_pgtable(FAR group_addrenv_t *addrenv, uintptr_t vaddr)
+static int get_pgtable(group_addrenv_t *addrenv, uintptr_t vaddr)
 {
   uint32_t l1entry;
   uintptr_t paddr;
@@ -148,7 +150,7 @@ static int get_pgtable(FAR group_addrenv_t *addrenv, uintptr_t vaddr)
            */
 
           l1entry = paddr | MMU_L1_PGTABFLAGS;
-          addrenv->heap[hpndx] = (FAR uintptr_t *)l1entry;
+          addrenv->heap[hpndx] = (uintptr_t *)l1entry;
 
           /* And instantiate the modified environment */
 
@@ -198,9 +200,9 @@ static int get_pgtable(FAR group_addrenv_t *addrenv, uintptr_t vaddr)
 
 uintptr_t pgalloc(uintptr_t brkaddr, unsigned int npages)
 {
-  FAR struct tcb_s *tcb = nxsched_self();
-  FAR struct task_group_s *group;
-  FAR uint32_t *l2table;
+  struct tcb_s *tcb = nxsched_self();
+  struct task_group_s *group;
+  uint32_t *l2table;
   irqstate_t flags;
   uintptr_t paddr;
 #ifndef CONFIG_ARCH_PGPOOL_MAPPING
@@ -208,6 +210,8 @@ uintptr_t pgalloc(uintptr_t brkaddr, unsigned int npages)
 #endif
   unsigned int index;
 
+  binfo("tcb->pid=%d tcb->group=%p\n", tcb->pid, tcb->group);
+  binfo("brkaddr=%x npages=%d\n", brkaddr, npages);
   DEBUGASSERT(tcb && tcb->group);
   group = tcb->group;
 
@@ -234,6 +238,8 @@ uintptr_t pgalloc(uintptr_t brkaddr, unsigned int npages)
       /* Get the physical address of the level 2 page table */
 
       paddr = get_pgtable(&group->tg_addrenv, brkaddr);
+      binfo("l2 page table (paddr=%x)\n", paddr);
+      binfo("brkaddr=%x\n", brkaddr);
       if (paddr == 0)
         {
           return 0;
@@ -244,7 +250,7 @@ uintptr_t pgalloc(uintptr_t brkaddr, unsigned int npages)
 #ifdef CONFIG_ARCH_PGPOOL_MAPPING
       /* Get the virtual address corresponding to the physical page address */
 
-      l2table = (FAR uint32_t *)arm_pgvaddr(paddr);
+      l2table = (uint32_t *)arm_pgvaddr(paddr);
 #else
       /* Temporarily map the level 2 page table into the "scratch" virtual
        * address space
@@ -253,13 +259,14 @@ uintptr_t pgalloc(uintptr_t brkaddr, unsigned int npages)
       l1save = mmu_l1_getentry(ARCH_SCRATCH_VBASE);
       mmu_l1_setentry(paddr & ~SECTION_MASK, ARCH_SCRATCH_VBASE,
                       MMU_MEMFLAGS);
-      l2table = (FAR uint32_t *)(ARCH_SCRATCH_VBASE |
+      l2table = (uint32_t *)(ARCH_SCRATCH_VBASE |
                                  (paddr & SECTION_MASK));
 #endif
 
       /* Back up L2 entry with physical memory */
 
       paddr = mm_pgalloc(1);
+      binfo("a new page (paddr=%x)\n", paddr);
       if (paddr == 0)
         {
 #ifndef CONFIG_ARCH_PGPOOL_MAPPING

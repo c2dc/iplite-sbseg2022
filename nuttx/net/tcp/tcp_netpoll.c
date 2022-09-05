@@ -30,6 +30,7 @@
 #include <debug.h>
 
 #include <nuttx/net/net.h>
+#include <nuttx/net/tcp.h>
 #include <nuttx/semaphore.h>
 
 #include "devif/devif.h"
@@ -51,7 +52,7 @@
  *
  * Input Parameters:
  *   dev      The structure of the network driver that caused the event
- *   conn     The connection structure associated with the socket
+ *   pvpriv   An instance of struct tcp_poll_s cast to void*
  *   flags    Set of events describing why the callback was invoked
  *
  * Returned Value:
@@ -63,14 +64,14 @@
  ****************************************************************************/
 
 static uint16_t tcp_poll_eventhandler(FAR struct net_driver_s *dev,
-                                      FAR void *conn,
                                       FAR void *pvpriv, uint16_t flags)
 {
-  FAR struct tcp_poll_s *info = (FAR struct tcp_poll_s *)pvpriv;
+  FAR struct tcp_poll_s *info = pvpriv;
+  int reason;
 
   ninfo("flags: %04x\n", flags);
 
-  DEBUGASSERT(info == NULL || (info->psock != NULL && info->fds != NULL));
+  DEBUGASSERT(info == NULL || (info->conn != NULL && info->fds != NULL));
 
   /* 'priv' might be null in some race conditions (?) */
 
@@ -85,13 +86,56 @@ static uint16_t tcp_poll_eventhandler(FAR struct net_driver_s *dev,
           eventset |= POLLIN & info->fds->events;
         }
 
+      /* Non-blocking connection */
+
+      if ((flags & TCP_CONNECTED) != 0)
+        {
+          eventset |= POLLOUT & info->fds->events;
+        }
+
       /* Check for a loss of connection events. */
 
       if ((flags & TCP_DISCONN_EVENTS) != 0)
         {
+          /* TCP_TIMEDOUT: Connection aborted due to too many
+           *               retransmissions.
+           */
+
+          if ((flags & TCP_TIMEDOUT) != 0)
+            {
+              /* Indicate that the connection timedout?) */
+
+              reason = ETIMEDOUT;
+            }
+
+          else if ((flags & NETDEV_DOWN) != 0)
+            {
+              /* The network device went down.  Indicate that the remote host
+               * is unreachable.
+               */
+
+              reason = ENETUNREACH;
+            }
+
+          /* TCP_CLOSE: The remote host has closed the connection
+           * TCP_ABORT: The remote host has aborted the connection
+           */
+
+          else
+            {
+              /* Indicate that remote host refused the connection */
+
+              reason = ECONNREFUSED;
+            }
+
+#ifdef CONFIG_NET_SOCKOPTS
+          info->conn->sconn.s_error = reason;
+#endif
+          set_errno(reason);
+
           /* Mark that the connection has been lost */
 
-          tcp_lost_connection(info->psock, info->cb, flags);
+          tcp_lost_connection(info->conn, info->cb, flags);
           eventset |= (POLLERR | POLLHUP);
         }
 
@@ -104,7 +148,7 @@ static uint16_t tcp_poll_eventhandler(FAR struct net_driver_s *dev,
        * this callback to be inserted after psock_send_eventhandler.
        */
 
-      else if (psock_tcp_cansend(info->psock) >= 0
+      else if (psock_tcp_cansend(info->conn) >= 0
 #if defined(CONFIG_NET_TCP_WRITE_BUFFERS)
                || (flags & TCP_ACKDATA) != 0
 #endif
@@ -153,28 +197,35 @@ static uint16_t tcp_poll_eventhandler(FAR struct net_driver_s *dev,
 
 int tcp_pollsetup(FAR struct socket *psock, FAR struct pollfd *fds)
 {
-  FAR struct tcp_conn_s *conn = psock->s_conn;
+  FAR struct tcp_conn_s *conn;
   FAR struct tcp_poll_s *info;
   FAR struct devif_callback_s *cb;
+  bool nonblock_conn;
   int ret = OK;
+
+  /* Some of the following must be atomic */
+
+  net_lock();
+
+  conn = psock->s_conn;
 
   /* Sanity check */
 
-#ifdef CONFIG_DEBUG_FEATURES
   if (!conn || !fds)
     {
-      return -EINVAL;
+      ret = -EINVAL;
+      goto errout_with_lock;
     }
-#endif
 
-  /* Some of the  following must be atomic */
+  /* Non-blocking connection ? */
 
-  net_lock();
+  nonblock_conn = (conn->tcpstateflags == TCP_SYN_SENT &&
+                   _SS_ISNONBLOCK(conn->sconn.s_flags));
 
   /* Find a container to hold the poll information */
 
   info = conn->pollinfo;
-  while (info->psock != NULL)
+  while (info->conn != NULL)
     {
       if (++info >= &conn->pollinfo[CONFIG_NET_TCP_NPOLLWAITERS])
         {
@@ -194,9 +245,9 @@ int tcp_pollsetup(FAR struct socket *psock, FAR struct pollfd *fds)
 
   /* Initialize the poll info container */
 
-  info->psock  = psock;
-  info->fds    = fds;
-  info->cb     = cb;
+  info->conn = conn;
+  info->fds  = fds;
+  info->cb   = cb;
 
   /* Initialize the callback structure.  Save the reference to the info
    * structure as callback private data so that it will be available during
@@ -214,6 +265,13 @@ int tcp_pollsetup(FAR struct socket *psock, FAR struct pollfd *fds)
                    | TCP_ACKDATA
 #endif
                    ;
+
+      /* Monitor the connected event */
+
+      if (nonblock_conn)
+        {
+          cb->flags |= TCP_CONNECTED;
+        }
     }
 
   if ((fds->events & POLLIN) != 0)
@@ -229,7 +287,7 @@ int tcp_pollsetup(FAR struct socket *psock, FAR struct pollfd *fds)
 
   /* Check for read data or backlogged connection availability now */
 
-  if (!IOB_QEMPTY(&conn->readahead) || tcp_backlogavailable(conn))
+  if (conn->readahead != NULL || tcp_backlogavailable(conn))
     {
       /* Normal data may be read without blocking. */
 
@@ -276,7 +334,8 @@ int tcp_pollsetup(FAR struct socket *psock, FAR struct pollfd *fds)
    *    Action: Return with POLLHUP|POLLERR events
    */
 
-  if (!_SS_ISCONNECTED(psock->s_flags) && !_SS_ISLISTENING(psock->s_flags))
+  if (!nonblock_conn && !_SS_ISCONNECTED(conn->sconn.s_flags) &&
+      !_SS_ISLISTENING(conn->sconn.s_flags))
     {
       /* We were previously connected but lost the connection either due
        * to a graceful shutdown by the remote peer or because of some
@@ -285,7 +344,8 @@ int tcp_pollsetup(FAR struct socket *psock, FAR struct pollfd *fds)
 
       fds->revents |= (POLLERR | POLLHUP);
     }
-  else if (_SS_ISCONNECTED(psock->s_flags) && psock_tcp_cansend(psock) >= 0)
+  else if (_SS_ISCONNECTED(conn->sconn.s_flags) &&
+           psock_tcp_cansend(conn) >= 0)
     {
       fds->revents |= (POLLWRNORM & fds->events);
     }
@@ -322,22 +382,27 @@ errout_with_lock:
 
 int tcp_pollteardown(FAR struct socket *psock, FAR struct pollfd *fds)
 {
-  FAR struct tcp_conn_s *conn = psock->s_conn;
+  FAR struct tcp_conn_s *conn;
   FAR struct tcp_poll_s *info;
+
+  /* Some of the following must be atomic */
+
+  net_lock();
+
+  conn = psock->s_conn;
 
   /* Sanity check */
 
-#ifdef CONFIG_DEBUG_FEATURES
   if (!conn || !fds->priv)
     {
+      net_unlock();
       return -EINVAL;
     }
-#endif
 
   /* Recover the socket descriptor poll state info from the poll structure */
 
   info = (FAR struct tcp_poll_s *)fds->priv;
-  DEBUGASSERT(info != NULL && info->fds != NULL && info->cb != NULL);
+  DEBUGASSERT(info->fds != NULL && info->cb != NULL);
   if (info != NULL)
     {
       /* Release the callback */
@@ -350,8 +415,10 @@ int tcp_pollteardown(FAR struct socket *psock, FAR struct pollfd *fds)
 
       /* Then free the poll info container */
 
-      info->psock = NULL;
+      info->conn = NULL;
     }
+
+  net_unlock();
 
   return OK;
 }

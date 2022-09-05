@@ -1,35 +1,20 @@
 /****************************************************************************
  * net/usrsock/usrsock_recvmsg.c
  *
- *  Copyright (C) 2015, 2017 Haltian Ltd. All rights reserved.
- *  Author: Jussi Kivilinna <jussi.kivilinna@haltian.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -59,11 +44,10 @@
  ****************************************************************************/
 
 static uint16_t recvfrom_event(FAR struct net_driver_s *dev,
-                               FAR void *pvconn, FAR void *pvpriv,
-                               uint16_t flags)
+                               FAR void *pvpriv, uint16_t flags)
 {
   FAR struct usrsock_data_reqstate_s *pstate = pvpriv;
-  FAR struct usrsock_conn_s *conn = pvconn;
+  FAR struct usrsock_conn_s *conn = pstate->reqstate.conn;
 
   if (flags & USRSOCK_EVENT_ABORT)
     {
@@ -119,11 +103,11 @@ static uint16_t recvfrom_event(FAR struct net_driver_s *dev,
 
       nxsem_post(&pstate->reqstate.recvsem);
     }
-  else if (flags & USRSOCK_EVENT_REMOTE_CLOSED)
+  else if (flags & USRSOCK_EVENT_RECVFROM_AVAIL)
     {
-      ninfo("remote closed.\n");
+      ninfo("recvfrom avail.\n");
 
-      pstate->reqstate.result = -EPIPE;
+      flags &= ~USRSOCK_EVENT_RECVFROM_AVAIL;
 
       /* Stop further callbacks */
 
@@ -135,11 +119,11 @@ static uint16_t recvfrom_event(FAR struct net_driver_s *dev,
 
       nxsem_post(&pstate->reqstate.recvsem);
     }
-  else if (flags & USRSOCK_EVENT_RECVFROM_AVAIL)
+  else if (flags & USRSOCK_EVENT_REMOTE_CLOSED)
     {
-      ninfo("recvfrom avail.\n");
+      ninfo("remote closed.\n");
 
-      flags &= ~USRSOCK_EVENT_RECVFROM_AVAIL;
+      pstate->reqstate.result = -EPIPE;
 
       /* Stop further callbacks */
 
@@ -174,9 +158,9 @@ static int do_recvfrom_request(FAR struct usrsock_conn_s *conn,
       addrlen = UINT16_MAX;
     }
 
-  if (buflen > UINT16_MAX)
+  if (buflen > UINT32_MAX)
     {
-      buflen = UINT16_MAX;
+      buflen = UINT32_MAX;
     }
 
   /* Prepare request for daemon to read. */
@@ -304,7 +288,8 @@ ssize_t usrsock_recvmsg(FAR struct socket *psock, FAR struct msghdr *msg,
     {
       /* Check if remote end has closed connection. */
 
-      if (conn->flags & USRSOCK_EVENT_REMOTE_CLOSED)
+      if (conn->flags & USRSOCK_EVENT_REMOTE_CLOSED &&
+          !(conn->flags & USRSOCK_EVENT_RECVFROM_AVAIL))
         {
           ninfo("usockid=%d; remote closed (EOF).\n", conn->usockid);
 
@@ -316,7 +301,8 @@ ssize_t usrsock_recvmsg(FAR struct socket *psock, FAR struct msghdr *msg,
 
       if (!(conn->flags & USRSOCK_EVENT_RECVFROM_AVAIL))
         {
-          if (_SS_ISNONBLOCK(psock->s_flags) || (flags & MSG_DONTWAIT) != 0)
+          if (_SS_ISNONBLOCK(conn->sconn.s_flags) ||
+              (flags & MSG_DONTWAIT) != 0)
             {
               /* Nothing to receive from daemon side. */
 
@@ -332,14 +318,14 @@ ssize_t usrsock_recvmsg(FAR struct socket *psock, FAR struct msghdr *msg,
               USRSOCK_EVENT_REMOTE_CLOSED);
           if (ret < 0)
             {
-              nwarn("usrsock_setup_request_callback failed: %d\n", ret);
+              nwarn("usrsock_setup_request_callback failed: %zd\n", ret);
               goto errout_unlock;
             }
 
           /* Wait for receive-avail (or abort, or timeout, or signal). */
 
           ret = net_timedwait(&state.reqstate.recvsem,
-                              _SO_TIMEOUT(psock->s_rcvtimeo));
+                              _SO_TIMEOUT(conn->sconn.s_rcvtimeo));
           if (ret < 0)
             {
               if (ret == -ETIMEDOUT)
@@ -354,8 +340,8 @@ ssize_t usrsock_recvmsg(FAR struct socket *psock, FAR struct msghdr *msg,
                 }
               else
                 {
-                  nerr("net_timedwait errno: %d\n", ret);
-                  DEBUGASSERT(false);
+                  nerr("net_timedwait errno: %zd\n", ret);
+                  DEBUGPANIC();
                 }
             }
 
@@ -378,7 +364,8 @@ ssize_t usrsock_recvmsg(FAR struct socket *psock, FAR struct msghdr *msg,
 
           /* Did remote disconnect? */
 
-          if (conn->flags & USRSOCK_EVENT_REMOTE_CLOSED)
+          if (conn->flags & USRSOCK_EVENT_REMOTE_CLOSED &&
+              !(conn->flags & USRSOCK_EVENT_RECVFROM_AVAIL))
             {
               ret = 0;
               goto errout_unlock;
@@ -394,7 +381,7 @@ ssize_t usrsock_recvmsg(FAR struct socket *psock, FAR struct msghdr *msg,
           USRSOCK_EVENT_ABORT | USRSOCK_EVENT_REQ_COMPLETE);
       if (ret < 0)
         {
-          nwarn("usrsock_setup_request_callback failed: %d\n", ret);
+          nwarn("usrsock_setup_request_callback failed: %zd\n", ret);
           goto errout_unlock;
         }
 

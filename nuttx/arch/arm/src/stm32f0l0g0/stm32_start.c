@@ -31,9 +31,7 @@
 #include <nuttx/init.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "stm32_rcc.h"
 #include "stm32_lowputc.h"
 #include "stm32_start.h"
@@ -42,8 +40,7 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define IDLE_STACK ((uint32_t)&_ebss+CONFIG_IDLETHREAD_STACKSIZE-4)
-#define HEAP_BASE  ((uint32_t)&_ebss+CONFIG_IDLETHREAD_STACKSIZE)
+#define IDLE_STACK ((uint32_t)&_ebss+CONFIG_IDLETHREAD_STACKSIZE)
 
 /****************************************************************************
  * Public Data
@@ -74,7 +71,7 @@ const uintptr_t g_idle_topstack = IDLE_STACK;
  ****************************************************************************/
 
 /****************************************************************************
- * Name: _start
+ * Name: __start
  *
  * Description:
  *   This is the reset entry point.

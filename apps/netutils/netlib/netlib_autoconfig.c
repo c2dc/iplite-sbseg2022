@@ -1,5 +1,5 @@
 /****************************************************************************
- * netutils/netlib/netlib_autoconfig.c
+ * apps/netutils/netlib/netlib_autoconfig.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -65,13 +65,13 @@ int netlib_icmpv6_autoconfiguration(FAR const char *ifname)
     {
       /* Get an IPv6 socket */
 
-      int sockfd = socket(PF_INET6, NETLIB_SOCK_TYPE, 0);
+      int sockfd = socket(NET_SOCK_FAMILY, NET_SOCK_TYPE, NET_SOCK_PROTOCOL);
       if (sockfd >= 0)
         {
           /* Create a request consisting only of the interface name */
 
           struct lifreq req;
-          strncpy(req.lifr_name, ifname, IFNAMSIZ);
+          strlcpy(req.lifr_name, ifname, IFNAMSIZ);
 
           /* Perform the ICMPv6 auto-configuration and close the socket */
 

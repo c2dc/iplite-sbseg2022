@@ -31,7 +31,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32l4_qencoder.h"
 #include "nucleo-l476rg.h"
 
@@ -48,7 +48,7 @@
  *
  ****************************************************************************/
 
-int stm32l4_qencoder_initialize(FAR const char *devpath, int timer)
+int stm32l4_qencoder_initialize(const char *devpath, int timer)
 {
   int ret;
 

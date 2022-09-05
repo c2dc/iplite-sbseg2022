@@ -1,5 +1,5 @@
 /****************************************************************************
- * examples/watcher/task_mn.h
+ * apps/examples/watcher/task_mn.h
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __EXAMPLES_WATCHER_TASK_MN_H
-#define __EXAMPLES_WATCHER_TASK_MN_H
+#ifndef __APPS_EXAMPLES_WATCHER_TASK_MN_H
+#define __APPS_EXAMPLES_WATCHER_TASK_MN_H
 
 /****************************************************************************
  * Included Files
@@ -76,4 +76,4 @@ void task_mn_subscribe(pid_t id);
 void task_mn_unsubscribe(pid_t id);
 bool task_mn_all_tasks_fed(void);
 
-#endif                                 /* __EXAMPLES_WATCHER_TASK_MN_H */
+#endif /* __APPS_EXAMPLES_WATCHER_TASK_MN_H */

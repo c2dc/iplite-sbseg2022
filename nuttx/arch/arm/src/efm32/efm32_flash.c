@@ -70,6 +70,7 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/irq.h>
@@ -78,8 +79,6 @@
 #include <arch/board/board.h>
 
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "hardware/efm32_msc.h"
 #include "hardware/efm32_devinfo.h"
 
@@ -89,7 +88,7 @@
 
 /* Only for the EFM32 family for now */
 
-#if (defined(CONFIG_ARCH_CHIP_EFM32) && defined(CONFIG_EFM32_FLASHPROG))
+#if defined(CONFIG_ARCH_CHIP_EFM32) && defined(CONFIG_EFM32_FLASHPROG)
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -114,6 +113,8 @@
 #ifndef EFM32_USERDATA_PAGESIZE
 #   define EFM32_USERDATA_PAGESIZE (EFM32_USERDATA_SIZE/EFM32_USERDATA_NPAGES)
 #endif
+
+#define EFM32_FLASH_ERASEDVAL (0xffu)
 
 /* brief:
  *    The timeout used while waiting for the flash to become ready after
@@ -352,7 +353,7 @@ int __ramfunc__ msc_load_write_data(uint32_t *data, uint32_t num_words,
 
           /* Subtract this initial odd word for the write loop below */
 
-          num_words --;
+          num_words--;
           ret = 0;
         }
 
@@ -432,7 +433,7 @@ int __ramfunc__ msc_load_write_data(uint32_t *data, uint32_t num_words,
 
           /* Gecko does not have auto-increment of ADDR. */
 
-          DEBUGASSERT(0);
+          DEBUGPANIC();
 #else
 
           /* Requires a system core clock at 14MHz or higher */
@@ -750,7 +751,7 @@ ssize_t up_progmem_ispageerased(size_t page)
        count = up_progmem_pagesize(page);
        count; count--, addr++)
     {
-      if (getreg8(addr) != 0xff)
+      if (getreg8(addr) != EFM32_FLASH_ERASEDVAL)
         {
           bwritten++;
         }
@@ -879,6 +880,11 @@ ssize_t __ramfunc__ up_progmem_write(size_t addr,
     }
 
   return word_count;
+}
+
+uint8_t up_progmem_erasestate(void)
+{
+  return EFM32_FLASH_ERASEDVAL;
 }
 
 #endif /* defined(CONFIG_ARCH_CHIP_EFM32)  */

@@ -185,7 +185,7 @@ Configurations
          CONFIG_WINDOWS_CYGWIN=y             : Cywin under Windows
 
        System Type -> Toolchain:
-         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y : GNU ARM EABI toolchain
+         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : GNU ARM EABI toolchain
 
   Configuration Sub-directories
   -----------------------------
@@ -455,7 +455,7 @@ Configurations
 
          CONFIG_MMCSD=y
          CONFIG_MMCSD_NSLOTS=1
-         CONFIG_MMCSD_MULTIBLOCK_DISABLE=y
+         CONFIG_MMCSD_MULTIBLOCK_LIMIT=1
          CONFIG_MMCSD_HAVE_CARDDETECT=y
          CONFIG_MMCSD_HAVE_WRITEPROTECT=y
          CONFIG_ARCH_HAVE_SDIO=y

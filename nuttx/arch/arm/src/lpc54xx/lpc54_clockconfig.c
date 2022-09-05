@@ -52,9 +52,7 @@
 #include <nuttx/arch.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "hardware/lpc54_syscon.h"
 #include "lpc54_power.h"
 #include "lpc54_clockconfig.h"
@@ -174,7 +172,7 @@ static void lpc54_set_flash_waitstates(uint32_t freq)
  *
  ****************************************************************************/
 
-static void lpc54_configure_pll(FAR const struct pll_setup_s *pllsetup)
+static void lpc54_configure_pll(const struct pll_setup_s *pllsetup)
 {
   uint32_t regval;
 
@@ -282,7 +280,7 @@ static void lpc54_configure_pll(FAR const struct pll_setup_s *pllsetup)
  *
  ****************************************************************************/
 
-void lpc54_clockconfig(FAR const struct pll_setup_s *pllsetup)
+void lpc54_clockconfig(const struct pll_setup_s *pllsetup)
 {
   uint32_t regval;
 

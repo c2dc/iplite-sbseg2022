@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <sched.h>
+#include <assert.h>
 #include <debug.h>
 #include <nuttx/arch.h>
 #include <nuttx/sched.h>
@@ -133,7 +134,7 @@ void up_unblock_task(struct tcb_s *tcb)
            * thread at the head of the ready-to-run list.
            */
 
-          (void)group_addrenv(rtcb);
+          group_addrenv(rtcb);
 #endif
           /* Update scheduler parameters */
 

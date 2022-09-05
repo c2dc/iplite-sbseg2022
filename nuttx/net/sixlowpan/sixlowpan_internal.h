@@ -52,8 +52,8 @@
  *
  ****************************************************************************/
 
-#ifndef _NET_SIXLOWPAN_SIXLOWPAN_INTERNAL_H
-#define _NET_SIXLOWPAN_SIXLOWPAN_INTERNAL_H
+#ifndef __NET_SIXLOWPAN_SIXLOWPAN_INTERNAL_H
+#define __NET_SIXLOWPAN_SIXLOWPAN_INTERNAL_H
 
 /****************************************************************************
  * Included Files
@@ -284,6 +284,7 @@ struct iob_s;               /* Forward reference */
 
 int sixlowpan_send(FAR struct net_driver_s *dev,
                    FAR struct devif_callback_s **list,
+                   FAR struct devif_callback_s **list_tail,
                    FAR const struct ipv6_hdr_s *ipv6hdr, FAR const void *buf,
                    size_t len, FAR const struct netdev_varaddr_s *destmac,
                    unsigned int timeout);
@@ -804,4 +805,4 @@ FAR struct sixlowpan_reassbuf_s *
 void sixlowpan_reass_free(FAR struct sixlowpan_reassbuf_s *reass);
 
 #endif /* CONFIG_NET_6LOWPAN */
-#endif /* _NET_SIXLOWPAN_SIXLOWPAN_INTERNAL_H */
+#endif /* __NET_SIXLOWPAN_SIXLOWPAN_INTERNAL_H */

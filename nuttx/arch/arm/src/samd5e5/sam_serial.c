@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -39,9 +40,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "sam_config.h"
 #include "sam_usart.h"
 #include "sam_lowputc.h"
@@ -305,7 +304,7 @@ static inline void
             sam_serialout16(struct sam_dev_s *priv, int offset,
               uint16_t regval);
 static void sam_disableallints(struct sam_dev_s *priv);
-static int  sam_interrupt(int irq, void *context, FAR void *arg);
+static int  sam_interrupt(int irq, void *context, void *arg);
 
 /* UART methods */
 
@@ -644,7 +643,7 @@ static void sam_disableallints(struct sam_dev_s *priv)
  *
  ****************************************************************************/
 
-static int sam_interrupt(int irq, void *context, FAR void *arg)
+static int sam_interrupt(int irq, void *context, void *arg)
 {
   struct uart_dev_s *dev = (struct uart_dev_s *)arg;
   struct sam_dev_s *priv;

@@ -86,6 +86,16 @@
 #define DT_LNK                    DTYPE_LINK
 #define DT_SOCK                   DTYPE_SOCK
 
+#if defined(CONFIG_FS_LARGEFILE) && defined(CONFIG_HAVE_LONG_LONG)
+#  define dirent64                dirent
+#  define readdir64               readdir
+#  define readdir64_r             readdir_r
+#  define scandir64               scandir
+#  define alphasort64             alphasort
+#  define versionsort64           versionsort
+#  define getdents64              getdents
+#endif
+
 /****************************************************************************
  * Public Type Definitions
  ****************************************************************************/
@@ -104,7 +114,11 @@ struct dirent
   char     d_name[NAME_MAX + 1];  /* File name */
 };
 
-typedef void DIR;
+typedef struct
+{
+  int fd;
+  struct dirent entry;
+} DIR;
 
 /****************************************************************************
  * Public Data
@@ -139,6 +153,8 @@ int        scandir(FAR const char *path, FAR struct dirent ***namelist,
                                       FAR const struct dirent **));
 int        alphasort(FAR const struct dirent **a,
                      FAR const struct dirent **b);
+
+int        dirfd(FAR DIR *dirp);
 
 #undef EXTERN
 #if defined(__cplusplus)

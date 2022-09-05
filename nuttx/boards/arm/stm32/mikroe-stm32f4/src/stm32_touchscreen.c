@@ -1,37 +1,20 @@
 /****************************************************************************
  * boards/arm/stm32/mikroe-stm32f4/src/stm32_touchscreen.c
  *
- *   Copyright (C) 2012-2013, 2016-2017 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- *   Modified:  May, 2013 by Ken Pettit to adapt for Mikroe-STM32M4 board
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -58,9 +41,7 @@
 #include <nuttx/semaphore.h>
 
 #include <arch/board/board.h>
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "stm32_adc.h"
 #include "stm32_gpio.h"
 #include "mikroe-stm32f4.h"
@@ -256,20 +237,20 @@ static void tc_y_sample(void);
 static void tc_x_sample(void);
 static inline bool tc_valid_sample(uint16_t sample);
 
-static void tc_notify(FAR struct tc_dev_s *priv);
-static int tc_sample(FAR struct tc_dev_s *priv,
-                     FAR struct tc_sample_s *sample);
-static int tc_waitsample(FAR struct tc_dev_s *priv,
-                         FAR struct tc_sample_s *sample);
-static void tc_worker(FAR void *arg);
+static void tc_notify(struct tc_dev_s *priv);
+static int tc_sample(struct tc_dev_s *priv,
+                     struct tc_sample_s *sample);
+static int tc_waitsample(struct tc_dev_s *priv,
+                         struct tc_sample_s *sample);
+static void tc_worker(void *arg);
 
 /* Character driver methods */
 
-static int tc_open(FAR struct file *filep);
-static int tc_close(FAR struct file *filep);
-static ssize_t tc_read(FAR struct file *filep, FAR char *buffer, size_t len);
-static int tc_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
-static int tc_poll(FAR struct file *filep, struct pollfd *fds, bool setup);
+static int tc_open(struct file *filep);
+static int tc_close(struct file *filep);
+static ssize_t tc_read(struct file *filep, char *buffer, size_t len);
+static int tc_ioctl(struct file *filep, int cmd, unsigned long arg);
+static int tc_poll(struct file *filep, struct pollfd *fds, bool setup);
 
 /****************************************************************************
  * Private Data
@@ -282,10 +263,13 @@ static const struct file_operations tc_fops =
   tc_open,    /* open */
   tc_close,   /* close */
   tc_read,    /* read */
-  0,          /* write */
-  0,          /* seek */
+  NULL,       /* write */
+  NULL,       /* seek */
   tc_ioctl,   /* ioctl */
   tc_poll     /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL      /* unlink */
+#endif
 };
 
 /* If only a single touchscreen device is supported, then the driver state
@@ -589,7 +573,7 @@ static inline bool tc_valid_sample(uint16_t sample)
  * Name: tc_notify
  ****************************************************************************/
 
-static void tc_notify(FAR struct tc_dev_s *priv)
+static void tc_notify(struct tc_dev_s *priv)
 {
   int i;
 
@@ -617,7 +601,7 @@ static void tc_notify(FAR struct tc_dev_s *priv)
       if (fds)
         {
           fds->revents |= POLLIN;
-          iinfo("Report events: %02x\n", fds->revents);
+          iinfo("Report events: %08" PRIx32 "\n", fds->revents);
           nxsem_post(fds->sem);
         }
     }
@@ -643,8 +627,8 @@ static void tc_notify(FAR struct tc_dev_s *priv)
  *
  ****************************************************************************/
 
-static int tc_sample(FAR struct tc_dev_s *priv,
-                          FAR struct tc_sample_s *sample)
+static int tc_sample(struct tc_dev_s *priv,
+                          struct tc_sample_s *sample)
 {
   int ret = -EAGAIN;
 
@@ -688,8 +672,8 @@ static int tc_sample(FAR struct tc_dev_s *priv,
  * Name: tc_waitsample
  ****************************************************************************/
 
-static int tc_waitsample(FAR struct tc_dev_s *priv,
-                              FAR struct tc_sample_s *sample)
+static int tc_waitsample(struct tc_dev_s *priv,
+                              struct tc_sample_s *sample)
 {
   int ret;
 
@@ -746,9 +730,9 @@ errout:
  * Name: tc_worker
  ****************************************************************************/
 
-static void tc_worker(FAR void *arg)
+static void tc_worker(void *arg)
 {
-  FAR struct tc_dev_s *priv = (FAR struct tc_dev_s *)arg;
+  struct tc_dev_s *priv = (struct tc_dev_s *)arg;
   uint32_t delay = TC_PENUP_POLL_TICKS;
   uint16_t value;
   uint16_t newx = 0;
@@ -1113,19 +1097,19 @@ static void tc_worker(FAR void *arg)
  * Name: tc_open
  ****************************************************************************/
 
-static int tc_open(FAR struct file *filep)
+static int tc_open(struct file *filep)
 {
 #ifdef CONFIG_TOUCHSCREEN_REFCNT
-  FAR struct inode         *inode;
-  FAR struct tc_dev_s *priv;
-  uint8_t                   tmp;
-  int                       ret;
+  struct inode         *inode;
+  struct tc_dev_s      *priv;
+  uint8_t               tmp;
+  int                   ret;
 
   DEBUGASSERT(filep);
   inode = filep->f_inode;
 
   DEBUGASSERT(inode && inode->i_private);
-  priv  = (FAR struct tc_dev_s *)inode->i_private;
+  priv  = (struct tc_dev_s *)inode->i_private;
 
   /* Get exclusive access to the driver data structure */
 
@@ -1166,18 +1150,18 @@ errout_with_sem:
  * Name: tc_close
  ****************************************************************************/
 
-static int tc_close(FAR struct file *filep)
+static int tc_close(struct file *filep)
 {
 #ifdef CONFIG_TOUCHSCREEN_REFCNT
-  FAR struct inode         *inode;
-  FAR struct tc_dev_s *priv;
-  int                       ret;
+  struct inode         *inode;
+  struct tc_dev_s      *priv;
+  int                   ret;
 
   DEBUGASSERT(filep);
   inode = filep->f_inode;
 
   DEBUGASSERT(inode && inode->i_private);
-  priv  = (FAR struct tc_dev_s *)inode->i_private;
+  priv  = (struct tc_dev_s *)inode->i_private;
 
   /* Get exclusive access to the driver data structure */
 
@@ -1206,19 +1190,19 @@ static int tc_close(FAR struct file *filep)
  * Name: tc_read
  ****************************************************************************/
 
-static ssize_t tc_read(FAR struct file *filep, FAR char *buffer, size_t len)
+static ssize_t tc_read(struct file *filep, char *buffer, size_t len)
 {
-  FAR struct inode          *inode;
-  FAR struct tc_dev_s  *priv;
-  FAR struct touch_sample_s *report;
+  struct inode          *inode;
+  struct tc_dev_s       *priv;
+  struct touch_sample_s *report;
   struct tc_sample_s    sample;
-  int                        ret;
+  int                   ret;
 
   DEBUGASSERT(filep);
   inode = filep->f_inode;
 
   DEBUGASSERT(inode && inode->i_private);
-  priv  = (FAR struct tc_dev_s *)inode->i_private;
+  priv  = (struct tc_dev_s *)inode->i_private;
 
   /* Verify that the caller has provided a buffer large enough to receive
    * the touch data.
@@ -1272,7 +1256,7 @@ static ssize_t tc_read(FAR struct file *filep, FAR char *buffer, size_t len)
    * to the caller.
    */
 
-  report = (FAR struct touch_sample_s *)buffer;
+  report = (struct touch_sample_s *)buffer;
   memset(report, 0, SIZEOF_TOUCH_SAMPLE_S(1));
   report->npoints            = 1;
   report->point[0].id        = sample.id;
@@ -1327,14 +1311,14 @@ errout:
  * Name: tc_ioctl
  ****************************************************************************/
 
-static int tc_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
+static int tc_ioctl(struct file *filep, int cmd, unsigned long arg)
 {
 #if 1
   iinfo("cmd: %d arg: %ld\n", cmd, arg);
   return -ENOTTY; /* None yet supported */
 #else
-  FAR struct inode *inode;
-  FAR struct tc_dev_s *priv;
+  struct inode *inode;
+  struct tc_dev_s *priv;
   int ret;
 
   iinfo("cmd: %d arg: %ld\n", cmd, arg);
@@ -1342,7 +1326,7 @@ static int tc_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
   inode = filep->f_inode;
 
   DEBUGASSERT(inode && inode->i_private);
-  priv  = (FAR struct tc_dev_s *)inode->i_private;
+  priv  = (struct tc_dev_s *)inode->i_private;
 
   /* Get exclusive access to the driver data structure */
 
@@ -1372,20 +1356,20 @@ static int tc_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
  * Name: tc_poll
  ****************************************************************************/
 
-static int tc_poll(FAR struct file *filep, FAR struct pollfd *fds,
+static int tc_poll(struct file *filep, struct pollfd *fds,
                         bool setup)
 {
-  FAR struct inode         *inode;
-  FAR struct tc_dev_s *priv;
-  int                       ret;
-  int                       i;
+  struct inode         *inode;
+  struct tc_dev_s      *priv;
+  int                   ret;
+  int                   i;
 
   iinfo("setup: %d\n", (int)setup);
   DEBUGASSERT(filep && fds);
   inode = filep->f_inode;
 
   DEBUGASSERT(inode && inode->i_private);
-  priv  = (FAR struct tc_dev_s *)inode->i_private;
+  priv  = (struct tc_dev_s *)inode->i_private;
 
   /* Are we setting up the poll?  Or tearing it down? */
 
@@ -1401,7 +1385,8 @@ static int tc_poll(FAR struct file *filep, FAR struct pollfd *fds,
 
       if ((fds->events & POLLIN) == 0)
         {
-          ierr("ERROR: Missing POLLIN: revents: %08x\n", fds->revents);
+          ierr("ERROR: Missing POLLIN: revents: %08" PRIx32 "\n",
+               fds->revents);
           ret = -EDEADLK;
           goto errout;
         }
@@ -1480,7 +1465,7 @@ errout:
 
 int stm32_tsc_setup(int minor)
 {
-  FAR struct tc_dev_s *priv;
+  struct tc_dev_s *priv;
   char devname[DEV_NAMELEN];
 #ifdef CONFIG_TOUCHSCREEN_MULTIPLE
   irqstate_t flags;
@@ -1516,7 +1501,7 @@ int stm32_tsc_setup(int minor)
 #ifndef CONFIG_TOUCHSCREEN_MULTIPLE
   priv = &g_touchscreen;
 #else
-  priv = (FAR struct tc_dev_s *)kmm_malloc(sizeof(struct tc_dev_s));
+  priv = (struct tc_dev_s *)kmm_malloc(sizeof(struct tc_dev_s));
   if (!priv)
     {
       ierr("ERROR: kmm_malloc(%d) failed\n", sizeof(struct tc_dev_s));
@@ -1532,7 +1517,7 @@ int stm32_tsc_setup(int minor)
 
   /* Register the device as an input device */
 
-  snprintf(devname, DEV_NAMELEN, DEV_FORMAT, minor);
+  snprintf(devname, sizeof(devname), DEV_FORMAT, minor);
   iinfo("Registering %s\n", devname);
 
   ret = register_driver(devname, &tc_fops, 0666, priv);

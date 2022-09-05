@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <mqueue.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -146,31 +147,27 @@ int file_mq_timedsend(FAR struct file *mq, FAR const char *msg,
                       FAR const struct timespec *abstime)
 {
   FAR struct tcb_s *rtcb = this_task();
-  FAR struct inode *inode = mq->f_inode;
-  FAR struct mqueue_msg_s *mqmsg = NULL;
   FAR struct mqueue_inode_s *msgq;
+  FAR struct mqueue_msg_s *mqmsg;
   irqstate_t flags;
   sclock_t ticks;
-  int result;
   int ret;
-
-  inode = mq->f_inode;
-  if (!inode)
-    {
-      return -EBADF;
-    }
-
-  msgq = inode->i_private;
 
   DEBUGASSERT(up_interrupt_context() == false);
 
   /* Verify the input parameters on any failures to verify. */
 
-  ret = nxmq_verify_send(msgq, mq->f_oflags, msg, msglen, prio);
+  ret = nxmq_verify_send(mq, msg, msglen, prio);
   if (ret < 0)
     {
       return ret;
     }
+
+  msgq = mq->f_inode->i_private;
+
+  /* Disable interruption */
+
+  flags = enter_critical_section();
 
   /* Pre-allocate a message structure */
 
@@ -181,12 +178,9 @@ int file_mq_timedsend(FAR struct file *mq, FAR const char *msg,
        * errno value.
        */
 
-      return -ENOMEM;
+      ret = -ENOMEM;
+      goto errout_in_critical_section;
     }
-
-  /* Get a pointer to the message queue */
-
-  sched_lock();
 
   /* OpenGroup.org: "Under no circumstance shall the operation fail with a
    * timeout if there is sufficient room in the queue to add the message
@@ -208,9 +202,7 @@ int file_mq_timedsend(FAR struct file *mq, FAR const char *msg,
        * Currently nxmq_do_send() always returns OK.
        */
 
-      ret = nxmq_do_send(msgq, mqmsg, msg, msglen, prio);
-      sched_unlock();
-      return ret;
+      goto out_send_message;
     }
 
   /* The message queue is full... We are going to wait.  Now we must have a
@@ -220,7 +212,8 @@ int file_mq_timedsend(FAR struct file *mq, FAR const char *msg,
   if (!abstime || abstime->tv_nsec < 0 || abstime->tv_nsec >= 1000000000)
     {
       ret = -EINVAL;
-      goto errout_with_mqmsg;
+      nxmq_free_msg(mqmsg);
+      goto errout_in_critical_section;
     }
 
   /* We are not in an interrupt handler and the message queue is full.
@@ -230,23 +223,22 @@ int file_mq_timedsend(FAR struct file *mq, FAR const char *msg,
    * disabled here so that this time stays valid until the wait begins.
    */
 
-  flags  = enter_critical_section();
-  result = clock_abstime2ticks(CLOCK_REALTIME, abstime, &ticks);
+  ret = clock_abstime2ticks(CLOCK_REALTIME, abstime, &ticks);
 
   /* If the time has already expired and the message queue is empty,
    * return immediately.
    */
 
-  if (result == OK && ticks <= 0)
+  if (ret == OK && ticks <= 0)
     {
-      result = ETIMEDOUT;
+      ret = ETIMEDOUT;
     }
 
   /* Handle any time-related errors */
 
-  if (result != OK)
+  if (ret != OK)
     {
-      ret = -result;
+      ret = -ret;
       goto errout_in_critical_section;
     }
 
@@ -259,36 +251,25 @@ int file_mq_timedsend(FAR struct file *mq, FAR const char *msg,
   ret = nxmq_wait_send(msgq, mq->f_oflags);
 
   /* This may return with an error and errno set to either EINTR
-   * or ETIMEOUT.  Cancel the watchdog timer in any event.
+   * or ETIMEDOUT.  Cancel the watchdog timer in any event.
    */
 
   wd_cancel(&rtcb->waitdog);
 
   /* Check if nxmq_wait_send() failed */
 
-  if (ret < 0)
+  if (ret == OK)
     {
-      /* nxmq_wait_send() failed. */
+      /* If any of the above failed, set the errno.  Otherwise, there should
+       * be space for another message in the message queue.  NOW we can
+       * allocate the message structure.
+       *
+       * Currently nxmq_do_send() always returns OK.
+       */
 
-      goto errout_in_critical_section;
+out_send_message:
+      ret = nxmq_do_send(msgq, mqmsg, msg, msglen, prio);
     }
-
-  /* That is the end of the atomic operations */
-
-  leave_critical_section(flags);
-
-  /* If any of the above failed, set the errno.  Otherwise, there should
-   * be space for another message in the message queue.  NOW we can allocate
-   * the message structure.
-   *
-   * Currently nxmq_do_send() always returns OK.
-   */
-
-  ret = nxmq_do_send(msgq, mqmsg, msg, msglen, prio);
-
-  sched_unlock();
-  leave_cancellation_point();
-  return ret;
 
   /* Exit here with (1) the scheduler locked, (2) a message allocated, (3) a
    * wdog allocated, and (4) interrupts disabled.
@@ -297,13 +278,6 @@ int file_mq_timedsend(FAR struct file *mq, FAR const char *msg,
 errout_in_critical_section:
   leave_critical_section(flags);
 
-  /* Exit here with (1) the scheduler locked and 2) a message allocated.  The
-   * error code is in 'result'
-   */
-
-errout_with_mqmsg:
-  nxmq_free_msg(mqmsg);
-  sched_unlock();
   return ret;
 }
 
@@ -403,7 +377,7 @@ int nxmq_timedsend(mqd_t mqdes, FAR const char *msg, size_t msglen,
  *   On success, mq_send() returns 0 (OK); on error, -1 (ERROR)
  *   is returned, with errno set to indicate the error:
  *
- *   EAGAIN   The queue was empty, and the O_NONBLOCK flag was set for the
+ *   EAGAIN   The queue was full, and the O_NONBLOCK flag was set for the
  *            message queue description referred to by mqdes.
  *   EINVAL   Either msg or mqdes is NULL or the value of prio is invalid.
  *   EPERM    Message queue opened not opened for writing.

@@ -25,10 +25,14 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
-#include "riscv_arch.h"
-
+#include "riscv_internal.h"
 #include "hardware/bl602_glb.h"
 #include "hardware/bl602_hbn.h"
+#include "bl602_romapi.h"
+
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
 
 /* We choose to use ROM driver here.
  *
@@ -36,11 +40,9 @@
  * reset, this part of the code cannot be placed on the XIP Flash.
  */
 
-typedef void (*bl602_romdrv_reset_system) (void);
-typedef void (*bl602_romdrv_reset_sw_cpu) (void);
-typedef void (*bl602_romdrv_reset_por) (void);
-
-#define ROM_APITABLE  ((uint32_t *)0x21010800)
+#define bl602_romapi_reset_system ((void (*)(void))BL602_ROMAPI_RST_SYSTEM)
+#define bl602_romapi_reset_cpu_sw ((void (*)(void))BL602_ROMAPI_RST_CPU_SW)
+#define bl602_romapi_reset_por ((void (*)(void))BL602_ROMAPI_RST_POR)
 
 /****************************************************************************
  * Private Functions
@@ -64,7 +66,11 @@ void up_systemreset(void)
 
   asm volatile("csrci mstatus, 8");
 
-  ((bl602_romdrv_reset_system)(*(ROM_APITABLE + 47)))();
+  bl602_romapi_reset_system();
+
+  /* Wait for the reset */
+
+  for (; ; );
 }
 
 /****************************************************************************
@@ -81,7 +87,7 @@ void bl602_cpu_reset(void)
 
   asm volatile("csrci mstatus, 8");
 
-  ((bl602_romdrv_reset_sw_cpu)(*(ROM_APITABLE + 48)))();
+  bl602_romapi_reset_cpu_sw();
 }
 
 /****************************************************************************
@@ -98,5 +104,5 @@ void bl602_por_reset(void)
 
   asm volatile("csrci mstatus, 8");
 
-  ((bl602_romdrv_reset_por)(*(ROM_APITABLE + 49)))();
+  bl602_romapi_reset_por();
 }

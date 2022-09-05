@@ -30,6 +30,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
@@ -49,8 +50,7 @@
 #endif
 
 #include "chip.h"
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "tiva_gpio.h"
 #include "tiva_ethernet.h"
 #include "hardware/tiva_pinmap.h"
@@ -154,12 +154,6 @@
 #  define tiva_dumppacket(m,a,n)
 #endif
 
-/* TX poll deley = 1 seconds.
- * CLK_TCK is the number of clock ticks per second
- */
-
-#define TIVA_WDDELAY   (1*CLK_TCK)
-
 /* TX timeout = 1 minute */
 
 #define TIVA_TXTIMEOUT (60*CLK_TCK)
@@ -190,7 +184,6 @@ struct tiva_driver_s
 #endif
 
   bool     ld_bifup;           /* true:ifup false:ifdown */
-  struct wdog_s ld_txpoll;     /* TX poll timer */
   struct wdog_s ld_txtimeout;  /* TX timeout timer */
   struct work_s ld_irqwork;    /* For deferring interrupt work to the work queue */
   struct work_s ld_pollwork;   /* For deferring poll work to the work queue */
@@ -206,7 +199,8 @@ struct tiva_driver_s
 
 /* A single packet buffer is used */
 
-static uint8_t g_pktbuf[MAX_NETDEV_PKTSIZE + CONFIG_NET_GUARDSIZE];
+static uint8_t g_pktbuf[TIVA_NETHCONTROLLERS]
+                       [MAX_NETDEV_PKTSIZE + CONFIG_NET_GUARDSIZE];
 
 /* Ethernet peripheral state */
 
@@ -247,15 +241,12 @@ static void tiva_receive(struct tiva_driver_s *priv);
 static void tiva_txdone(struct tiva_driver_s *priv);
 
 static void tiva_interrupt_work(void *arg);
-static int  tiva_interrupt(int irq, void *context, FAR void *arg);
+static int  tiva_interrupt(int irq, void *context, void *arg);
 
 /* Watchdog timer expirations */
 
 static void tiva_txtimeout_work(void *arg);
 static void tiva_txtimeout_expiry(wdparm_t arg);
-
-static void tiva_poll_work(void *arg);
-static void tiva_poll_expiry(wdparm_t arg);
 
 /* NuttX callback functions */
 
@@ -891,7 +882,7 @@ static void tiva_receive(struct tiva_driver_s *priv)
       else
 #endif
 #ifdef CONFIG_NET_ARP
-      if (ETHBUF->type == htons(ETHTYPE_ARP))
+      if (ETHBUF->type == HTONS(ETHTYPE_ARP))
         {
           ninfo("ARP packet received (%02x)\n", ETHBUF->type);
           NETDEV_RXARP(&priv->ld_dev);
@@ -911,7 +902,7 @@ static void tiva_receive(struct tiva_driver_s *priv)
 #endif
         {
           nwarn("WARNING: Unsupported packet type dropped (%02x)\n",
-                  htons(ETHBUF->type));
+                HTONS(ETHBUF->type));
           NETDEV_RXDROPPED(&priv->ld_dev);
         }
     }
@@ -1063,7 +1054,7 @@ static void tiva_interrupt_work(void *arg)
  *
  ****************************************************************************/
 
-static int tiva_interrupt(int irq, void *context, FAR void *arg)
+static int tiva_interrupt(int irq, void *context, void *arg)
 {
   struct tiva_driver_s *priv;
   uint32_t ris;
@@ -1185,79 +1176,6 @@ static void tiva_txtimeout_expiry(wdparm_t arg)
   /* Schedule to perform the TX timeout processing on the worker thread. */
 
   work_queue(ETHWORK, &priv->ld_irqwork, tiva_txtimeout_work, priv, 0);
-}
-
-/****************************************************************************
- * Function: tiva_poll_work
- *
- * Description:
- *   Perform periodic polling from the worker thread
- *
- * Input Parameters:
- *   arg - The argument passed when work_queue() as called.
- *
- * Returned Value:
- *   OK on success
- *
- * Assumptions:
- *   The network is locked.
- *
- ****************************************************************************/
-
-static void tiva_poll_work(void *arg)
-{
-  struct tiva_driver_s *priv = (struct tiva_driver_s *)arg;
-
-  /* Check if we can send another Tx packet now.  The NEWTX bit initiates an
-   * Ethernet transmission once the packet has been placed in the TX FIFO.
-   * This bit is cleared once the transmission has been completed.
-   *
-   * NOTE: This can cause missing poll cycles and, hence, some timing
-   * inaccuracies.
-   */
-
-  net_lock();
-  if ((tiva_ethin(priv, TIVA_MAC_TR_OFFSET) & MAC_TR_NEWTX) == 0)
-    {
-      /* If so, update TCP timing states and poll the network for new XMIT
-       * data.
-       */
-
-      devif_timer(&priv->ld_dev, TIVA_WDDELAY, tiva_txpoll);
-
-      /* Setup the watchdog poll timer again */
-
-      wd_start(&priv->ld_txpoll, TIVA_WDDELAY,
-               tiva_poll_expiry, (wdparm_t)priv);
-    }
-
-  net_unlock();
-}
-
-/****************************************************************************
- * Function: tiva_poll_expiry
- *
- * Description:
- *   Periodic timer handler.  Called from the timer interrupt handler.
- *
- * Input Parameters:
- *   arg  - The argument
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   Global interrupts are disabled by the watchdog logic.
- *
- ****************************************************************************/
-
-static void tiva_poll_expiry(wdparm_t arg)
-{
-  struct tiva_driver_s *priv = (struct tiva_driver_s *)arg;
-
-  /* Schedule to perform the interrupt processing on the worker thread. */
-
-  work_queue(ETHWORK, &priv->ld_pollwork, tiva_poll_work, priv, 0);
 }
 
 /****************************************************************************
@@ -1413,11 +1331,6 @@ static int tiva_ifup(struct net_driver_s *dev)
            (uint32_t)priv->ld_dev.d_mac.ether.ether_addr_octet[4];
   tiva_ethout(priv, TIVA_MAC_IA1_OFFSET, regval);
 
-  /* Set and activate a timer process */
-
-  wd_start(&priv->ld_txpoll, TIVA_WDDELAY,
-           tiva_poll_expiry, (wdparm_t)priv);
-
   priv->ld_bifup = true;
   leave_critical_section(flags);
   return OK;
@@ -1452,10 +1365,9 @@ static int tiva_ifdown(struct net_driver_s *dev)
         (int)((dev->d_ipaddr >> 16) & 0xff),
         (int)(dev->d_ipaddr >> 24));
 
-  /* Cancel the TX poll timer and TX timeout timers */
+  /* Cancel the TX timeout timers */
 
   flags = enter_critical_section();
-  wd_cancel(&priv->ld_txpoll);
   wd_cancel(&priv->ld_txtimeout);
 
   /* Disable the Ethernet interrupt */
@@ -1545,7 +1457,7 @@ static void tiva_txavail_work(void *arg)
        * network for new Tx data
        */
 
-      devif_timer(&priv->ld_dev, 0, tiva_txpoll);
+      devif_poll(&priv->ld_dev, tiva_txpoll);
     }
 
   net_unlock();
@@ -1694,20 +1606,20 @@ static inline int tiva_ethinitialize(int intf)
   /* Initialize the driver structure */
 
   memset(priv, 0, sizeof(struct tiva_driver_s));
-  priv->ld_dev.d_buf     = g_pktbuf;      /* Single packet buffer */
-  priv->ld_dev.d_ifup    = tiva_ifup;     /* I/F down callback */
-  priv->ld_dev.d_ifdown  = tiva_ifdown;   /* I/F up (new IP address) callback */
-  priv->ld_dev.d_txavail = tiva_txavail;  /* New TX data callback */
+  priv->ld_dev.d_buf     = g_pktbuf[intf]; /* Single packet buffer */
+  priv->ld_dev.d_ifup    = tiva_ifup;      /* I/F down callback */
+  priv->ld_dev.d_ifdown  = tiva_ifdown;    /* I/F up (new IP address) callback */
+  priv->ld_dev.d_txavail = tiva_txavail;   /* New TX data callback */
 #ifdef CONFIG_NET_MCASTGROUP
-  priv->ld_dev.d_addmac  = tiva_addmac;   /* Add multicast MAC address */
-  priv->ld_dev.d_rmmac   = tiva_rmmac;    /* Remove multicast MAC address */
+  priv->ld_dev.d_addmac  = tiva_addmac;    /* Add multicast MAC address */
+  priv->ld_dev.d_rmmac   = tiva_rmmac;     /* Remove multicast MAC address */
 #endif
-  priv->ld_dev.d_private = priv;          /* Used to recover private state from dev */
+  priv->ld_dev.d_private = priv;           /* Used to recover private state from dev */
 
 #if TIVA_NETHCONTROLLERS > 1
 # error "A mechanism to associate base address an IRQ with an interface is needed"
-  priv->ld_base          = ??;            /* Ethernet controller base address */
-  priv->ld_irq           = ??;            /* Ethernet controller IRQ number */
+  priv->ld_base          = ??;             /* Ethernet controller base address */
+  priv->ld_irq           = ??;             /* Ethernet controller IRQ number */
 #endif
 
 #ifdef CONFIG_TIVA_BOARDMAC

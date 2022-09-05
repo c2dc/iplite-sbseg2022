@@ -154,7 +154,7 @@ kconfig2html.c
 
   or more quickly with:
 
-    make dirlinks
+    make .dirlinks
 
 Libraries.mk, FlatLibs.mk, ProtectedLibs.mk, and KernelLib.mk
 -------------------------------------------------------------
@@ -175,11 +175,11 @@ lowhex.c
 Makefile.[unix|win]
 -----------------
 
-  Makefile.unix is the Makefile used when building NuttX in Unix-like
-  systems.  It is selected from the top-level Makefile.
+  Unix.mk is the Makefile used when building NuttX in Unix-like systems.
+  It is selected from the top-level Makefile.
 
-  Makefile.win is the Makefile used when building natively under
-  Windows.  It is selected from the top-level Makefile.
+  Win.mk is the Makefile used when building natively under Windows.
+  It is selected from the top-level Makefile.
 
 mkconfig.c, cfgdefine.c, and cfgdefine.h
 ----------------------------------------
@@ -191,10 +191,10 @@ mkconfig.c, cfgdefine.c, and cfgdefine.h
   in the top level NuttX directory (See boards/README.txt or
   Documentation/NuttXPortingGuide.html).  The first time you make NuttX,
   the top-level makefile will build the mkconfig executable from mkconfig.c
-  (using Makefile.host).  The top-level Makefile will then execute the
-  mkconfig program to convert the .config file in the top level directory
-  into include/nuttx/config.h.  config.h is a another version of the
-  NuttX configuration that can be included by C files.
+  (using Makefile.host).  The top-level Makefile will then execute the mkconfig
+  program to convert the .config file in the top level directory into
+  include/nuttx/config.h.  config.h is a another version of the NuttX
+  configuration that can be included by C files.
 
 mkconfigvars.sh
 ---------------
@@ -218,14 +218,14 @@ mkconfigvars.sh
     -h
        show this help message and exit
 
-mkexport.sh and Makefile.export
+mkexport.sh and Export.mk
 -------------------------------
 
   These implement part of the top-level Makefile's 'export' target.  That
   target will bundle up all of the NuttX libraries, header files, and the
   startup object into an export-able, binary NuttX distribution.  The
-  Makefile.export is used only by the mkexport.sh script to parse out
-  options from the top-level Make.defs file.
+  Export.mk is used only by the mkexport.sh script to parse out options
+  from the top-level Make.defs file.
 
   USAGE: tools/mkexport.sh [-d] [-z] [-u] -t <top-dir> [-x <lib-ext>] -l "lib1 [lib2 [lib3 ...]]"
 
@@ -253,8 +253,8 @@ mkversion.c, cfgdefine.c, and cfgdefine.h
   When you build NuttX there should be a version file called .version in
   the top level NuttX directory (See Documentation/NuttXPortingGuide.html).
   The first time you make NuttX, the top-level makefile will build the
-  mkversion executable from mkversion.c (using Makefile.host).  The top-
-  level Makefile will then execute the mkversion program to convert the
+  mkversion executable from mkversion.c (using Makefile.host).  The top-level
+  Makefile will then execute the mkversion program to convert the
   .version file in the top level directory into include/nuttx/version.h.
   version.h provides version information that can be included by C files.
 
@@ -802,7 +802,6 @@ mkdeps.c, cnvwindeps.c, mkwindeps.sh, and mknulldeps.sh
   eventually be solvable but for now continue to use mkwindeps.sh in
   that mixed environment.
 
-
  netusb.sh
  ---------
 
@@ -819,7 +818,6 @@ mkdeps.c, cnvwindeps.c, mkwindeps.sh, and mknulldeps.sh
     This has been tested on the SAMA5D3-Xplained board; see
     `boards/arm/sama5/sama5d3-xplained/README.txt` for more information on how
     to configure the CDC ECM driver for that board.
-
 
 README.txt
 ----------
@@ -989,20 +987,20 @@ testbuild.sh
 
     $ ./testbuild.sh -h
 
-    USAGE: ./testbuild.sh [-l|m|c|g|n] [-d] [-x] [-j <ncpus>] [-a <appsdir>] [-t <topdir>] [-p] [-G] <testlist-file>
+    USAGE: ./testbuild.sh [-l|m|c|g|n] [-d] [-e <extraflags>] [-x] [-j <ncpus>] [-a <appsdir>] [-t <topdir>] [-p] [-G] <testlist-file>
            ./testbuild.sh -h
 
     Where:
       -l|m|c|g|n selects Linux (l), macOS (m), Cygwin (c),
-         MSYS/MSYS2 (g) or Windows native (n).  Default Linux
+         MSYS/MSYS2 (g) or Windows native (n). Default Linux
       -d enables script debug output
+      -e pass extra c/c++ flags such as -Wno-cpp via make command line
       -x exit on build failures
       -j <ncpus> passed on to make.  Default:  No -j make option.
       -a <appsdir> provides the relative path to the apps/ directory.  Default ../apps
-      -t <topdir> provides the absolute path to top nuttx/ directory.
-         Default $WD/../nuttx, where $WD is the parent directory of
-         the directory where this script is.
+      -t <topdir> provides the absolute path to top nuttx/ directory.  Default ../nuttx
       -p only print the list of configs without running any builds
+      -A store the build executable artifact in ARTIFACTDIR (defaults to ../buildartifacts
       -C Skip tree cleanness check.
       -G Use "git clean -xfdq" instead of "make distclean" to clean the tree.
          This option may speed up the builds. However, note that:
@@ -1010,6 +1008,7 @@ testbuild.sh
            * This assumes that only nuttx and apps repos need to be cleaned.
            * If the tree has files not managed by git, they will be removed
              as well.
+      -R execute "run" script in the config directories if exists.
       -h will show this help test and terminate
       <testlist-file> selects the list of configurations to test.  No default
 
@@ -1027,10 +1026,10 @@ testbuild.sh
   The test list file is a sequence of build descriptions, one per line.  One
   build descriptions consists of two comma separated values.  For example:
 
-    stm32f429i-disco:nsh,CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL
-    arduino-due:nsh,CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL
-    /arm,CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL
-    /risc-v,CONFIG_RV32IM_TOOLCHAIN_GNU_RVGL
+    stm32f429i-disco:nsh
+    arduino-due:nsh
+    /arm
+    /risc-v
 
   The first value is the usual configuration description of the form
   <board-name>:<configuration-name> or /<folder-name> and must correspond to a

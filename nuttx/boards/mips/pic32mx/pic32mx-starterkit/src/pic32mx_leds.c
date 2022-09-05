@@ -32,9 +32,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "mips_arch.h"
 #include "mips_internal.h"
-
 #include "pic32mx.h"
 #include "pic32mx_ioport.h"
 #include "pic32mx-starterkit.h"
@@ -146,7 +144,7 @@ static const uint16_t g_ledpincfg[PIC32MX_STARTERKIT_NLEDS] =
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_LEDS
-static void pic32mx_setleds(FAR const struct led_setting_s *setting)
+static void pic32mx_setleds(const struct led_setting_s *setting)
 {
   if (setting->led1 != LED_NC)
     {

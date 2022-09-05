@@ -1,36 +1,20 @@
 /****************************************************************************
  * drivers/mtd/w25qxxxjv.c
- * Driver for QuadSPI-based W25QxxxJV NOR FLASH
  *
- *   Copyright (C) 2019 Gregory Nutt. All rights reserved.
- *   Author: kyChu <kyChu@qq.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -50,6 +34,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <debug.h>
+#include <inttypes.h>
 
 #include <nuttx/kmalloc.h>
 #include <nuttx/signal.h>
@@ -188,6 +173,12 @@
 #define STATUS_SRP_MASK      (1 << 7) /* Bit 7: Status register protect 0 */
 #define STATUS_SRP_UNLOCKED  (0 << 7) /*   see blow for details           */
 #define STATUS_SRP_LOCKED    (1 << 7) /*   see blow for details           */
+
+/* Status register 2 bit definitions                                      */
+
+#define STATUS2_QE_MASK      (1 << 1) /* Bit 1: Quad Enable (QE)          */
+#define STATUS2_QE_DISABLED  (0 << 1) /*  0 = Standard/Dual SPI modes     */
+#define STATUS2_QE_ENABLED   (1 << 1) /*  1 = Standard/Dual/Quad modes    */
 
 /* Some chips have four protect bits                                      */
 
@@ -369,6 +360,7 @@ static void w25qxxxjv_write_volcfg(FAR struct w25qxxxjv_dev_s *priv);
 #endif
 static void w25qxxxjv_write_enable(FAR struct w25qxxxjv_dev_s *priv);
 static void w25qxxxjv_write_disable(FAR struct w25qxxxjv_dev_s *priv);
+static void w25qxxxjv_quad_enable(FAR struct w25qxxxjv_dev_s *priv);
 
 static int  w25qxxxjv_readid(FAR struct w25qxxxjv_dev_s *priv);
 static int  w25qxxxjv_protect(FAR struct w25qxxxjv_dev_s *priv,
@@ -608,6 +600,29 @@ static void w25qxxxjv_write_disable(FAR struct w25qxxxjv_dev_s *priv)
       status = w25qxxxjv_read_status(priv);
     }
   while ((status & STATUS_WEL_MASK) != STATUS_WEL_DISABLED);
+}
+
+/****************************************************************************
+ * Name:  w25qxxxjv_quad_enable
+ ****************************************************************************/
+
+static void w25qxxxjv_quad_enable(FAR struct w25qxxxjv_dev_s *priv)
+{
+  w25qxxxjv_command_read(priv->qspi, W25QXXXJV_READ_STATUS_2,
+                         (FAR void *)priv->cmdbuf, 1);
+
+  if ((priv->cmdbuf[0] & STATUS2_QE_MASK) != STATUS2_QE_ENABLED)
+    {
+      w25qxxxjv_write_enable(priv);
+
+      priv->cmdbuf[0] &= ~STATUS2_QE_MASK;
+      priv->cmdbuf[1] |= STATUS2_QE_ENABLED;
+
+      w25qxxxjv_command_write(priv->qspi, W25QXXXJV_WRITE_STATUS_2,
+                              (FAR const void *)priv->cmdbuf, 1);
+
+      w25qxxxjv_write_disable(priv);
+    }
 }
 
 /****************************************************************************
@@ -992,7 +1007,7 @@ static int w25qxxxjv_write_page(struct w25qxxxjv_dev_s *priv,
 
       if (ret < 0)
         {
-          ferr("ERROR: QSPI_MEMORY failed writing address=%06x\n",
+          ferr("ERROR: QSPI_MEMORY failed writing address=%06"PRIxOFF"\n",
                address);
           return ret;
         }
@@ -1383,7 +1398,7 @@ static int w25qxxxjv_ioctl(FAR struct mtd_dev_s *dev,
   FAR struct w25qxxxjv_dev_s *priv = (FAR struct w25qxxxjv_dev_s *)dev;
   int ret = -EINVAL; /* Assume good command with bad parameters */
 
-  finfo("cmd: %d \n", cmd);
+  finfo("cmd: %d\n", cmd);
 
   switch (cmd)
     {
@@ -1423,6 +1438,28 @@ static int w25qxxxjv_ioctl(FAR struct mtd_dev_s *dev,
         }
         break;
 
+      case BIOC_PARTINFO:
+        {
+          FAR struct partition_info_s *info =
+            (FAR struct partition_info_s *)arg;
+          if (info != NULL)
+            {
+#ifdef CONFIG_W25QXXXJV_SECTOR512
+              info->numsectors  = priv->nsectors <<
+                             (priv->sectorshift - W25QXXXJV_SECTOR512_SHIFT);
+              info->sectorsize  = 1 << W25QXXXJV_SECTOR512_SHIFT;
+#else
+              info->numsectors  = priv->nsectors <<
+                                  (priv->sectorshift - priv->pageshift);
+              info->sectorsize  = 1 << priv->pageshift;
+#endif
+              info->startsector = 0;
+              info->parent[0]   = '\0';
+              ret               = OK;
+            }
+        }
+        break;
+
       case MTDIOC_BULKERASE:
         {
           /* Erase the entire device */
@@ -1450,6 +1487,15 @@ static int w25qxxxjv_ioctl(FAR struct mtd_dev_s *dev,
 
           DEBUGASSERT(prot);
           ret = w25qxxxjv_unprotect(priv, prot->startblock, prot->nblocks);
+        }
+        break;
+
+      case MTDIOC_ERASESTATE:
+        {
+          FAR uint8_t *result = (FAR uint8_t *)arg;
+          *result = W25QXXXJV_ERASED_STATE;
+
+          ret = OK;
         }
         break;
 
@@ -1567,6 +1613,10 @@ FAR struct mtd_dev_s *w25qxxxjv_initialize(FAR struct qspi_dev_s *qspi,
               ferr("ERROR: Sector unprotect failed\n");
             }
         }
+
+      /* Enable Quad SPI mode, if not already enabled. */
+
+      w25qxxxjv_quad_enable(priv);
 
 #ifdef CONFIG_W25QXXXJV_SECTOR512  /* Simulate a 512 byte sector */
       /* Allocate a buffer for the erase block cache */

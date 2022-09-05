@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <string.h>
@@ -86,7 +87,6 @@ static int bmg160_close(FAR struct file *filep);
 static ssize_t bmg160_read(FAR struct file *, FAR char *, size_t);
 static ssize_t bmg160_write(FAR struct file *filep, FAR const char *buffer,
                             size_t buflen);
-static int bmg160_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
 
 /****************************************************************************
  * Private Data
@@ -94,15 +94,15 @@ static int bmg160_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
 
 static const struct file_operations g_bmg160_fops =
 {
-  bmg160_open,
-  bmg160_close,
-  bmg160_read,
-  bmg160_write,
-  NULL,
-  bmg160_ioctl,
-  NULL
+  bmg160_open,     /* open */
+  bmg160_close,    /* close */
+  bmg160_read,     /* read */
+  bmg160_write,    /* write */
+  NULL,            /* seek */
+  NULL,            /* ioctl */
+  NULL             /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  , NULL
+  , NULL           /* unlink */
 #endif
 };
 
@@ -479,27 +479,6 @@ static ssize_t bmg160_write(FAR struct file *filep, FAR const char *buffer,
                             size_t buflen)
 {
   return -ENOSYS;
-}
-
-/****************************************************************************
- * Name: bmg160_ioctl
- ****************************************************************************/
-
-static int bmg160_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
-{
-  int ret = OK;
-
-  switch (cmd)
-    {
-      /* Command was not recognized */
-
-    default:
-      snerr("ERROR: Unrecognized cmd: %d\n", cmd);
-      ret = -ENOTTY;
-      break;
-    }
-
-  return ret;
 }
 
 /****************************************************************************

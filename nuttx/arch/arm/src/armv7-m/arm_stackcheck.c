@@ -48,19 +48,16 @@
 
 #include <stdint.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "nvic.h"
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
 
-void __cyg_profile_func_enter(void *func, void *caller)
-  __attribute__((naked, no_instrument_function));
-void __cyg_profile_func_exit(void *func, void *caller)
-  __attribute__((naked, no_instrument_function));
-void __stack_overflow_trap(void)
-  __attribute__((naked, no_instrument_function));
+void __cyg_profile_func_enter(void *func, void *caller) naked_function;
+void __cyg_profile_func_exit(void *func, void *caller) naked_function;
+void __stack_overflow_trap(void) naked_function;
 
 /****************************************************************************
  * Name: __stack_overflow_trap

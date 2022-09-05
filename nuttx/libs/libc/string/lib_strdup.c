@@ -32,16 +32,14 @@
  * Public Functions
  ****************************************************************************/
 
+#undef strdup /* See mm/README.txt */
 FAR char *strdup(FAR const char *s)
 {
-  FAR char *news = NULL;
-  if (s)
+  FAR char *news = (FAR char *)lib_malloc(strlen(s) + 1);
+
+  if (news)
     {
-      news = (FAR char *)lib_malloc(strlen(s) + 1);
-      if (news)
-        {
-          strcpy(news, s);
-        }
+      strcpy(news, s);
     }
 
   return news;

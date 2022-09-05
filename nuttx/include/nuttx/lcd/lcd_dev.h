@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __DRIVERS_LCD_LCD_DEV_H
-#define __DRIVERS_LCD_LCD_DEV_H
+#ifndef __INCLUDE_NUTTX_LCD_LCD_DEV_H
+#define __INCLUDE_NUTTX_LCD_LCD_DEV_H
 
 /****************************************************************************
  * Included Files
@@ -58,6 +58,9 @@
 #define LCDDEVIO_GETCURSOR    _LCDIOC(11) /* Arg: struct fb_cursorattrib_s* */
 #define LCDDEVIO_SETCURSOR    _LCDIOC(12) /* Arg: struct fb_setcursor_s* */
 #endif
+
+#define LCDDEVIO_SETFRAMERATE _LCDIOC(13) /* Arg: int */
+#define LCDDEVIO_GETFRAMERATE _LCDIOC(14) /* Arg: int* */
 
 /****************************************************************************
  * Public Data
@@ -111,4 +114,4 @@ int lcddev_register(int devno);
 }
 #endif
 
-#endif /* __DRIVERS_LCD_LCD_DEV_H */
+#endif /* __INCLUDE_NUTTX_LCD_LCD_DEV_H */

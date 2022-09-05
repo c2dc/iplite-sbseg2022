@@ -43,14 +43,15 @@
 
 #include <arch/board/board.h>
 #include <nuttx/config.h>
-#include <debug.h>
 
+#include <assert.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include "hardware/lpc43_scu.h"
 #include "hardware/lpc43_gpio.h"

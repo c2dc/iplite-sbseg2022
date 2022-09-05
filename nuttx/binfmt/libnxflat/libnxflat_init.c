@@ -94,10 +94,9 @@ int nxflat_init(const char *filename, struct nxflat_loadinfo_s *loadinfo)
 
   /* Open the binary file */
 
-  loadinfo->filfd = nx_open(filename, O_RDONLY);
-  if (loadinfo->filfd < 0)
+  ret = file_open(&loadinfo->file, filename, O_RDONLY);
+  if (ret < 0)
     {
-      ret = loadinfo->filfd;
       berr("ERROR: Failed to open NXFLAT binary %s: %d\n", filename, ret);
       return ret;
     }
@@ -109,7 +108,7 @@ int nxflat_init(const char *filename, struct nxflat_loadinfo_s *loadinfo)
   if (ret < 0)
     {
       berr("ERROR: Failed to read NXFLAT header: %d\n", ret);
-      nx_close(loadinfo->filfd);
+      file_close(&loadinfo->file);
       return ret;
     }
 
@@ -128,7 +127,7 @@ int nxflat_init(const char *filename, struct nxflat_loadinfo_s *loadinfo)
        */
 
       berr("ERROR: Bad NXFLAT header\n");
-      nx_close(loadinfo->filfd);
+      file_close(&loadinfo->file);
       return -ENOEXEC;
     }
 
@@ -138,9 +137,9 @@ int nxflat_init(const char *filename, struct nxflat_loadinfo_s *loadinfo)
    * network order.
    */
 
-  datastart             = ntohl(loadinfo->header.h_datastart);
-  dataend               = ntohl(loadinfo->header.h_dataend);
-  bssend                = ntohl(loadinfo->header.h_bssend);
+  datastart             = NTOHL(loadinfo->header.h_datastart);
+  dataend               = NTOHL(loadinfo->header.h_dataend);
+  bssend                = NTOHL(loadinfo->header.h_bssend);
 
   /* And put this information into the loadinfo structure as well.
    *
@@ -151,12 +150,12 @@ int nxflat_init(const char *filename, struct nxflat_loadinfo_s *loadinfo)
    *   bsssize    = the address range from dataend up to bssend.
    */
 
-  loadinfo->entryoffs   = ntohl(loadinfo->header.h_entry);
+  loadinfo->entryoffs   = NTOHL(loadinfo->header.h_entry);
   loadinfo->isize       = datastart;
 
   loadinfo->datasize    = dataend - datastart;
   loadinfo->bsssize     = bssend - dataend;
-  loadinfo->stacksize   = ntohl(loadinfo->header.h_stacksize);
+  loadinfo->stacksize   = NTOHL(loadinfo->header.h_stacksize);
 
   /* This is the initial dspace size.  We'll re-calculate this later
    * after the memory has been allocated.
@@ -168,8 +167,8 @@ int nxflat_init(const char *filename, struct nxflat_loadinfo_s *loadinfo)
    * this later).
    */
 
-  loadinfo->relocstart  = ntohl(loadinfo->header.h_relocstart);
-  loadinfo->reloccount  = ntohs(loadinfo->header.h_reloccount);
+  loadinfo->relocstart  = NTOHL(loadinfo->header.h_relocstart);
+  loadinfo->reloccount  = NTOHS(loadinfo->header.h_reloccount);
 
   return 0;
 }

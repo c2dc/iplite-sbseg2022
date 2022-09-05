@@ -42,7 +42,7 @@
 #  include <nuttx/nx/nxterm.h>
 #endif
 
-#ifdef CONFIG_LIB_BOARDCTL
+#ifdef CONFIG_BOARDCTL
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -63,7 +63,7 @@
  *                whatever you would like to do with it.  Every
  *                implementation should accept zero/NULL as a default
  *                configuration.
- * CONFIGURATION: CONFIG_LIB_BOARDCTL
+ * CONFIGURATION: CONFIG_BOARDCTL
  * DEPENDENCIES:  Board logic must provide board_app_initialize()
  *
  * CMD:           BOARDIOC_POWEROFF
@@ -134,14 +134,13 @@
  * ARG:           A pointer to an instance of struct boardioc_builtin_s
  * CONFIGURATION: This BOARDIOC command is always available when
  *                CONFIG_BUILTIN is enabled, but does nothing unless
- *                CONFIG_BUILD_PROTECTED and CONFIG_FS_BINFS are also
- *                selected.
+ *                CONFIG_BUILD_PROTECTED is also selected.
  * DEPENDENCIES:  None
  *
  * CMD:           BOARDIOC_USBDEV_CONTROL
  * DESCRIPTION:   Manage USB device classes
  * ARG:           A pointer to an instance of struct boardioc_usbdev_ctrl_s
- * CONFIGURATION: CONFIG_LIB_BOARDCTL && CONFIG_BOARDCTL_USBDEVCTRL
+ * CONFIGURATION: CONFIG_BOARDCTL && CONFIG_BOARDCTL_USBDEVCTRL
  * DEPENDENCIES:  Board logic must provide board_<usbdev>_initialize()
  *
  * CMD:           BOARDIOC_NX_START
@@ -155,7 +154,7 @@
  * ARG:           A reference readable instance of struct
  *                boardioc_vncstart_s
  * CONFIGURATION: CONFIG_VNCSERVER
- * DEPENDENCIES:  VNC server provides vnc_default_fbinitialize()
+ * DEPENDENCIES:  VNC server provides nx_vnc_fbinitialize()
  *
  * CMD:           BOARDIOC_NXTERM
  * DESCRIPTION:   Create an NX terminal device
@@ -181,6 +180,12 @@
  *                1=locked.
  * CONFIGURATION: CONFIG_BOARDCTL_TESTSET
  * DEPENDENCIES:  Architecture-specific logic provides up_testset()
+ *
+ * CMD:           BOARDIOC_RESET_CAUSE
+ * DESCRIPTION:   Get the cause of last-time board reset
+ * ARG:           A pointer to an instance of struct boardioc_reset_cause_s
+ * CONFIGURATION: CONFIG_BOARDCTL_RESET_CAUSE
+ * DEPENDENCIES:  Board logic must provide the board_reset_cause() interface.
  */
 
 #define BOARDIOC_INIT              _BOARDIOC(0x0001)
@@ -200,6 +205,10 @@
 #define BOARDIOC_NXTERM            _BOARDIOC(0x000f)
 #define BOARDIOC_NXTERM_IOCTL      _BOARDIOC(0x0010)
 #define BOARDIOC_TESTSET           _BOARDIOC(0x0011)
+#define BOARDIOC_UNIQUEKEY         _BOARDIOC(0x0012)
+#define BOARDIOC_SWITCH_BOOT       _BOARDIOC(0x0013)
+#define BOARDIOC_BOOT_IMAGE        _BOARDIOC(0x0014)
+#define BOARDIOC_RESET_CAUSE       _BOARDIOC(0x0015)
 
 /* If CONFIG_BOARDCTL_IOCTL=y, then board-specific commands will be support.
  * In this case, all commands not recognized by boardctl() will be forwarded
@@ -208,7 +217,7 @@
  * User defined board commands may begin with this value:
  */
 
-#define BOARDIOC_USER              _BOARDIOC(0x0012)
+#define BOARDIOC_USER              _BOARDIOC(0x0016)
 
 /****************************************************************************
  * Public Type Definitions
@@ -390,6 +399,52 @@ struct boardioc_nxterm_ioctl_s
 };
 #endif /* CONFIG_NXTERM */
 
+#ifdef CONFIG_BOARDCTL_BOOT_IMAGE
+
+/* Structure containing the arguments to the BOARDIOC_BOOT_IMAGE command */
+
+struct boardioc_boot_info_s
+{
+  FAR const char *path;           /* Path to application firmware image */
+  uint32_t        header_size;    /* Size of the image header in bytes */
+};
+#endif
+
+#ifdef CONFIG_BOARDCTL_RESET_CAUSE
+/* Describes the reason of last reset */
+
+enum boardioc_reset_cause_e
+{
+  BOARDIOC_RESETCAUSE_NONE = 0,
+  BOARDIOC_RESETCAUSE_SYS_CHIPPOR,      /* chip power on */
+  BOARDIOC_RESETCAUSE_SYS_RWDT,         /* RTC watchdog system reset */
+  BOARDIOC_RESETCAUSE_SYS_BOR,          /* brown-out system reset */
+  BOARDIOC_RESETCAUSE_CORE_SOFT,        /* software core reset */
+  BOARDIOC_RESETCAUSE_CORE_DPSP,        /* deep-sleep core reset */
+  BOARDIOC_RESETCAUSE_CORE_MWDT,        /* main watchdog core reset */
+  BOARDIOC_RESETCAUSE_CORE_RWDT,        /* RTC watchdog core reset */
+  BOARDIOC_RESETCAUSE_CPU_MWDT,         /* main watchdog cpu reset */
+  BOARDIOC_RESETCAUSE_CPU_SOFT,         /* software cpu reset */
+  BOARDIOC_RESETCAUSE_CPU_RWDT          /* RTC watchdog cpu reset */
+};
+
+enum boardioc_softreset_subreason_e
+{
+  BOARDIOC_SOFTRESETCAUSE_USER_REBOOT = 0,
+  BOARDIOC_SOFTRESETCAUSE_PANIC,
+  BOARDIOC_SOFTRESETCAUSE_ASSERT,
+  BOARDIOC_SOFTRESETCAUSE_ENTER_RECOVERY,
+  BOARDIOC_SOFTRESETCAUSE_RESTORE_FACTORY
+};
+
+struct boardioc_reset_cause_s
+{
+  enum boardioc_reset_cause_e cause;  /* The reason of last reset */
+  uint32_t flag;                      /* watchdog number when watchdog reset,
+                                       * or soft-reset subreason */
+};
+#endif
+
 /****************************************************************************
  * Public Data
  ****************************************************************************/
@@ -443,5 +498,5 @@ int boardctl(unsigned int cmd, uintptr_t arg);
 }
 #endif
 
-#endif /* CONFIG_LIB_BOARDCTL */
+#endif /* CONFIG_BOARDCTL */
 #endif /* __INCLUDE_SYS_BOARDCTL_H */

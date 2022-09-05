@@ -39,7 +39,6 @@ Configuring NuttX
     2) Make sure that your PATH environment variable includes the path
        to the SDCC toolchain.
 
-
     3) Then build the binaries:
 
           make
@@ -80,7 +79,6 @@ Configuring NuttX
 
     2) Set the PATH environment variable to include the path to the SDCC
        toolchain.
-
 
     3) Then build the binaries:
 
@@ -126,9 +124,6 @@ and the following changes to the configuration file:
   +CONFIG_HOST_WINDOWS=y
   +CONFIG_WINDOWS_NATIVE=y
 
-  -CONFIG_Z80_TOOLCHAIN_SDCCL=y
-  +CONFIG_Z80_TOOLCHAIN_SDCCW=y
-
 You may need to first manually change the CONFIG_APPS_DIR="../apps"
 definition in the .config file because the forward slash may upset some
 Windows-based tools.
@@ -153,8 +148,7 @@ site: http://sourceforge.net/projects/sdcc/files/ .  Pre-built binaries are
 available for Linux, macOS, and for Win32.  Various SDCC options can be
 selected with:
 
-  CONFIG_Z80_TOOLCHAIN_SDCCL=y : SDCC for Linux, macOS or Cygwin (see below)
-  CONFIG_Z80_TOOLCHAIN_SDCCW=y : SDCC for Win32
+  CONFIG_Z80_TOOLCHAIN_SDCC=y : SDCC for Win32, Linux, macOS or Cygwin
 
 SDCC versions 3.2.0 or higher are recommended.
 
@@ -187,15 +181,3 @@ Then make the SDCC binaries
 and install SDCC:
 
   sudo make install
-
-Known compilation problems:
-
-    CC:  stdlib/lib_strtof.c
-    stdlib/lib_strtof.c:62:6: warning: #warning "Size of exponent is unknown"
-    stdlib/lib_strtof.c:76: error 122: dividing by ZERO
-    stdlib/lib_strtof.c:102: error 122: dividing by ZERO
-    stdlib/lib_strtof.c:76: error 122: dividing by ZERO
-
-  Workaround: Remove lib_strtof.c from libs/libc/stdlib/Make.defs
-
-  In arch/z80/src/z180:  error 26: '_cbr' not a structure/union member

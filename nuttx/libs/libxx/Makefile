@@ -19,14 +19,6 @@
 
 include $(TOPDIR)/Make.defs
 
-CXXSRCS = libxx_cxa_atexit.cxx
-
-ifeq ($(CONFIG_CXX_LIBSUPCXX),y)
-CXXSRCS += libxx_impure.cxx
-else
-CXXSRCS += libxx_eabi_atexit.cxx
-endif
-
 # Include the uClibc++ Make.defs file if selected.  If it is included,
 # the uClibc++/Make.defs file will add its files to the source file list,
 # add its DEPPATH info, and will add the appropriate paths to the VPATH
@@ -42,7 +34,14 @@ include uClibc++.defs
 else ifeq ($(CONFIG_LIBCXX),y)
 include libcxx.defs
 else
-include cxx.defs
+include libcxxmini.defs
+ifeq ($(CONFIG_ETL),y)
+include etl.defs
+endif
+endif
+
+ifeq ($(CONFIG_LIBCXXABI),y)
+include libcxxabi.defs
 endif
 
 # Object Files
@@ -58,7 +57,7 @@ OBJS = $(AOBJS) $(COBJS) $(CXXOBJS) $(CPPOBJS)
 BIN = libxx$(LIBEXT)
 
 all: $(BIN)
-.PHONY: depend clean distclean dirlinks
+.PHONY: depend clean distclean context
 
 $(AOBJS): %$(OBJEXT): %.S
 	$(call ASSEMBLE, $<, $@)
@@ -75,7 +74,7 @@ $(CPPOBJS): %$(OBJEXT): %.cpp
 $(BIN):	$(OBJS)
 	$(call ARCHIVE, $@, $(OBJS))
 
-dirlinks::
+context::
 
 makedepfile: $(CXXSRCS:.cxx=.ddx) $(CPPSRCS:.cpp=.ddp)
 	$(call CATFILE, Make.dep, $^)

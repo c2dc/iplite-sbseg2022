@@ -33,7 +33,7 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/fs/nxffs.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam_periphclks.h"
 #include "sam_pio.h"
 #include "sam_nand.h"
@@ -152,7 +152,7 @@ int board_nandflash_config(int cs)
 #ifdef HAVE_NAND
 int sam_nand_automount(int minor)
 {
-  FAR struct mtd_dev_s *mtd;
+  struct mtd_dev_s *mtd;
   static bool initialized = false;
   int ret;
 

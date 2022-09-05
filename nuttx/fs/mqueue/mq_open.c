@@ -24,12 +24,14 @@
 
 #include <nuttx/config.h>
 
+#include <sys/stat.h>
 #include <stdbool.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <sched.h>
 #include <mqueue.h>
 #include <fcntl.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/mqueue.h>
@@ -58,9 +60,9 @@ static const struct file_operations g_nxmq_fileops =
   NULL,             /* write */
   NULL,             /* seek */
   NULL,             /* ioctl */
-  nxmq_file_poll,   /* poll */
+  nxmq_file_poll    /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  NULL,             /* unlink */
+  , NULL            /* unlink */
 #endif
 };
 
@@ -157,7 +159,7 @@ errout:
 }
 
 static int file_mq_vopen(FAR struct file *mq, FAR const char *mq_name,
-                         int oflags, va_list ap, int *created)
+                         int oflags, mode_t umask, va_list ap, int *created)
 {
   FAR struct inode *inode;
   FAR struct mqueue_inode_s *msgq;
@@ -175,6 +177,13 @@ static int file_mq_vopen(FAR struct file *mq, FAR const char *mq_name,
       goto errout;
     }
 
+  if (sizeof(CONFIG_FS_MQUEUE_VFS_PATH) + 1 + strlen(mq_name)
+      >= MAX_MQUEUE_PATH)
+    {
+      ret = -ENAMETOOLONG;
+      goto errout;
+    }
+
   /* Were we asked to create it? */
 
   if ((oflags & O_CREAT) != 0)
@@ -187,8 +196,10 @@ static int file_mq_vopen(FAR struct file *mq, FAR const char *mq_name,
       attr = va_arg(ap, FAR struct mq_attr *);
     }
 
+  mode &= ~umask;
+
   /* Skip over any leading '/'.  All message queue paths are relative to
-   * CONFIG_FS_MQUEUE_MPATH.
+   * CONFIG_FS_MQUEUE_VFS_PATH.
    */
 
   while (*mq_name == '/')
@@ -198,7 +209,8 @@ static int file_mq_vopen(FAR struct file *mq, FAR const char *mq_name,
 
   /* Get the full path to the message queue */
 
-  snprintf(fullpath, MAX_MQUEUE_PATH, CONFIG_FS_MQUEUE_MPATH "/%s", mq_name);
+  snprintf(fullpath, MAX_MQUEUE_PATH,
+           CONFIG_FS_MQUEUE_VFS_PATH "/%s", mq_name);
 
   /* Make sure that the check for the existence of the message queue
    * and the creation of the message queue are atomic with respect to
@@ -273,7 +285,7 @@ static int file_mq_vopen(FAR struct file *mq, FAR const char *mq_name,
           goto errout_with_lock;
         }
 
-      ret = inode_reserve(fullpath, &inode);
+      ret = inode_reserve(fullpath, mode, &inode);
       inode_semgive();
 
       if (ret < 0)
@@ -285,10 +297,9 @@ static int file_mq_vopen(FAR struct file *mq, FAR const char *mq_name,
        * be created with a reference count of zero.
        */
 
-      msgq = (FAR struct mqueue_inode_s *)nxmq_alloc_msgq(mode, attr);
-      if (!msgq)
+      ret = nxmq_alloc_msgq(attr, &msgq);
+      if (ret < 0)
         {
-          ret = -ENOSPC;
           goto errout_with_inode;
         }
 
@@ -335,7 +346,7 @@ static mqd_t nxmq_vopen(FAR const char *mq_name, int oflags, va_list ap)
   int created;
   int ret;
 
-  ret = file_mq_vopen(&mq, mq_name, oflags, ap, &created);
+  ret = file_mq_vopen(&mq, mq_name, oflags, getumask(), ap, &created);
   if (ret < 0)
     {
       return ret;
@@ -359,6 +370,7 @@ static mqd_t nxmq_vopen(FAR const char *mq_name, int oflags, va_list ap)
  * Public Functions
  ****************************************************************************/
 
+#if CONFIG_FS_MQUEUE_NPOLLWAITERS > 0
 void nxmq_pollnotify(FAR struct mqueue_inode_s *msgq, pollevent_t eventset)
 {
   int i;
@@ -384,6 +396,7 @@ void nxmq_pollnotify(FAR struct mqueue_inode_s *msgq, pollevent_t eventset)
         }
     }
 }
+#endif
 
 /****************************************************************************
  * Name: file_mq_open
@@ -405,7 +418,7 @@ void nxmq_pollnotify(FAR struct mqueue_inode_s *msgq, pollevent_t eventset)
  *   Optional parameters.  When the O_CREAT flag is specified, two optional
  *   parameters are expected:
  *
- *     1. mode_t mode (ignored), and
+ *     1. mode_t mode, and
  *     2. struct mq_attr *attr.  The mq_maxmsg attribute
  *        is used at the time that the message queue is
  *        created to determine the maximum number of
@@ -426,7 +439,7 @@ int file_mq_open(FAR struct file *mq,
   int ret;
 
   va_start(ap, oflags);
-  ret = file_mq_vopen(mq, mq_name, oflags, ap, NULL);
+  ret = file_mq_vopen(mq, mq_name, oflags, 0, ap, NULL);
   va_end(ap);
 
   return ret;
@@ -452,7 +465,7 @@ int file_mq_open(FAR struct file *mq,
  *   Optional parameters.  When the O_CREAT flag is specified, two optional
  *   parameters are expected:
  *
- *     1. mode_t mode (ignored), and
+ *     1. mode_t mode, and
  *     2. struct mq_attr *attr.  The mq_maxmsg attribute
  *        is used at the time that the message queue is
  *        created to determine the maximum number of
@@ -494,7 +507,7 @@ mqd_t nxmq_open(FAR const char *mq_name, int oflags, ...)
  *   Optional parameters.  When the O_CREAT flag is specified, two optional
  *   parameters are expected:
  *
- *     1. mode_t mode (ignored), and
+ *     1. mode_t mode, and
  *     2. struct mq_attr *attr.  The mq_maxmsg attribute
  *        is used at the time that the message queue is
  *        created to determine the maximum number of

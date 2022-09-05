@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -45,6 +46,9 @@
 
 int irq_unexpected_isr(int irq, FAR void *context, FAR void *arg)
 {
+  UNUSED(context);
+  UNUSED(arg);
+
   up_irq_save();
   _err("ERROR irq: %d\n", irq);
   PANIC();

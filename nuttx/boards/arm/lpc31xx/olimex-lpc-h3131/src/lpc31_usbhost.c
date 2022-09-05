@@ -38,8 +38,7 @@
 #include <nuttx/usb/usbhost.h>
 #include <nuttx/usb/usbdev_trace.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "lpc31.h"
 #include "lpc_h3131.h"
 
@@ -89,7 +88,7 @@ static xcpt_t g_ochandler;
 
 static int ehci_waiter(int argc, char *argv[])
 {
-  FAR struct usbhost_hubport_s *hport;
+  struct usbhost_hubport_s *hport;
 
   uinfo("ehci_waiter:  Running\n");
   for (; ; )
@@ -161,7 +160,6 @@ void weak_function lpc31_usbhost_bootinitialize(void)
 
 int lpc31_usbhost_initialize(void)
 {
-  pid_t pid;
   int ret;
 
   /* First, register all of the class drivers needed to support the drivers
@@ -219,10 +217,10 @@ int lpc31_usbhost_initialize(void)
 
   /* Start a thread to handle device connection. */
 
-  pid = kthread_create("EHCI Monitor", CONFIG_USBHOST_DEFPRIO, i
+  ret = kthread_create("EHCI Monitor", CONFIG_USBHOST_DEFPRIO, i
                        CONFIG_USBHOST_STACKSIZE,
-                       (main_t)ehci_waiter, (FAR char * const *)NULL);
-  if (pid < 0)
+                       (main_t)ehci_waiter, (char * const *)NULL);
+  if (ret < 0)
     {
       uerr("ERROR: Failed to create ehci_waiter task: %d\n", ret);
       return -ENODEV;

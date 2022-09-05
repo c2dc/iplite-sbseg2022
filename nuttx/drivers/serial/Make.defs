@@ -36,12 +36,6 @@ ifeq ($(CONFIG_RPMSG_UART),y)
   CSRCS += uart_rpmsg.c
 endif
 
-# termios support
-
-ifeq ($(CONFIG_SERIAL_TERMIOS),y)
-  CSRCS += tcdrain.c
-endif
-
 # Pseudo-terminal support
 
 ifeq ($(CONFIG_PSEUDOTERM),y)
@@ -49,6 +43,12 @@ ifeq ($(CONFIG_PSEUDOTERM),y)
 ifeq ($(CONFIG_PSEUDOTERM_SUSV1),y)
   CSRCS += ptmx.c
 endif
+endif
+
+# Bluetooth H:4 UART driver
+
+ifeq ($(CONFIG_UART_BTH4),y)
+  CSRCS += uart_bth4.c
 endif
 
 # Include serial build support

@@ -710,7 +710,7 @@ Configurations
        CONFIG_HOST_CYGWIN=y    : Using Cygwin or other POSIX environment
 
      System Type -> Toolchain:
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y : General GCC EABI toolchain under windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : General GCC EABI toolchain under windows
 
      This re-configuration should be done before making NuttX or else the
      subsequent 'make' will fail.  If you have already attempted building
@@ -798,8 +798,8 @@ Configuration sub-directories
 
          CONFIG_MMCSD=y                    : Enable MMC/SD support
          CONFIG_MMCSD_NSLOTS=1             : Only one MMC/SD card slot
-         CONFIG_MMCSD_MULTIBLOCK_DISABLE=n : Should not need to disable multi-block transfers
-         CONFIG_MMCSD_HAVE_CARDDETECT=y     : I/O1 module as a card detect GPIO
+         CONFIG_MMCSD_MULTIBLOCK_LIMIT=0   : Should not need to disable multi-block transfers
+         CONFIG_MMCSD_HAVE_CARDDETECT=y    : I/O1 module as a card detect GPIO
          CONFIG_MMCSD_SPI=y                : Use the SPI interface to the MMC/SD card
          CONFIG_MMCSD_SPICLOCK=20000000    : This is a guess for the optimal MMC/SD frequency
          CONFIG_MMCSD_SPIMODE=0            : Mode 0 is required

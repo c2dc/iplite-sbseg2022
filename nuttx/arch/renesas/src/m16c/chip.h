@@ -76,8 +76,8 @@
  * specific chips do not support external RAM.
  */
 
-/* Each part has a different amount on on-chip FLASH.  The ending FLASH address is
- * 0xfffff for all chips, but the starting address varies depening on the amount
+/* Each part has a different amount of on-chip FLASH.  The ending FLASH address is
+ * 0xfffff for all chips, but the starting address varies depending on the amount
  * of on-chip FLASH.
  */
 
@@ -101,7 +101,7 @@
 #define M16C_PM1           0x00005    /* Processor mode 1 */
 #define M16C_CM0           0x00006    /* System clock control 0 */
 #define M16C_CM1           0x00007    /* System clock control 1 */
-#define M16C_AIER          0x00009    /* Addrese match interrupt enable */
+#define M16C_AIER          0x00009    /* Address match interrupt enable */
 #define M16C_PRCR          0x0000a    /* Protect */
 #define M16C_CM2           0x0000c    /* Oscillation stop detection */
 #define M16C_WDTS          0x0000e    /* Watchdog timer start */
@@ -257,7 +257,8 @@ extern uint32_t g_svarvect;      /* Start of variable vectors */
 
 #ifndef __ASSEMBLY__
 #  if CONFIG_ARCH_INTERRUPTSTACK > 3
-     extern uint16_t g_intstackbase;
+     extern uint16_t g_intstackalloc;
+     extern uint16_t g_intstacktop;
 #  endif
 #endif
 

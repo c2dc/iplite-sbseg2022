@@ -34,14 +34,22 @@
 #include <nuttx/mtd/mtd.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/fs/nxffs.h>
+#include <nuttx/drivers/rpmsgdev.h>
+#include <nuttx/i2c/i2c_master.h>
+#include <nuttx/spi/spi_transfer.h>
+#include <nuttx/rc/lirc_dev.h>
+#include <nuttx/rc/dummy.h>
+#include <nuttx/sensors/fakesensor.h>
+#include <nuttx/sensors/mpu60x0.h>
+#include <nuttx/sensors/wtgahrs2.h>
+#include <nuttx/serial/uart_rpmsg.h>
+#include <nuttx/timers/oneshot.h>
 #include <nuttx/video/fb.h>
 #include <nuttx/timers/oneshot.h>
 #include <nuttx/wireless/pktradio.h>
 #include <nuttx/wireless/bluetooth/bt_null.h>
 #include <nuttx/wireless/bluetooth/bt_uart_shim.h>
 #include <nuttx/wireless/ieee802154/ieee802154_loopback.h>
-#include <nuttx/i2c/i2c_master.h>
-#include <nuttx/sensors/mpu60x0.h>
 
 #ifdef CONFIG_LCD_DEV
 #include <nuttx/lcd/lcd_dev.h>
@@ -58,8 +66,19 @@
  * Public Functions
  ****************************************************************************/
 
+#ifdef CONFIG_RPMSG_UART
+void rpmsg_serialinit(void)
+{
+#ifdef CONFIG_SIM_RPTUN_MASTER
+  uart_rpmsg_init("proxy", "proxy", 4096, false);
+#else
+  uart_rpmsg_init("server", "proxy", 4096, true);
+#endif
+}
+#endif
+
 /****************************************************************************
- * Name: sam_bringup
+ * Name: sim_bringup
  *
  * Description:
  *   Bring up simulated board features
@@ -69,18 +88,20 @@
 int sim_bringup(void)
 {
 #ifdef CONFIG_ONESHOT
-  FAR struct oneshot_lowerhalf_s *oneshot;
+  struct oneshot_lowerhalf_s *oneshot;
 #endif
 #ifdef CONFIG_RAMMTD
-  FAR uint8_t *ramstart;
+  uint8_t *ramstart;
 #endif
 #ifdef CONFIG_SIM_I2CBUS
-  FAR struct i2c_master_s *i2cbus;
+  struct i2c_master_s *i2cbus;
 #endif
 #ifdef CONFIG_MPU60X0_I2C
-  FAR struct mpu_config_s *mpu_config;
+  struct mpu_config_s *mpu_config;
 #endif
-
+#ifdef CONFIG_SIM_SPI
+  struct spi_dev_s *spidev;
+#endif
   int ret = OK;
 
 #ifdef CONFIG_FS_BINFS
@@ -115,7 +136,7 @@ int sim_bringup(void)
     }
 #endif
 
-#ifdef CONFIG_LIB_ZONEINFO_ROMFS
+#ifdef CONFIG_LIBC_ZONEINFO_ROMFS
   /* Mount the TZ database */
 
   sim_zoneinfo(3);
@@ -130,7 +151,7 @@ int sim_bringup(void)
 #ifdef CONFIG_RAMMTD
   /* Create a RAM MTD device if configured */
 
-  ramstart = (FAR uint8_t *)kmm_malloc(128 * 1024);
+  ramstart = (uint8_t *)kmm_malloc(128 * 1024);
   if (ramstart == NULL)
     {
       syslog(LOG_ERR, "ERROR: Allocation for RAM MTD failed\n");
@@ -139,7 +160,7 @@ int sim_bringup(void)
     {
       /* Initialized the RAM MTD */
 
-      FAR struct mtd_dev_s *mtd = rammtd_initialize(ramstart, 128 * 1024);
+      struct mtd_dev_s *mtd = rammtd_initialize(ramstart, 128 * 1024);
       if (mtd == NULL)
         {
           syslog(LOG_ERR, "ERROR: rammtd_initialize failed\n");
@@ -256,17 +277,7 @@ int sim_bringup(void)
   sim_ajoy_initialize();
 #endif
 
-#if defined(CONFIG_NX) && defined(CONFIG_SIM_TOUCHSCREEN)
-  /* Initialize the touchscreen */
-
-  ret = sim_tsc_setup(0);
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "ERROR: sim_tsc_setup failed: %d\n", ret);
-    }
-#else
-
-#  ifdef CONFIG_VIDEO_FB
+#ifdef CONFIG_VIDEO_FB
   /* Initialize and register the simulated framebuffer driver */
 
   ret = fb_register(0, 0);
@@ -274,9 +285,9 @@ int sim_bringup(void)
     {
       syslog(LOG_ERR, "ERROR: fb_register() failed: %d\n", ret);
     }
-#  endif
+#endif
 
-#  ifdef CONFIG_LCD
+#ifdef CONFIG_LCD
 
   ret = board_lcd_initialize();
   if (ret < 0)
@@ -294,9 +305,9 @@ int sim_bringup(void)
 
 #  endif
 
-#  endif
+#endif
 
-#  ifdef CONFIG_SIM_TOUCHSCREEN
+#ifdef CONFIG_SIM_TOUCHSCREEN
   /* Initialize the touchscreen */
 
   ret = sim_tsc_initialize(0);
@@ -304,8 +315,16 @@ int sim_bringup(void)
     {
       syslog(LOG_ERR, "ERROR: sim_tsc_initialize failed: %d\n", ret);
     }
-#  endif
+#endif
 
+#ifdef CONFIG_SIM_KEYBOARD
+  /* Initialize the keyboard */
+
+  ret = sim_kbd_initialize();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: sim_kbd_initialize failed: %d\n", ret);
+    }
 #endif
 
 #ifdef CONFIG_IEEE802154_LOOPBACK
@@ -341,29 +360,11 @@ int sim_bringup(void)
 #ifdef CONFIG_SIM_HCISOCKET
   /* Register the Host Bluetooth network device via HCI socket */
 
-  ret = bthcisock_register(0);  /* Use HCI0 */
+  ret = bthcisock_register(CONFIG_SIM_HCISOCKET_DEVID);
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: bthcisock_register() failed: %d\n", ret);
     }
-#endif
-
-#ifdef CONFIG_SIM_BTUART
-  /* Register the HCI TTY device via HCI socket */
-
-  ret = sim_btuart_register("/dev/ttyHCI", 0);  /* Use HCI0 */
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "ERROR: sim_btuart_register() failed: %d\n", ret);
-    }
-
-#  ifdef CONFIG_BLUETOOTH_UART_SHIM
-  ret = btuart_register(btuart_shim_getdevice("/dev/ttyHCI"));
-  if (ret < 0)
-    {
-      syslog(LOG_ERR, "ERROR: btuart_register() failed: %d\n", ret);
-    }
-#  endif
 #endif
 
 #ifdef CONFIG_SIM_I2CBUS
@@ -402,12 +403,71 @@ int sim_bringup(void)
 #endif
 #endif
 
+#ifdef CONFIG_SIM_SPI
+  spidev = sim_spi_initialize(CONFIG_SIM_SPIDEV_NAME);
+  if (spidev == NULL)
+    {
+      syslog(LOG_ERR, "ERROR: sim_spi_initialize failed.\n");
+    }
+#ifdef CONFIG_SYSTEM_SPITOOL
+  else
+    {
+      ret = spi_register(spidev, 0);
+      if (ret < 0)
+        {
+          syslog(LOG_ERR, "ERROR: Failed to register SPI%d driver: %d\n",
+                 0, ret);
+          sim_spi_uninitialize(spidev);
+        }
+    }
+#endif /* CONFIG_SYSTEM_SPITOOL */
+#endif /* CONFIG_SIM_SPI */
+
 #if defined(CONFIG_INPUT_BUTTONS_LOWER) && defined(CONFIG_SIM_BUTTONS)
   ret = btn_lower_initialize("/dev/buttons");
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: btn_lower_initialize() failed: %d\n", ret);
     }
+#endif
+
+#ifdef CONFIG_MOTOR_FOC_DUMMY
+  /* Setup FOC device */
+
+  ret = sim_foc_setup();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: sim_foc_setup() failed: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_RPTUN
+#ifdef CONFIG_SIM_RPTUN_MASTER
+  up_rptun_init("server-proxy", "proxy", true);
+#else
+  up_rptun_init("server-proxy", "server", false);
+#endif
+
+#ifdef CONFIG_DEV_RPMSG
+  rpmsgdev_register("server", "/dev/console", "/dev/server-console");
+  rpmsgdev_register("server", "/dev/null", "/dev/server-null");
+#endif
+#endif
+
+#ifdef CONFIG_SIM_WTGAHRS2_UARTN
+#if CONFIG_SIM_WTGAHRS2_UARTN == 0
+  wtgahrs2_initialize(CONFIG_SIM_UART0_NAME, 0);
+#elif CONFIG_SIM_WTGAHRS2_UARTN == 1
+  wtgahrs2_initialize(CONFIG_SIM_UART1_NAME, 1);
+#elif CONFIG_SIM_WTGAHRS2_UARTN == 2
+  wtgahrs2_initialize(CONFIG_SIM_UART2_NAME, 2);
+#elif CONFIG_SIM_WTGAHRS2_UARTN == 3
+  wtgahrs2_initialize(CONFIG_SIM_UART3_NAME, 3);
+#endif
+#endif
+
+#ifdef CONFIG_RC_DUMMY
+  rc_dummy_initialize(0);
 #endif
 
   return ret;

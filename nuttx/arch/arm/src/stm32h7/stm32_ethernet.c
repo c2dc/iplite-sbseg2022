@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 #include <queue.h>
 #include <errno.h>
@@ -39,10 +40,11 @@
 #include <nuttx/irq.h>
 #include <nuttx/wdog.h>
 #include <nuttx/wqueue.h>
+#include <nuttx/signal.h>
 #include <nuttx/net/mii.h>
 #include <nuttx/net/arp.h>
 #include <nuttx/net/netdev.h>
-#include <crc64.h>
+#include <nuttx/crc64.h>
 
 #if defined(CONFIG_NET_PKT)
 #  include <nuttx/net/pkt.h>
@@ -275,12 +277,6 @@
 
 /* Timing *******************************************************************/
 
-/* TX poll delay = 1 seconds.
- * CLK_TCK is the number of clock ticks per second
- */
-
-#define STM32_WDDELAY     (1*CLK_TCK)
-
 /* TX timeout = 1 minute */
 
 #define STM32_TXTIMEOUT   (60*CLK_TCK)
@@ -294,7 +290,11 @@
 
 #define PHY_READ_TIMEOUT  (0x0004ffff)
 #define PHY_WRITE_TIMEOUT (0x0004ffff)
-#define PHY_RETRY_TIMEOUT (0x0004ffff)
+#define PHY_RETRY_TIMEOUT (0x0001998)
+
+/* MAC reset ready delays in loop counts */
+
+#define MAC_READY_USTIMEOUT (200)
 
 /* Register values **********************************************************/
 
@@ -370,11 +370,11 @@
  * that are cleared unconditionally).  Per the reference manual, all reserved
  * bits must be retained at their reset value.
  *
- * ETH_MACPFR_PR    Bit 0: Promiscuous mode
+ * ETH_MACPFR_PM    Bit 0: Promiscuous mode
  * ETH_MACPFR_HUC   Bit 1: Hash unicast
  * ETH_MACPFR_HMC   Bit 2: Hash multicast
  * ETH_MACPFR_DAIF  Bit 3: Destination address inverse filtering
- * ETH_MACPFR_PM    Bit 4: Pass all multicast
+ * ETH_MACPFR_PAM   Bit 4: Pass all multicast
  * ETH_MACPFR_DBF   Bit 5: Broadcast frames disable
  * ETH_MACPFR_PCF   Bits 6-7: Pass control frames
  * ETH_MACPFR_SAIF  Bit 8: Source address inverse filtering
@@ -387,20 +387,19 @@
  */
 
 #define MACPFR_CLEAR_BITS                                               \
-  (ETH_MACPFR_PR | ETH_MACPFR_HUC | ETH_MACPFR_HMC | ETH_MACPFR_DAIF |  \
-   ETH_MACPFR_PM | ETH_MACPFR_DBF | ETH_MACPFR_PCF_MASK | ETH_MACPFR_SAIF | \
+  (ETH_MACPFR_PM | ETH_MACPFR_HUC | ETH_MACPFR_HMC | ETH_MACPFR_DAIF |  \
+   ETH_MACPFR_PAM | ETH_MACPFR_DBF | ETH_MACPFR_PCF_MASK | ETH_MACPFR_SAIF | \
    ETH_MACPFR_SAF | ETH_MACPFR_HPF | ETH_MACPFR_VTFE | ETH_MACPFR_IPFE | \
    ETH_MACPFR_DNTU | ETH_MACPFR_RA)
 
 /* The following bits are set or left zero unconditionally in all modes.
  *
- * ETH_MACPFR_PR    Promiscuous mode                       0 (disabled)
  * ETH_MACPFR_HUC   Hash unicast                           0 (perfect
  *                                                            dest filtering)
  * ETH_MACPFR_HMC   Hash multicast                         0 (perfect
  *                                                            dest filtering)
  * ETH_MACPFR_DAIF  Destination address inverse filtering  0 (normal)
- * ETH_MACPFR_PM    Pass all multicast                     0 (Depends on HMC
+ * ETH_MACPFR_PAM   Pass all multicast                     0 (Depends on HMC
  *                                                            bit)
  * ETH_MACPFR_DBF   Broadcast frames disable               0 (enabled)
  * ETH_MACPFR_PCF   Pass control frames                    1 (block all but
@@ -412,7 +411,11 @@
  * ETH_MACPFR_RA    Receive all                            0 (disabled)
  */
 
-#define MACPFR_SET_BITS (ETH_MACPFR_PCF_PAUSE)
+#ifdef CONFIG_NET_PROMISCUOUS
+#  define MACPFR_SET_BITS (ETH_MACPFR_PCF_PAUSE | ETH_MACPFR_PM)
+#else
+#  define MACPFR_SET_BITS (ETH_MACPFR_PCF_PAUSE)
+#endif
 
 /* Clear the MACQTXFCR and MACRXFCR bits that will be setup during MAC
  * initialization (or that are cleared unconditionally).  Per the reference
@@ -616,7 +619,6 @@ struct stm32_ethmac_s
   uint8_t              mbps100 : 1; /* 100MBps operation (vs 10 MBps) */
   uint8_t              fduplex : 1; /* Full (vs. half) duplex */
   uint8_t              intf;        /* Ethernet interface number */
-  struct wdog_s        txpoll;      /* TX poll timer */
   struct wdog_s        txtimeout;   /* TX timeout timer */
   struct work_s        irqwork;     /* For deferring interrupt work to the work queue */
   struct work_s        pollwork;    /* For deferring poll work to the work queue */
@@ -659,16 +661,16 @@ struct stm32_ethmac_s
 /* Descriptor allocations */
 
 static union stm32_desc_u g_rxtable[RXTABLE_SIZE]
-__attribute__((aligned(ARMV7M_DCACHE_LINESIZE)));
+aligned_data(ARMV7M_DCACHE_LINESIZE);
 static union stm32_desc_u g_txtable[TXTABLE_SIZE]
-__attribute__((aligned(ARMV7M_DCACHE_LINESIZE)));
+aligned_data(ARMV7M_DCACHE_LINESIZE);
 
 /* Buffer allocations */
 
 static uint8_t g_rxbuffer[RXBUFFER_ALLOC]
-__attribute__((aligned(ARMV7M_DCACHE_LINESIZE)));
+aligned_data(ARMV7M_DCACHE_LINESIZE);
 static uint8_t g_txbuffer[TXBUFFER_ALLOC]
-__attribute__((aligned(ARMV7M_DCACHE_LINESIZE)));
+aligned_data(ARMV7M_DCACHE_LINESIZE);
 
 /* These are the pre-allocated Ethernet device structures */
 
@@ -718,15 +720,12 @@ static void stm32_freeframe(struct stm32_ethmac_s *priv);
 static void stm32_txdone(struct stm32_ethmac_s *priv);
 
 static void stm32_interrupt_work(void *arg);
-static int  stm32_interrupt(int irq, void *context, FAR void *arg);
+static int  stm32_interrupt(int irq, void *context, void *arg);
 
 /* Watchdog timer expirations */
 
 static void stm32_txtimeout_work(void *arg);
 static void stm32_txtimeout_expiry(wdparm_t arg);
-
-static void stm32_poll_work(void *arg);
-static void stm32_poll_expiry(wdparm_t arg);
 
 /* NuttX callback functions */
 
@@ -1455,7 +1454,7 @@ static void stm32_dopoll(struct stm32_ethmac_s *priv)
 
       if (dev->d_buf)
         {
-          devif_timer(dev, 0, stm32_txpoll);
+          devif_poll(dev, stm32_txpoll);
 
           /* We will, most likely end up with a buffer to be freed.  But it
            * might not be the same one that we allocated above.
@@ -2018,7 +2017,7 @@ static void stm32_receive(struct stm32_ethmac_s *priv)
       else
 #endif
 #ifdef CONFIG_NET_ARP
-      if (BUF->type == htons(ETHTYPE_ARP))
+      if (BUF->type == HTONS(ETHTYPE_ARP))
         {
           ninfo("ARP frame\n");
 
@@ -2341,7 +2340,7 @@ static void stm32_interrupt_work(void *arg)
  *
  ****************************************************************************/
 
-static int stm32_interrupt(int irq, void *context, FAR void *arg)
+static int stm32_interrupt(int irq, void *context, void *arg)
 {
   struct stm32_ethmac_s *priv = &g_stm32ethmac[0];
   uint32_t dmasr;
@@ -2454,115 +2453,6 @@ static void stm32_txtimeout_expiry(wdparm_t arg)
 }
 
 /****************************************************************************
- * Function: stm32_poll_work
- *
- * Description:
- *   Perform periodic polling from the worker thread
- *
- * Parameters:
- *   arg - The argument passed when work_queue() as called.
- *
- * Returned Value:
- *   OK on success
- *
- * Assumptions:
- *   Ethernet interrupts are disabled
- *
- ****************************************************************************/
-
-static void stm32_poll_work(void *arg)
-{
-  struct stm32_ethmac_s *priv = (struct stm32_ethmac_s *)arg;
-  struct net_driver_s *dev  = &priv->dev;
-
-  /* Check if the next TX descriptor is owned by the Ethernet DMA or
-   * CPU. We cannot perform the timer poll if we are unable to accept
-   * another packet for transmission.  Hmmm.. might be bug here.
-   * Does this mean if there is a transmit in progress, we will miss
-   * TCP time state updates?
-   *
-   * In a race condition, ETH_TDES3_OWN may be cleared BUT still
-   * not available because stm32_freeframe() has not yet run. If
-   * stm32_freeframe() has run, the buffer1 pointer (des2) will be
-   * nullified (and inflight should be < CONFIG_STM32H7_ETH_NTXDESC).
-   */
-
-  net_lock();
-  if ((priv->txhead->des3 & ETH_TDES3_RD_OWN) == 0 &&
-      priv->txhead->des0 == 0)
-    {
-      /* If we have the descriptor, then perform the timer poll.  Allocate a
-       * buffer for the poll.
-       */
-
-      DEBUGASSERT(dev->d_len == 0 && dev->d_buf == NULL);
-      dev->d_buf = stm32_allocbuffer(priv);
-
-      /* We can't poll if we have no buffers */
-
-      if (dev->d_buf)
-        {
-          /* Update TCP timing states and poll the network for new XMIT
-           * data.
-           */
-
-          devif_timer(dev, STM32_WDDELAY, stm32_txpoll);
-
-          /* We will, most likely end up with a buffer to be freed.  But it
-           * might not be the same one that we allocated above.
-           */
-
-          if (dev->d_buf)
-            {
-              DEBUGASSERT(dev->d_len == 0);
-              stm32_freebuffer(priv, dev->d_buf);
-              dev->d_buf = NULL;
-            }
-        }
-    }
-
-  /* Setup the watchdog poll timer again */
-
-  wd_start(&priv->txpoll, STM32_WDDELAY,
-           stm32_poll_expiry, (wdparm_t)priv);
-  net_unlock();
-}
-
-/****************************************************************************
- * Function: stm32_poll_expiry
- *
- * Description:
- *   Periodic timer handler.  Called from the timer interrupt handler.
- *
- * Parameters:
- *   arg  - The argument
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   Global interrupts are disabled by the watchdog logic.
- *
- ****************************************************************************/
-
-static void stm32_poll_expiry(wdparm_t arg)
-{
-  struct stm32_ethmac_s *priv = (struct stm32_ethmac_s *)arg;
-
-  /* Schedule to perform the interrupt processing on the worker thread. */
-
-  if (work_available(&priv->pollwork))
-    {
-      work_queue(ETHWORK, &priv->pollwork, stm32_poll_work, priv, 0);
-    }
-  else
-    {
-      wd_start(&priv->txpoll, STM32_WDDELAY,
-               stm32_poll_expiry, (wdparm_t)priv);
-    }
-}
-
-/****************************************************************************
  * Function: stm32_ifup
  *
  * Description:
@@ -2604,11 +2494,6 @@ static int stm32_ifup(struct net_driver_s *dev)
       return ret;
     }
 
-  /* Set and activate a timer process */
-
-  wd_start(&priv->txpoll, STM32_WDDELAY,
-           stm32_poll_expiry, (wdparm_t)priv);
-
   /* Enable the Ethernet interrupt */
 
   priv->ifup = true;
@@ -2646,9 +2531,8 @@ static int stm32_ifdown(struct net_driver_s *dev)
   flags = enter_critical_section();
   up_disable_irq(STM32_IRQ_ETH);
 
-  /* Cancel the TX poll timer and TX timeout timers */
+  /* Cancel the TX timeout timers */
 
-  wd_cancel(&priv->txpoll);
   wd_cancel(&priv->txtimeout);
 
   /* Put the EMAC in its reset, non-operational state.  This should be
@@ -3545,6 +3429,8 @@ static int stm32_phyinit(struct stm32_ethmac_s *priv)
         {
           break;
         }
+
+      nxsig_usleep(100);
     }
 
   if (timeout >= PHY_RETRY_TIMEOUT)
@@ -3577,6 +3463,8 @@ static int stm32_phyinit(struct stm32_ethmac_s *priv)
         {
           break;
         }
+
+      nxsig_usleep(100);
     }
 
   if (timeout >= PHY_RETRY_TIMEOUT)
@@ -3767,7 +3655,7 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
 
   /* Set up the MII interface */
 
-#if defined(CONFIG_STM32H7_MII)
+#  if defined(CONFIG_STM32H7_MII)
 
   /* Select the MII interface */
 
@@ -3782,7 +3670,7 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
    *  PLLI2S clock (through a configurable prescaler) on PC9 pin."
    */
 
-# if defined(CONFIG_STM32H7_MII_MCO1)
+#    if defined(CONFIG_STM32H7_MII_MCO1)
   /* Configure MC01 to drive the PHY.  Board logic must provide MC01 clocking
    * info.
    */
@@ -3790,7 +3678,7 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
   stm32_configgpio(GPIO_MCO1);
   stm32_mco1config(BOARD_CFGR_MC01_SOURCE, BOARD_CFGR_MC01_DIVIDER);
 
-# elif defined(CONFIG_STM32H7_MII_MCO2)
+#    elif defined(CONFIG_STM32H7_MII_MCO2)
   /* Configure MC02 to drive the PHY.  Board logic must provide MC02 clocking
    * info.
    */
@@ -3798,12 +3686,12 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
   stm32_configgpio(GPIO_MCO2);
   stm32_mco2config(BOARD_CFGR_MC02_SOURCE, BOARD_CFGR_MC02_DIVIDER);
 
-# elif defined(CONFIG_STM32H7_MII_MCO)
+#    elif defined(CONFIG_STM32H7_MII_MCO)
   /* Setup MCO pin for alternative usage */
 
   stm32_configgpio(GPIO_MCO);
   stm32_mcoconfig(BOARD_CFGR_MCO_SOURCE);
-# endif
+#    endif
 
   /* MII interface pins (17):
    *
@@ -3829,7 +3717,7 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
 
   /* Set up the RMII interface. */
 
-#elif defined(CONFIG_STM32H7_RMII)
+#  elif defined(CONFIG_STM32H7_RMII)
 
   /* Select the RMII interface */
 
@@ -3844,7 +3732,7 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
    *  PLLI2S clock (through a configurable prescaler) on PC9 pin."
    */
 
-# if defined(CONFIG_STM32H7_RMII_MCO1)
+#    if defined(CONFIG_STM32H7_RMII_MCO1)
   /* Configure MC01 to drive the PHY.  Board logic must provide MC01 clocking
    * info.
    */
@@ -3852,7 +3740,7 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
   stm32_configgpio(GPIO_MCO1);
   stm32_mco1config(BOARD_CFGR_MC01_SOURCE, BOARD_CFGR_MC01_DIVIDER);
 
-# elif defined(CONFIG_STM32H7_RMII_MCO2)
+#    elif defined(CONFIG_STM32H7_RMII_MCO2)
   /* Configure MC02 to drive the PHY.  Board logic must provide MC02 clocking
    * info.
    */
@@ -3860,12 +3748,12 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
   stm32_configgpio(GPIO_MCO2);
   stm32_mco2config(BOARD_CFGR_MC02_SOURCE, BOARD_CFGR_MC02_DIVIDER);
 
-# elif defined(CONFIG_STM32H7_RMII_MCO)
+#    elif defined(CONFIG_STM32H7_RMII_MCO)
   /* Setup MCO pin for alternative usage */
 
   stm32_configgpio(GPIO_MCO);
   stm32_mcoconfig(BOARD_CFGR_MCO_SOURCE);
-# endif
+#    endif
 
   /* RMII interface pins (7):
    *
@@ -3880,7 +3768,7 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
   stm32_configgpio(GPIO_ETH_RMII_TXD0);
   stm32_configgpio(GPIO_ETH_RMII_TXD1);
   stm32_configgpio(GPIO_ETH_RMII_TX_EN);
-#endif
+#  endif
 #endif
 
 #ifdef CONFIG_STM32H7_ETH_PTP
@@ -3909,6 +3797,7 @@ static inline void stm32_ethgpioconfig(struct stm32_ethmac_s *priv)
 static void stm32_ethreset(struct stm32_ethmac_s *priv)
 {
   uint32_t regval;
+  volatile uint32_t timeout;
 
   /* Reset the Ethernet on the AHB1 bus */
 
@@ -3933,7 +3822,11 @@ static void stm32_ethreset(struct stm32_ethmac_s *priv)
    * core clock domains.
    */
 
-  while ((stm32_getreg(STM32_ETH_DMAMR) & ETH_DMAMR_SWR) != 0);
+  timeout = MAC_READY_USTIMEOUT;
+  while (timeout-- && (stm32_getreg(STM32_ETH_DMAMR) & ETH_DMAMR_SWR) != 0)
+    {
+      up_udelay(1);
+    }
 
   /* According to the spec, these need to be done before creating
    * the descriptor lists, so initialize these already here

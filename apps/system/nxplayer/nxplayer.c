@@ -1,42 +1,20 @@
 /****************************************************************************
  * apps/system/nxplayer/nxplayer.c
  *
- * Developed by:
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- *   Copyright (C) 2013 Ken Pettit. All rights reserved.
- *   Author: Ken Pettit <pettitkd@gmail.com>
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * With ongoing support:
- *
- *   Copyright (C) 2014, 2019 Gregory Nutt. All rights reserved.
- *   Author: Greory Nutt <gnutt@nuttx.org>
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -63,6 +41,7 @@
 #include <strings.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <assert.h>
 #include <errno.h>
 #include <dirent.h>
 #include <debug.h>
@@ -169,7 +148,7 @@ static int _open_with_http(const char *fullurl)
   char resp_msg[] = "\r\n\r\n";
   struct timeval tv;
   uint16_t port = 80;
-  char buf[64];
+  char buf[PATH_MAX];
   int  s;
   int  n;
   char c;
@@ -190,7 +169,7 @@ static int _open_with_http(const char *fullurl)
 
   if (OK != n)
     {
-      printf("netlib_parsehttpurl() returned %d \n", n);
+      printf("netlib_parsehttpurl() returned %d\n", n);
       return n;
     }
 
@@ -335,10 +314,10 @@ static int nxplayer_opendevice(FAR struct nxplayer_s *pplayer, int format,
 
 #ifdef CONFIG_NXPLAYER_INCLUDE_DEVICE_SEARCH
     {
-      struct audio_caps_s caps;
+      struct audio_caps_s cap;
       FAR struct dirent *pdevice;
       FAR DIR *dirp;
-      char path[64];
+      char path[PATH_MAX];
       uint8_t supported = true;
       uint8_t x;
 
@@ -386,17 +365,17 @@ static int nxplayer_opendevice(FAR struct nxplayer_s *pplayer, int format,
                * get the capabilities
                */
 
-              caps.ac_len = sizeof(caps);
-              caps.ac_type = AUDIO_TYPE_QUERY;
-              caps.ac_subtype = AUDIO_TYPE_QUERY;
+              cap.ac_len = sizeof(cap);
+              cap.ac_type = AUDIO_TYPE_QUERY;
+              cap.ac_subtype = AUDIO_TYPE_QUERY;
 
               if (ioctl(pplayer->dev_fd, AUDIOIOC_GETCAPS,
-                        (unsigned long)&caps) == caps.ac_len)
+                        (unsigned long)&cap) == cap.ac_len)
                 {
                   /* Test if this device supports the format we want */
 
-                  if (((caps.ac_format.hw & (1 << (format - 1))) != 0) &&
-                      (caps.ac_controls.b[0] & AUDIO_TYPE_OUTPUT))
+                  if (((cap.ac_format.hw & (1 << (format - 1))) != 0) &&
+                      (cap.ac_controls.b[0] & AUDIO_TYPE_OUTPUT))
                     {
                       /* Do subformat detection */
 
@@ -406,25 +385,25 @@ static int nxplayer_opendevice(FAR struct nxplayer_s *pplayer, int format,
                            * this main format
                            */
 
-                          caps.ac_subtype = format;
-                          caps.ac_format.b[0] = 0;
+                          cap.ac_subtype = format;
+                          cap.ac_format.b[0] = 0;
 
                           while (ioctl(pplayer->dev_fd, AUDIOIOC_GETCAPS,
-                              (unsigned long) &caps) == caps.ac_len)
+                                      (unsigned long)&cap) == cap.ac_len)
                             {
                               /* Check the next set of 4 controls
                                * to find the subformat
                                */
 
-                              for (x = 0; x < sizeof(caps.ac_controls); x++)
+                              for (x = 0; x < sizeof(cap.ac_controls.b); x++)
                                 {
-                                  if (caps.ac_controls.b[x] == subfmt)
+                                  if (cap.ac_controls.b[x] == subfmt)
                                     {
                                       /* Sub format supported! */
 
                                       break;
                                     }
-                                  else if (caps.ac_controls.b[x] ==
+                                  else if (cap.ac_controls.b[x] ==
                                            AUDIO_SUBFMT_END)
                                     {
                                       /* Sub format not supported */
@@ -438,7 +417,7 @@ static int nxplayer_opendevice(FAR struct nxplayer_s *pplayer, int format,
                                * then break out of the loop.
                                */
 
-                              if (x != sizeof(caps.ac_controls))
+                              if (x != sizeof(cap.ac_controls))
                                 {
                                   break;
                                 }
@@ -447,7 +426,7 @@ static int nxplayer_opendevice(FAR struct nxplayer_s *pplayer, int format,
                                * set of subformats
                                */
 
-                              caps.ac_format.b[0]++;
+                              cap.ac_format.b[0]++;
                             }
                         }
 
@@ -794,7 +773,7 @@ static void *nxplayer_playthread(pthread_addr_t pvarg)
   /* Query the audio device for its preferred buffer size / qty */
 
   if ((ret = ioctl(pplayer->dev_fd, AUDIOIOC_GETBUFFERINFO,
-          (unsigned long) &buf_info)) != OK)
+                  (unsigned long)&buf_info)) != OK)
     {
       /* Driver doesn't report its buffer size.  Use our default. */
 
@@ -834,7 +813,7 @@ static void *nxplayer_playthread(pthread_addr_t pvarg)
       buf_desc.u.pbuffer = &buffers[x];
 
       ret = ioctl(pplayer->dev_fd, AUDIOIOC_ALLOCBUFFER,
-                  (unsigned long) &buf_desc);
+                 (unsigned long)&buf_desc);
       if (ret != sizeof(buf_desc))
         {
           /* Buffer alloc Operation not supported or error allocating! */
@@ -928,7 +907,7 @@ static void *nxplayer_playthread(pthread_addr_t pvarg)
     {
 #ifdef CONFIG_AUDIO_MULTI_SESSION
       ret = ioctl(pplayer->dev_fd, AUDIOIOC_START,
-                  (unsigned long) pplayer->session);
+                 (unsigned long)pplayer->session);
 #else
       ret = ioctl(pplayer->dev_fd, AUDIOIOC_START, 0);
 #endif
@@ -1089,7 +1068,7 @@ static void *nxplayer_playthread(pthread_addr_t pvarg)
 
 #ifdef CONFIG_AUDIO_MULTI_SESSION
             ioctl(pplayer->dev_fd, AUDIOIOC_STOP,
-                 (unsigned long) pplayer->session);
+                 (unsigned long)pplayer->session);
 #else
             ioctl(pplayer->dev_fd, AUDIOIOC_STOP, 0);
 #endif
@@ -1148,10 +1127,10 @@ err_out:
 
   /* Unregister the message queue and release the session */
 
-  ioctl(pplayer->dev_fd, AUDIOIOC_UNREGISTERMQ, (unsigned long) pplayer->mq);
+  ioctl(pplayer->dev_fd, AUDIOIOC_UNREGISTERMQ, (unsigned long)pplayer->mq);
 
 #ifdef CONFIG_AUDIO_MULTI_SESSION
-  ioctl(pplayer->dev_fd, AUDIOIOC_RELEASE, (unsigned long) pplayer->session);
+  ioctl(pplayer->dev_fd, AUDIOIOC_RELEASE, (unsigned long)pplayer->session);
 #else
   ioctl(pplayer->dev_fd, AUDIOIOC_RELEASE, 0);
 #endif
@@ -1316,7 +1295,7 @@ int nxplayer_setbass(FAR struct nxplayer_s *pplayer, uint8_t level)
       cap_desc.caps.ac_type          = AUDIO_TYPE_FEATURE;
       cap_desc.caps.ac_format.hw     = AUDIO_FU_BASS;
       cap_desc.caps.ac_controls.b[0] = level;
-      ioctl(pplayer->dev_fd, AUDIOIOC_CONFIGURE, (unsigned long) &cap_desc);
+      ioctl(pplayer->dev_fd, AUDIOIOC_CONFIGURE, (unsigned long)&cap_desc);
     }
 
   /* Store the volume setting */
@@ -1368,7 +1347,7 @@ int nxplayer_settreble(FAR struct nxplayer_s *pplayer, uint8_t level)
       cap_desc.caps.ac_type          = AUDIO_TYPE_FEATURE;
       cap_desc.caps.ac_format.hw     = AUDIO_FU_TREBLE;
       cap_desc.caps.ac_controls.b[0] = level;
-      ioctl(pplayer->dev_fd, AUDIOIOC_CONFIGURE, (unsigned long) &cap_desc);
+      ioctl(pplayer->dev_fd, AUDIOIOC_CONFIGURE, (unsigned long)&cap_desc);
     }
 
   /* Store the volume setting */
@@ -1416,7 +1395,7 @@ int nxplayer_setbalance(FAR struct nxplayer_s *pplayer, uint16_t balance)
       cap_desc.caps.ac_type           = AUDIO_TYPE_FEATURE;
       cap_desc.caps.ac_format.hw      = AUDIO_FU_BALANCE;
       cap_desc.caps.ac_controls.hw[0] = balance;
-      ioctl(pplayer->dev_fd, AUDIOIOC_CONFIGURE, (unsigned long) &cap_desc);
+      ioctl(pplayer->dev_fd, AUDIOIOC_CONFIGURE, (unsigned long)&cap_desc);
     }
 
   /* Store the volume setting */
@@ -1446,7 +1425,7 @@ int nxplayer_pause(FAR struct nxplayer_s *pplayer)
     {
 #ifdef CONFIG_AUDIO_MULTI_SESSION
       ret = ioctl(pplayer->dev_fd, AUDIOIOC_PAUSE,
-          (unsigned long) pplayer->session);
+          (unsigned long)pplayer->session);
 #else
       ret = ioctl(pplayer->dev_fd, AUDIOIOC_PAUSE, 0);
 #endif
@@ -1476,7 +1455,7 @@ int nxplayer_resume(FAR struct nxplayer_s *pplayer)
     {
 #ifdef CONFIG_AUDIO_MULTI_SESSION
       ret = ioctl(pplayer->dev_fd, AUDIOIOC_RESUME,
-          (unsigned long) pplayer->session);
+          (unsigned long)pplayer->session);
 #else
       ret = ioctl(pplayer->dev_fd, AUDIOIOC_RESUME, 0);
 #endif
@@ -1534,7 +1513,7 @@ int nxplayer_fforward(FAR struct nxplayer_s *pplayer, uint8_t subsample)
 
   ret = ioctl(pplayer->dev_fd,
               AUDIOIOC_CONFIGURE,
-              (unsigned long) &cap_desc);
+              (unsigned long)&cap_desc);
   if (ret < 0)
     {
       int errcode = errno;
@@ -1592,7 +1571,7 @@ int nxplayer_rewind(FAR struct nxplayer_s *pplayer, uint8_t subsample)
 
   ret = ioctl(pplayer->dev_fd,
               AUDIOIOC_CONFIGURE,
-              (unsigned long) &cap_desc);
+              (unsigned long)&cap_desc);
   if (ret < 0)
     {
       int errcode = errno;
@@ -1690,7 +1669,7 @@ int nxplayer_setdevice(FAR struct nxplayer_s *pplayer,
   caps.ac_len     = sizeof(caps);
   caps.ac_type    = AUDIO_TYPE_QUERY;
   caps.ac_subtype = AUDIO_TYPE_QUERY;
-  if (ioctl(temp_fd, AUDIOIOC_GETCAPS, (unsigned long) &caps) != caps.ac_len)
+  if (ioctl(temp_fd, AUDIOIOC_GETCAPS, (unsigned long)&caps) != caps.ac_len)
     {
       /* Not an Audio device! */
 
@@ -1704,7 +1683,7 @@ int nxplayer_setdevice(FAR struct nxplayer_s *pplayer,
 
   /* Save the path and format capabilities of the preferred device */
 
-  strncpy(pplayer->prefdevice, pdevice, sizeof(pplayer->prefdevice));
+  strlcpy(pplayer->prefdevice, pdevice, sizeof(pplayer->prefdevice));
   pplayer->prefformat = caps.ac_format.b[0] | (caps.ac_format.b[1] << 8);
   pplayer->preftype = caps.ac_controls.b[0];
 
@@ -1799,7 +1778,7 @@ static int nxplayer_playinternal(FAR struct nxplayer_s *pplayer,
   struct audio_caps_desc_s cap_desc;
   struct ap_buffer_info_s  buf_info;
 #ifdef CONFIG_NXPLAYER_INCLUDE_MEDIADIR
-  char                path[128];
+  char                path[PATH_MAX];
 #endif
   int                 tmpsubfmt = AUDIO_FMT_UNDEF;
   int                 ret;
@@ -1877,7 +1856,7 @@ static int nxplayer_playinternal(FAR struct nxplayer_s *pplayer,
     {
       /* Hmmm, it's some unknown / unsupported type */
 
-      auderr("ERROR: Unsupported format: %d \n", filefmt);
+      auderr("ERROR: Unsupported format: %d\n", filefmt);
       ret = -ENOSYS;
       goto err_out_nodev;
     }
@@ -1965,7 +1944,7 @@ static int nxplayer_playinternal(FAR struct nxplayer_s *pplayer,
 
   /* Register our message queue with the audio device */
 
-  ioctl(pplayer->dev_fd, AUDIOIOC_REGISTERMQ, (unsigned long) pplayer->mq);
+  ioctl(pplayer->dev_fd, AUDIOIOC_REGISTERMQ, (unsigned long)pplayer->mq);
 
   /* Check if there was a previous thread and join it if there was
    * to perform clean-up.
@@ -2108,7 +2087,7 @@ int nxplayer_playraw(FAR struct nxplayer_s *pplayer,
 void nxplayer_setmediadir(FAR struct nxplayer_s *pplayer,
      FAR const char *mediadir)
 {
-  strncpy(pplayer->mediadir, mediadir, sizeof(pplayer->mediadir));
+  strlcpy(pplayer->mediadir, mediadir, sizeof(pplayer->mediadir));
 }
 #endif
 
@@ -2333,7 +2312,7 @@ int nxplayer_systemreset(FAR struct nxplayer_s *pplayer)
 {
   struct dirent *pdevice;
   DIR           *dirp;
-  char           path[64];
+  char           path[PATH_MAX];
 
   /* Search for a device in the audio device directory */
 

@@ -58,6 +58,7 @@ const struct mountpt_operations nxffs_operations =
   NULL,              /* sync -- No buffered data */
   nxffs_dup,         /* dup */
   nxffs_fstat,       /* fstat */
+  NULL,              /* fchstat */
 #ifdef __NO_TRUNCATE_SUPPORT__
   nxffs_truncate,    /* truncate */
 #else
@@ -65,7 +66,7 @@ const struct mountpt_operations nxffs_operations =
 #endif
 
   nxffs_opendir,     /* opendir */
-  NULL,              /* closedir */
+  nxffs_closedir,    /* closedir */
   nxffs_readdir,     /* readdir */
   nxffs_rewinddir,   /* rewinddir */
 
@@ -77,7 +78,8 @@ const struct mountpt_operations nxffs_operations =
   NULL,              /* mkdir -- no directories */
   NULL,              /* rmdir -- no directories */
   NULL,              /* rename -- cannot rename in place if name is longer */
-  nxffs_stat         /* stat */
+  nxffs_stat,        /* stat */
+  NULL               /* chstat */
 };
 
 /****************************************************************************

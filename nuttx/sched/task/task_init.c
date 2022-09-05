@@ -28,15 +28,17 @@
 #include <stdint.h>
 #include <sched.h>
 #include <queue.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/arch.h>
 #include <nuttx/sched.h>
-#include <nuttx/lib/libvars.h>
 
 #include "sched/sched.h"
+#include "environ/environ.h"
 #include "group/group.h"
 #include "task/task.h"
+#include "tls/tls.h"
 
 /****************************************************************************
  * Public Functions
@@ -82,12 +84,10 @@
 
 int nxtask_init(FAR struct task_tcb_s *tcb, const char *name, int priority,
                 FAR void *stack, uint32_t stack_size,
-                main_t entry, FAR char * const argv[])
+                main_t entry, FAR char * const argv[],
+                FAR char * const envp[])
 {
   uint8_t ttype = tcb->cmn.flags & TCB_FLAG_TTYPE_MASK;
-#ifndef CONFIG_BUILD_KERNEL
-  FAR struct task_group_s *group;
-#endif
   int ret;
 
 #ifndef CONFIG_DISABLE_PTHREAD
@@ -102,6 +102,14 @@ int nxtask_init(FAR struct task_tcb_s *tcb, const char *name, int priority,
   if (ret < 0)
     {
       return ret;
+    }
+
+  /* Duplicate the parent tasks environment */
+
+  ret = env_dup(tcb->cmn.group, envp);
+  if (ret < 0)
+    {
+      goto errout_with_group;
     }
 
   /* Associate file descriptors with the new task */
@@ -130,21 +138,13 @@ int nxtask_init(FAR struct task_tcb_s *tcb, const char *name, int priority,
       goto errout_with_group;
     }
 
-#ifndef CONFIG_BUILD_KERNEL
-  /* Allocate a stack frame to hold task-specific data */
+  /* Initialize thread local storage */
 
-  group = tcb->cmn.group;
-  group->tg_libvars = up_stack_frame(&tcb->cmn, sizeof(struct libvars_s));
-  DEBUGASSERT(group->tg_libvars != NULL);
-
-  /* Initialize the task-specific data */
-
-  memset(group->tg_libvars, 0, sizeof(struct libvars_s));
-
-  /* Save the allocated task data in TLS */
-
-  tls_set_taskdata(&tcb->cmn);
-#endif
+  ret = tls_init_info(&tcb->cmn);
+  if (ret < OK)
+    {
+      goto errout_with_group;
+    }
 
   /* Initialize the task control block */
 
@@ -157,24 +157,18 @@ int nxtask_init(FAR struct task_tcb_s *tcb, const char *name, int priority,
 
   /* Setup to pass parameters to the new task */
 
-  nxtask_setup_arguments(tcb, name, argv);
+  ret = nxtask_setup_arguments(tcb, name, argv);
+  if (ret < OK)
+    {
+      goto errout_with_group;
+    }
 
   /* Now we have enough in place that we can join the group */
 
-  ret = group_initialize(tcb);
-  if (ret == OK)
-    {
-      return ret;
-    }
-
-  /* The TCB was added to the inactive task list by
-   * nxtask_setup_scheduler().
-   */
-
-  dq_rem((FAR dq_entry_t *)tcb, (FAR dq_queue_t *)&g_inactivetasks);
+  group_initialize(tcb);
+  return ret;
 
 errout_with_group:
-
   if (!stack && tcb->cmn.stack_alloc_ptr)
     {
 #ifdef CONFIG_BUILD_KERNEL
@@ -196,7 +190,6 @@ errout_with_group:
     }
 
   group_leave(&tcb->cmn);
-
   return ret;
 }
 
@@ -225,7 +218,7 @@ void nxtask_uninit(FAR struct task_tcb_s *tcb)
    * nxtask_setup_scheduler().
    */
 
-  dq_rem((FAR dq_entry_t *)tcb, (FAR dq_queue_t *)&g_inactivetasks);
+  dq_rem((FAR dq_entry_t *)tcb, &g_inactivetasks);
 
   /* Release all resources associated with the TCB... Including the TCB
    * itself.

@@ -117,6 +117,19 @@ config NET_GUARDSIZE
 		packet size will be chopped down to the size indicated in the TCP
 		header.
 
+config NET_RECV_BUFSIZE
+	int "Net Receive buffer size"
+	default 0
+	---help---
+		This is the default value for receive buffer size.
+
+config NET_SEND_BUFSIZE
+	int "Net Send buffer size"
+	depends on NET_TCP_WRITE_BUFFERS || NET_UDP_WRITE_BUFFERS
+	default 0
+	---help---
+		This is the default value for send buffer size.
+
 endmenu # Driver buffer configuration
 
 menu "Link layer support"
@@ -183,7 +196,7 @@ menuconfig NET_SLIP
 
 if NET_SLIP
 
-config SLIP_NINTERFACES
+config NET_SLIP_NINTERFACES
 	int "Number of SLIP interfaces"
 	default 1
 	---help---
@@ -191,14 +204,17 @@ config SLIP_NINTERFACES
 		interfaces to support.
 		Default: 1
 
-config SLIP_STACKSIZE
-	int "SLIP stack size"
+config NET_SLIP_STACKSIZE
+	int "SLIP per-thread stack size"
 	default DEFAULT_TASK_STACKSIZE
 	---help---
 		Select the stack size of the SLIP RX and TX tasks.
 
-config SLIP_DEFPRIO
-	int "SLIP priority"
+		SLIP starts two dedicated threads per interface
+		to handle network events, enabling high performance.
+
+config NET_SLIP_DEFPRIO
+	int "SLIP threads priority"
 	default 128
 	---help---
 		The priority of the SLIP RX and TX tasks. Default: 128
@@ -208,6 +224,7 @@ endif # NET_SLIP
 menuconfig NET_TUN
 	bool "TUN Virtual Network Device support"
 	default n
+	depends on ALLOW_BSD_COMPONENTS
 	select ARCH_HAVE_NETDEV_STATISTICS
 
 if NET_TUN
@@ -242,7 +259,7 @@ config NETDEV_LATEINIT
 		Normally, networking initialization occur in the later phase of the
 		boot process in the function up_initialize() when it calls the
 		driver initialization function, up_netinitialize().  This
-		initialization occurs after a sufficient about of the OS has been
+		initialization occurs after a sufficient amount of the OS has been
 		initialized so that driver registration can be performed, but
 		before the completion of OS initialization and before the first
 		application is started.
@@ -258,7 +275,7 @@ config NETDEV_LATEINIT
 			  dependencies so that the hardware is not in an appropriate
 			  state for up_netinitialize() to be called.
 
-		Examples of this latter situation includes such things as network
+		Examples of this latter situation include such things as network
 		drivers that required some setup via an I2C I/O expander, or network
 		drivers that depend on USB, SPI, I2C, PCI, serial, or other
 		interfaces that may not be ready when up_netinitialize() is normally
@@ -298,6 +315,16 @@ source "net/sixlowpan/Kconfig"
 source "net/ipforward/Kconfig"
 
 endmenu # Internet Protocol Selection
+
+config NET_ALLOC_CONNS
+	bool "Allocate connect instance dynamically"
+	default n
+	---help---
+		Enable to allocate connection instances dynamically.
+		Use this feature if the number of connections can not be determined at
+		compile time. When enabled the stack will be compiled without the static
+		pre-allocate connection list and all connection instances will be dynamically
+		allocated from heap at run time.
 
 source "net/socket/Kconfig"
 source "net/inet/Kconfig"

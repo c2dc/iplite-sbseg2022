@@ -87,27 +87,6 @@ extern clock_t g_wdtickbase;
  ****************************************************************************/
 
 /****************************************************************************
- * Name: wd_initialize
- *
- * Description:
- * This function initializes the watchdog data structures
- *
- * Input Parameters:
- *   None
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   This function must be called early in the initialization sequence
- *   before the timer interrupt is attached and before any watchdog
- *   services are used.
- *
- ****************************************************************************/
-
-void weak_function wd_initialize(void);
-
-/****************************************************************************
  * Name: wd_timer
  *
  * Description:
@@ -121,6 +100,7 @@ void weak_function wd_initialize(void);
  *     in the interval that just expired is provided.  Otherwise,
  *     this function is called on each timer interrupt and a value of one
  *     is implicit.
+ *   noswitches - True: Can't do context switches now.
  *
  * Returned Value:
  *   If CONFIG_SCHED_TICKLESS is defined then the number of ticks for the
@@ -133,7 +113,7 @@ void weak_function wd_initialize(void);
  ****************************************************************************/
 
 #ifdef CONFIG_SCHED_TICKLESS
-unsigned int wd_timer(int ticks);
+unsigned int wd_timer(int ticks, bool noswitches);
 #else
 void wd_timer(void);
 #endif

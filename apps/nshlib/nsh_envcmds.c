@@ -1,36 +1,20 @@
 /****************************************************************************
  * apps/nshlib/nsh_envcmds.c
  *
- *   Copyright (C) 2007-2009, 2011-2012, 2018 Gregory Nutt. All rights
- *   reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -52,6 +36,15 @@
 #include "nsh_console.h"
 
 /****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#define CHAR_ESCAPE(s, c) \
+          case (c):       \
+            *(s)++ = (c); \
+            break
+
+/****************************************************************************
  * Private Data
  ****************************************************************************/
 
@@ -60,12 +53,78 @@ static const char g_pwd[]    = "PWD";
 #ifndef CONFIG_NSH_DISABLE_CD
 static const char g_oldpwd[] = "OLDPWD";
 #endif
-static const char g_home[]   = CONFIG_LIB_HOMEDIR;
+static const char g_home[]   = CONFIG_LIBC_HOMEDIR;
 #endif
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+#ifndef CONFIG_NSH_DISABLE_ECHO
+static void str_escape(FAR char *s)
+{
+  FAR char *q;
+  int l;
+  int c;
+
+  for (q = s; *q; q++)
+    {
+      if (*q != '\\')
+        {
+          *s++ = *q;
+          continue;
+        }
+
+      switch (*++q)
+        {
+          case '0':
+            for (c = 0, l = 3; l && q[1] >= '0' && q[1] <= '8'; l--, q++)
+              {
+                c = 8 * c + (q[1] - '0');
+              }
+
+            *s++ = c;
+            break;
+
+          case 'x':
+            for (c = 0, l = 2; l && isxdigit(q[1]); l--, q++)
+              {
+                if (isdigit(q[1]))
+                  {
+                    c = 16 * c + (q[1] - '0');
+                  }
+                else
+                  {
+                    c = 16 * c + (tolower(q[1]) - 'a' + 10);
+                  }
+              }
+
+            *s++ = c;
+            break;
+
+          case '\0':
+            *s++ = '\\';
+            *s++ = '\0';
+            return;
+
+          default:
+            *s++ = '\\';
+            *s++ = *q;
+            break;
+
+          CHAR_ESCAPE(s, '\a');
+          CHAR_ESCAPE(s, '\b');
+          CHAR_ESCAPE(s, '\f');
+          CHAR_ESCAPE(s, '\n');
+          CHAR_ESCAPE(s, '\r');
+          CHAR_ESCAPE(s, '\v');
+          CHAR_ESCAPE(s, '\\');
+        }
+    }
+
+  *s = '\0';
+}
+#endif
 
 /****************************************************************************
  * Name: nsh_getwd
@@ -89,47 +148,6 @@ static inline FAR const char *nsh_getwd(const char *wd)
 #endif
 
 /****************************************************************************
- * Name: nsh_getdirpath
- ****************************************************************************/
-
-#ifndef CONFIG_DISABLE_ENVIRON
-static inline char *nsh_getdirpath(FAR struct nsh_vtbl_s *vtbl,
-                                   const char *dirpath, const char *relpath)
-{
-  FAR char *alloc;
-  int len;
-
-  /* Handle the special case where the dirpath is simply "/" */
-
-  if (strcmp(dirpath, "/") == 0)
-    {
-      len   = strlen(relpath) + 2;
-      alloc = (FAR char *)malloc(len);
-      if (alloc)
-        {
-          sprintf(alloc, "/%s", relpath);
-        }
-    }
-  else
-    {
-      len = strlen(dirpath) + strlen(relpath) + 2;
-      alloc = (FAR char *)malloc(len);
-      if (alloc)
-        {
-          sprintf(alloc, "%s/%s", dirpath, relpath);
-        }
-    }
-
-  if (!alloc)
-    {
-      nsh_error(vtbl, g_fmtcmdoutofmemory, "nsh_getdirpath");
-    }
-
-  return alloc;
-}
-#endif
-
-/****************************************************************************
  * Name: nsh_dumpvar
  ****************************************************************************/
 
@@ -137,6 +155,8 @@ static inline char *nsh_getdirpath(FAR struct nsh_vtbl_s *vtbl,
 static int nsh_dumpvar(FAR struct nsh_vtbl_s *vtbl, FAR void *arg,
                        FAR const char *pair)
 {
+  UNUSED(arg);
+
   nsh_output(vtbl, "%s\n", pair);
   return OK;
 }
@@ -279,29 +299,54 @@ int cmd_cd(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 #ifndef CONFIG_NSH_DISABLE_ECHO
 int cmd_echo(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 {
+  int newline = 1;
+  int escape = 0;
+  int opt;
   int i;
-  int s = 1;
 
-  if (argc > 1 && 0 == strncmp(argv[1], "-n", 2))
+  while ((opt = getopt(argc, argv, "neE")) != ERROR)
     {
-      s = 2;
+      switch (opt)
+        {
+        case 'n':
+          newline = 0;
+          break;
+
+        case 'e':
+          escape = 1;
+          break;
+
+        case 'E':
+          escape = 0;
+          break;
+
+        case '?':
+        default:
+          nsh_error(vtbl, g_fmtarginvalid, argv[0]);
+          return ERROR;
+        }
     }
 
   /* echo each argument, separated by a space as it must have been on the
    * command line.
    */
 
-  for (i = s; i < argc; i++)
+  for (i = optind; i < argc; i++)
     {
-      if (i != s)
+      if (i != optind)
         {
           nsh_output(vtbl, " ");
+        }
+
+      if (escape)
+        {
+          str_escape(argv[i]);
         }
 
       nsh_output(vtbl, "%s", argv[i]);
     }
 
-  if (1 == s)
+  if (newline)
     {
       nsh_output(vtbl, "\n");
     }
@@ -317,6 +362,8 @@ int cmd_echo(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 #ifndef CONFIG_NSH_DISABLE_ENV
 int cmd_env(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 {
+  UNUSED(argc);
+
   return nsh_catfile(vtbl, argv[0],
                      CONFIG_NSH_PROC_MOUNTPOINT "/self/group/env");
 }
@@ -330,6 +377,9 @@ int cmd_env(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 #ifndef CONFIG_NSH_DISABLE_PWD
 int cmd_pwd(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 {
+  UNUSED(argc);
+  UNUSED(argv);
+
   nsh_output(vtbl, "%s\n", nsh_getcwd());
   return OK;
 }
@@ -488,6 +538,8 @@ int cmd_set(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 #ifndef CONFIG_NSH_DISABLE_UNSET
 int cmd_unset(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 {
+  UNUSED(argc);
+
 #if defined(CONFIG_NSH_VARS) || !defined(CONFIG_DISABLE_ENVIRON)
   int status;
 #endif

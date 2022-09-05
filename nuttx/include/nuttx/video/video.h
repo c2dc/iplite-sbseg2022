@@ -18,17 +18,15 @@
  *
  ****************************************************************************/
 
-#ifndef __INCLUDE_NUTTX_VIDEO_H
-#define __INCLUDE_NUTTX_VIDEO_H
+#ifndef __INCLUDE_NUTTX_VIDEO_VIDEO_H
+#define __INCLUDE_NUTTX_VIDEO_VIDEO_H
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
-#include <nuttx/compiler.h>
-#include <sys/ioctl.h>
 #include <stdint.h>
-
+#include <sys/ioctl.h>
 #include "video_controls.h"
 
 #ifdef __cplusplus
@@ -150,6 +148,48 @@ extern "C"
 
 #define VIDIOC_CANCEL_DQBUF           _VIDIOC(0x0016)
 
+/* Query control for scene parameter
+ *  Address pointing to struct v4s_query_ext_ctrl_scene
+ */
+
+#define V4SIOC_QUERY_EXT_CTRL_SCENE   _VIDIOC(0x0017)
+
+/* Query menu for scene parameter
+ *  Address pointing to struct v4s_querymenu_scene
+ */
+
+#define V4SIOC_QUERYMENU_SCENE        _VIDIOC(0x0018)
+
+/* Get current control value
+ *  Address pointing to struct v4s_ext_controls_scene
+ */
+
+#define V4SIOC_G_EXT_CTRLS_SCENE      _VIDIOC(0x0019)
+
+/* Set control value
+ *  Address pointing to struct v4s_ext_controls_scene
+ */
+
+#define V4SIOC_S_EXT_CTRLS_SCENE      _VIDIOC(0x001a)
+
+/* Query device capability
+ * Address pointing to struct v4l2_capability
+ */
+
+#define VIDIOC_QUERYCAP               _VIDIOC(0x001b)
+
+/* Set clip
+ * Address pointing to struct v4l2_selection
+ */
+
+#define VIDIOC_S_SELECTION            _VIDIOC(0x001c)
+
+/* Get clip
+ * Address pointing to struct v4l2_selection
+ */
+
+#define VIDIOC_G_SELECTION            _VIDIOC(0x001d)
+
 #define VIDEO_HSIZE_QVGA        (320)   /* QVGA    horizontal size */
 #define VIDEO_VSIZE_QVGA        (240)   /* QVGA    vertical   size */
 #define VIDEO_HSIZE_VGA         (640)   /* VGA     horizontal size */
@@ -188,6 +228,14 @@ extern "C"
 
 #define V4L2_PIX_FMT_JPEG_WITH_SUBIMG v4l2_fourcc('J', 'S', 'U', 'B')
 
+/* YUV 4:2:2 for sub image */
+
+#define V4L2_PIX_FMT_SUBIMG_UYVY v4l2_fourcc('S', 'Y', 'U', 'V')
+
+/* RGB565 for sub image */
+
+#define V4L2_PIX_FMT_SUBIMG_RGB565 v4l2_fourcc('S', 'R', 'G', 'B')
+
 /* MAX length of v4l2_fmtdesc description string */
 
 #define V4L2_FMT_DSC_MAX       (32)
@@ -207,6 +255,53 @@ extern "C"
 /****************************************************************************
  * Public Types
  ****************************************************************************/
+
+/* V4L2 device capabilities for VIDIOC_QUERYCAP.
+ * Currently, only member "driver" is supported.
+ */
+
+struct v4l2_capability
+{
+  uint8_t  driver[16];   /* name of driver module(e.g. "bttv" */
+  uint8_t  card[32];     /* name of the card(e.g. "Yoyodyne TV/FM" */
+  uint8_t  bus_info[32]; /* name of the bus(e.g. "PCI:0000:05:06.0" */
+  uint32_t version;      /* version number of the driver */
+  uint32_t capabilities; /* Available capabilities of the physical device */
+  uint32_t device_caps;  /* Device capabilities of the opened device */
+};
+
+/* Rectangle information */
+
+struct v4l2_rect
+{
+  /* Horizontal offset of the top, left corner of the rectangle, in pixels. */
+
+  int32_t left;
+
+  /* Vertical offset of the top, left corner of the rectangle, in pixels. */
+
+  int32_t top;
+
+  /* Width of the rectangle, in pixels. */
+
+  uint32_t width;
+
+  /* Height of the rectangle, in pixels. */
+
+  uint32_t height;
+};
+
+/* V4L2 selection info for VIDIOC_S_SELECTION and VIDIOC_G_SELECTION.
+ * Currently, only member type and r are supported.
+ */
+
+struct v4l2_selection
+{
+  uint32_t type;       /* Buffer type */
+  uint32_t target;
+  uint32_t flags;
+  struct v4l2_rect r;  /* The selection rectangle. */
+};
 
 /* Buffer type.
  *  Currently, support only V4L2_BUF_TYPE_VIDEO_CAPTURE and
@@ -343,14 +438,13 @@ struct v4l2_fmtdesc
   uint32_t flags;
   char     description[V4L2_FMT_DSC_MAX];   /* Description string */
   uint32_t pixelformat;                     /* Format fourcc      */
-  uint32_t subimg_pixelformat;              /* Format fourcc      */
 };
 
 enum v4l2_frmsizetypes
 {
-  V4L2_FRMSIZE_TYPE_DISCRETE      = 1,   /* Discrete value */
+  V4L2_FRMSIZE_TYPE_DISCRETE      = 1,   /* Discrete value   */
   V4L2_FRMSIZE_TYPE_CONTINUOUS    = 2,   /* Continuous value */
-  V4L2_FRMSIZE_TYPE_STEPWISE      = 3,   /* Step value */
+  V4L2_FRMSIZE_TYPE_STEPWISE      = 3,   /* Step value       */
 };
 
 struct v4l2_frmsize_discrete
@@ -375,33 +469,16 @@ struct v4l2_frmsizeenum
   uint32_t  buf_type;           /* enum #v4l2_buf_type */
   uint32_t  pixel_format;       /* Pixel format */
   uint32_t  type;               /* Frame size type the device supports. */
-  union
-  {                                        /* Frame size */
-    struct v4l2_frmsize_discrete discrete; /* Use in type =
-                                            *    V4L2_FRMSIZE_TYPE_DISCRETE
-                                            *    case
-                                            */
-    struct v4l2_frmsize_stepwise stepwise; /* Use in type =
-                                            *    V4L2_FRMSIZE_TYPE_CONTINUOUS
-                                            *    or V4L2_FRMSIZE_TYPE_STEPWISE
-                                            *    case
-                                            */
-  };
-  uint32_t  subimg_pixel_format; /* Pixel format of sub image */
-  uint32_t  subimg_type;         /* Frame size type of subimage. */
+
+  /* In type == V4L2_FRMSIZE_TYPE_DISCRETE case, use discrete.
+   * Otherwise, use stepwise.
+   */
 
   union
-    {                                      /* Frame size of subimage */
-    struct v4l2_frmsize_discrete discrete; /* Use in subimg_type =
-                                            *    V4L2_FRMSIZE_TYPE_DISCRETE
-                                            *    case
-                                            */
-    struct v4l2_frmsize_stepwise stepwise; /* Use in subimg_type =
-                                            *    V4L2_FRMSIZE_TYPE_CONTINUOUS
-                                            *    or V4L2_FRMSIZE_TYPE_STEPWISE
-                                            *    case
-                                            */
-    } subimg;
+  {
+    struct v4l2_frmsize_discrete discrete;
+    struct v4l2_frmsize_stepwise stepwise;
+  };
 };
 
 /* type of frame interval enumeration */
@@ -437,9 +514,6 @@ struct v4l2_frmivalenum
   uint32_t pixel_format;        /* Pixel format */
   uint16_t width;               /* Frame width */
   uint16_t height;              /* Frame height */
-  uint32_t subimg_pixel_format; /* Pixel format for sub image */
-  uint16_t subimg_width;        /* Frame width  for sub image */
-  uint16_t subimg_height;       /* Frame height for sub image */
   uint32_t type;                /* Frame interval type */
   union
   {                             /* Frame interval */
@@ -455,9 +529,6 @@ struct v4l2_pix_format
   uint16_t  width;              /* Image width in pixels */
   uint16_t  height;             /* Image height in pixels */
   uint32_t  pixelformat;        /* The pixel format  or type of compression. */
-  uint16_t  subimg_width;       /* sub image width in pixels in case of pixelformat = V4L2_PIX_FMT_JPEG_WITH_SUBIMG */
-  uint16_t  subimg_height;      /* sub image height in pixels in case of pixelformat = V4L2_PIX_FMT_JPEG_WITH_SUBIMG */
-  uint32_t  subimg_pixelformat; /* The pixel format of sub image in case of pixelformat = V4L2_PIX_FMT_JPEG_WITH_SUBIMG */
   uint32_t  field;              /* enum #v4l2_field */
   uint32_t  bytesperline;       /* for padding, zero if unused */
   uint32_t  sizeimage;          /* Size in bytes of the buffer to hold a complete image */
@@ -556,7 +627,7 @@ struct v4l2_query_ext_ctrl
   uint32_t   dims[V4L2_CTRL_MAX_DIMS]; /* Dimensions */
 };
 
-begin_packed_struct struct v4l2_querymenu
+struct v4l2_querymenu
 {
   uint16_t   ctrl_class;    /* camera control class */
   uint16_t   id;            /* camera control id    */
@@ -566,7 +637,7 @@ begin_packed_struct struct v4l2_querymenu
     char    name[32];       /* name of menu  */
     int64_t value;          /* value of menu */
   };
-} end_packed_struct;
+};
 
 struct v4l2_control
 {
@@ -578,7 +649,7 @@ struct v4l2_control
  *  ioctl(VIDIOC_G_EXT_CTRLS / VIDIOC_S_EXT_CTRLS)
  */
 
-begin_packed_struct struct v4l2_ext_control
+struct v4l2_ext_control
 {
   uint16_t   id;       /* camera control id */
   uint16_t   size;     /* size of value(not use) */
@@ -592,7 +663,7 @@ begin_packed_struct struct v4l2_ext_control
     uint32_t *p_u32;   /* QUERY_EXT_CTRL type = U32 */
     void     *ptr;
   };
-} end_packed_struct;
+};
 
 struct v4l2_ext_controls
 {
@@ -606,9 +677,29 @@ struct v4l2_ext_controls
   struct v4l2_ext_control *controls;   /* each control information     */
 };
 
-/****************************************************************************
- * Public Data
- ****************************************************************************/
+/* Structure for V4SIOC_S_EXT_CTRLS and V4SIOC_G_EXT_CTRLS */
+
+struct v4s_ext_controls_scene
+{
+  enum v4l2_scene_mode     mode;       /* scene mode to be controled */
+  struct v4l2_ext_controls control;    /* same as VIDIOC_S_EXT_CTRLS */
+};
+
+/* Structure for V4SIOC_QUERY_EXT_CTRL */
+
+struct v4s_query_ext_ctrl_scene
+{
+  enum v4l2_scene_mode       mode;     /* scene mode to be queried */
+  struct v4l2_query_ext_ctrl control;  /* same as VIDIOC_QUERY_EXT_CTRL */
+};
+
+/* Structure for V4SIOC_QUERYMENU */
+
+struct v4s_querymenu_scene
+{
+  enum v4l2_scene_mode       mode;     /* scene mode to be queried */
+  struct v4l2_querymenu      menu;     /* same as VIDIOC_QUERYMENU */
+};
 
 /****************************************************************************
  * Public Function Prototypes
@@ -622,8 +713,7 @@ struct v4l2_ext_controls
  *  negative value is returned.
  */
 
-int video_initialize(FAR const char *devpath,
-                     FAR const struct video_devops_s *devops);
+int video_initialize(FAR const char *devpath);
 
 /* Uninitialize video driver.
  *
@@ -636,4 +726,4 @@ int video_uninitialize(void);
 #ifdef __cplusplus
 }
 #endif
-#endif /* __INCLUDE_NUTTX_VIDEO_H */
+#endif /* __INCLUDE_NUTTX_VIDEO_VIDEO_H */

@@ -34,7 +34,7 @@
 #include <nuttx/fs/nxffs.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam_periphclks.h"
 #include "sam4s_nand.h"
 #include "hardware/sam_smc.h"
@@ -184,7 +184,7 @@ int board_nandflash_config(int cs)
 
 int sam_nand_automount(int minor)
 {
-  FAR struct mtd_dev_s *mtd;
+  struct mtd_dev_s *mtd;
   static bool initialized = false;
 
   /* Have we already initialized? */

@@ -603,7 +603,7 @@ Where <subdir> is one of the following:
        At last attempt, the SPI-based mircroSD does not work at
        higher fequencies.  Setting the SPI frequency to 400000
        removes the problem.   There must be some more optimal
-       value that could be determined with additional experimetnation.
+       value that could be determined with additional experimentation.
 
        Jumpers: J55 must be set to provide chip select PIO1_11 signal as
        the SD slot chip select.
@@ -653,7 +653,7 @@ Where <subdir> is one of the following:
     3. Build setup (easily reconfigured):
 
        CONFIG_HOST_LINUX=y                 : Linux
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL=y : GNU EABI toolchain for Linux
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : GNU EABI toolchain for Linux
 
     4. Jumpers: Nothing special.  Use the default base board jumper
        settings.

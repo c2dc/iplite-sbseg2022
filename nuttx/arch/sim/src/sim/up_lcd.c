@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -36,6 +37,9 @@
 #include <nuttx/lcd/lcd.h>
 #include "up_internal.h"
 
+#if defined(CONFIG_SIM_X11FB)
+#include <nuttx/wqueue.h>
+#endif
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -60,7 +64,7 @@
 
 #undef FB_FMT
 #if CONFIG_SIM_FBBPP == 1
-#  define FB_FMT FB_FMT_RGB1
+#  define FB_FMT FB_FMT_Y1
 #elif CONFIG_SIM_FBBPP == 4
 #  define FB_FMT FB_FMT_RGB4
 #elif CONFIG_SIM_FBBPP == 8
@@ -98,20 +102,21 @@ struct sim_dev_s
 
 /* LCD Data Transfer Methods */
 
-static int sim_putrun(fb_coord_t row, fb_coord_t col,
-                      FAR const uint8_t *buffer, size_t npixels);
-static int sim_putarea(fb_coord_t row_start, fb_coord_t row_end,
+static int sim_putrun(struct lcd_dev_s *dev, fb_coord_t row, fb_coord_t col,
+                      const uint8_t *buffer, size_t npixels);
+static int sim_putarea(struct lcd_dev_s *dev,
+                       fb_coord_t row_start, fb_coord_t row_end,
                        fb_coord_t col_start, fb_coord_t col_end,
-                       FAR const uint8_t *buffer);
-static int sim_getrun(fb_coord_t row, fb_coord_t col, FAR uint8_t *buffer,
-                      size_t npixels);
+                       const uint8_t *buffer, fb_coord_t stride);
+static int sim_getrun(struct lcd_dev_s *dev, fb_coord_t row, fb_coord_t col,
+                      uint8_t *buffer, size_t npixels);
 
 /* LCD Configuration */
 
-static int sim_getvideoinfo(FAR struct lcd_dev_s *dev,
-                            FAR struct fb_videoinfo_s *vinfo);
-static int sim_getplaneinfo(FAR struct lcd_dev_s *dev, unsigned int planeno,
-                            FAR struct lcd_planeinfo_s *pinfo);
+static int sim_getvideoinfo(struct lcd_dev_s *dev,
+                            struct fb_videoinfo_s *vinfo);
+static int sim_getplaneinfo(struct lcd_dev_s *dev, unsigned int planeno,
+                            struct lcd_planeinfo_s *pinfo);
 
 /* LCD RGB Mapping */
 
@@ -174,7 +179,7 @@ static struct lcd_planeinfo_s g_planeinfo =
   .putarea = sim_putarea,                /* Put a rectangular area to LCD */
   .getrun  = sim_getrun,                 /* Get a run from LCD memory */
 #ifndef CONFIG_SIM_X11FB
-  .buffer  = (FAR uint8_t *)g_runbuffer, /* Run scratch buffer */
+  .buffer  = (uint8_t *)g_runbuffer, /* Run scratch buffer */
 #endif
   .bpp     = CONFIG_SIM_FBBPP,           /* Bits-per-pixel */
 };
@@ -213,6 +218,7 @@ static struct sim_dev_s g_lcddev =
  * Description:
  *   This method can be used to write a partial raster line to the LCD:
  *
+ *   dev     - The LCD device
  *   row     - Starting row to write to (range: 0 <= row < yres)
  *   col     - Starting column to write to (range: 0 <= col <= xres-npixels)
  *   buffer  - The buffer containing the run to be written to the LCD
@@ -221,10 +227,10 @@ static struct sim_dev_s g_lcddev =
  *
  ****************************************************************************/
 
-static int sim_putrun(fb_coord_t row, fb_coord_t col,
-                      FAR const uint8_t *buffer, size_t npixels)
+static int sim_putrun(struct lcd_dev_s *dev, fb_coord_t row, fb_coord_t col,
+                      const uint8_t *buffer, size_t npixels)
 {
-  lcdinfo("row: %d col: %d npixels: %d\n", row, col, npixels);
+  lcdinfo("row: %d col: %d npixels: %zu\n", row, col, npixels);
 
 #ifdef CONFIG_SIM_X11FB
   memcpy(&g_planeinfo.buffer[row * g_stride + col * (g_planeinfo.bpp / 8)],
@@ -240,18 +246,24 @@ static int sim_putrun(fb_coord_t row, fb_coord_t col,
  * Description:
  *   This method can be used to write a partial raster line to the LCD:
  *
+ *   dev       - The LCD device
  *   row_start - Starting row to write to (range: 0 <= row < yres)
  *   row_end   - Ending row to write to (range: row_start <= row < yres)
  *   col_start - Starting column to write to (range: 0 <= col <= xres)
  *   col_end   - Ending column to write to
  *               (range: col_start <= col_end < xres)
  *   buffer    - The buffer containing the area to be written to the LCD
+ *   stride    - Length of a line in bytes. This parameter may be necessary
+ *               to allow the LCD driver to calculate the offset for partial
+ *               writes when the buffer needs to be splited for row-by-row
+ *               writing.
  *
  ****************************************************************************/
 
-static int sim_putarea(fb_coord_t row_start, fb_coord_t row_end,
-                       fb_coord_t col_start, fb_coord_t col_end,
-                       FAR const uint8_t *buffer)
+static int sim_putarea(struct lcd_dev_s *dev, fb_coord_t row_start,
+                       fb_coord_t row_end, fb_coord_t col_start,
+                       fb_coord_t col_end, const uint8_t *buffer,
+                       fb_coord_t stride)
 {
   fb_coord_t row;
   size_t rows;
@@ -297,6 +309,7 @@ static int sim_putarea(fb_coord_t row_start, fb_coord_t row_end,
  * Description:
  *   This method can be used to read a partial raster line from the LCD:
  *
+ *  dev     - The LCD device
  *  row     - Starting row to read from (range: 0 <= row < yres)
  *  col     - Starting column to read read (range: 0 <= col <= xres-npixels)
  *  buffer  - The buffer in which to return the run read from the LCD
@@ -305,10 +318,10 @@ static int sim_putarea(fb_coord_t row_start, fb_coord_t row_end,
  *
  ****************************************************************************/
 
-static int sim_getrun(fb_coord_t row, fb_coord_t col, FAR uint8_t *buffer,
-                      size_t npixels)
+static int sim_getrun(struct lcd_dev_s *dev, fb_coord_t row, fb_coord_t col,
+                      uint8_t *buffer, size_t npixels)
 {
-  lcdinfo("row: %d col: %d npixels: %d\n", row, col, npixels);
+  lcdinfo("row: %d col: %d npixels: %zu\n", row, col, npixels);
   return -ENOSYS;
 }
 
@@ -320,8 +333,8 @@ static int sim_getrun(fb_coord_t row, fb_coord_t col, FAR uint8_t *buffer,
  *
  ****************************************************************************/
 
-static int sim_getvideoinfo(FAR struct lcd_dev_s *dev,
-                            FAR struct fb_videoinfo_s *vinfo)
+static int sim_getvideoinfo(struct lcd_dev_s *dev,
+                            struct fb_videoinfo_s *vinfo)
 {
   DEBUGASSERT(dev && vinfo);
   ginfo("fmt: %d xres: %d yres: %d nplanes: %d\n",
@@ -340,12 +353,13 @@ static int sim_getvideoinfo(FAR struct lcd_dev_s *dev,
  *
  ****************************************************************************/
 
-static int sim_getplaneinfo(FAR struct lcd_dev_s *dev, unsigned int planeno,
-                              FAR struct lcd_planeinfo_s *pinfo)
+static int sim_getplaneinfo(struct lcd_dev_s *dev, unsigned int planeno,
+                              struct lcd_planeinfo_s *pinfo)
 {
   DEBUGASSERT(dev && pinfo && planeno == 0);
   ginfo("planeno: %d bpp: %d\n", planeno, g_planeinfo.bpp);
   memcpy(pinfo, &g_planeinfo, sizeof(struct lcd_planeinfo_s));
+  pinfo->dev = dev;
   return OK;
 }
 
@@ -419,7 +433,7 @@ static int sim_setcontrast(struct lcd_dev_s *dev, unsigned int contrast)
  ****************************************************************************/
 
 #ifdef CONFIG_SIM_X11FB
-static void up_updatework(FAR void *arg)
+static void up_updatework(void *arg)
 {
   work_queue(LPWORK, &g_updatework, up_updatework, NULL, MSEC2TICK(33));
   up_x11update();
@@ -470,7 +484,7 @@ int board_lcd_initialize(void)
  *
  ****************************************************************************/
 
-FAR struct lcd_dev_s *board_lcd_getdev(int lcddev)
+struct lcd_dev_s *board_lcd_getdev(int lcddev)
 {
   DEBUGASSERT(lcddev == 0);
   return &g_lcddev.dev;

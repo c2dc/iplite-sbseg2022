@@ -1,5 +1,5 @@
 /****************************************************************************
- * apps/fsutils/mkfatfs/writefat.c
+ * apps/fsutils/mkfatfs/mkfatfs.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -37,6 +37,17 @@
 #include "fsutils/mkfatfs.h"
 #include "fat32.h"
 #include "mkfatfs.h"
+
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#if defined(CONFIG_MKFATFS_BUFFER_ALIGNMENT) && \
+            CONFIG_MKFATFS_BUFFER_ALIGNMENT > 0
+#  define fat_buffer_alloc(s) memalign(CONFIG_MKFATFS_BUFFER_ALIGNMENT, (s))
+#else
+#  define fat_buffer_alloc(s) malloc((s))
+#endif
 
 /****************************************************************************
  * Private Functions
@@ -154,8 +165,8 @@ static inline int mkfatfs_getgeometry(FAR struct fat_format_s *fmt,
       if (fmt->ff_nsectors > geometry.geo_nsectors)
         {
           ferr("ERROR: User maxblocks (%" PRId32
-               ") exceeds blocks on device (%" PRIu32 ")\n",
-               fmt->ff_nsectors, geometry.geo_nsectors);
+               ") exceeds blocks on device (%ju)\n",
+               fmt->ff_nsectors, (uintmax_t)geometry.geo_nsectors);
 
           return -EINVAL;
         }
@@ -337,9 +348,11 @@ int mkfatfs(FAR const char *pathname, FAR struct fat_format_s *fmt)
       goto errout_with_driver;
     }
 
-  /* Allocate a buffer that will be working sector memory */
+  /* Allocate a buffer that will be working sector memory
+   * Lets align it as needed
+   */
 
-  var.fv_sect = (FAR uint8_t *)malloc(var.fv_sectorsize);
+  var.fv_sect = (FAR uint8_t *)fat_buffer_alloc(var.fv_sectorsize);
   if (!var.fv_sect)
     {
       ferr("ERROR: Failed to allocate working buffers\n");

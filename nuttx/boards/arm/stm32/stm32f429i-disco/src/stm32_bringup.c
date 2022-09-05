@@ -26,7 +26,7 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#include <syslog.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/board.h>
@@ -83,7 +83,7 @@
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -91,14 +91,14 @@
 int stm32_bringup(void)
 {
 #if defined(CONFIG_STM32_SPI4)
-  FAR struct spi_dev_s *spi;
+  struct spi_dev_s *spi;
 #endif
 #if defined(CONFIG_MTD)
-  FAR struct mtd_dev_s *mtd;
-  FAR struct mtd_geometry_s geo;
+  struct mtd_dev_s *mtd;
+  struct mtd_geometry_s geo;
 #endif
 #if defined(CONFIG_MTD_PARTITION_NAMES)
-  FAR const char *partname = CONFIG_STM32F429I_DISCO_FLASH_PART_NAMES;
+  const char *partname = CONFIG_STM32F429I_DISCO_FLASH_PART_NAMES;
 #endif
   int ret;
 
@@ -168,8 +168,8 @@ int stm32_bringup(void)
           int erasesize;
           const char *partstring = CONFIG_STM32F429I_DISCO_FLASH_PART_LIST;
           const char *ptr;
-          FAR struct mtd_dev_s *mtd_part;
-          char  partref[4];
+          struct mtd_dev_s *mtd_part;
+          char  partref[16];
 
           /* Now create a partition on the FLASH device */
 
@@ -226,7 +226,7 @@ int stm32_bringup(void)
                    */
 
 #if defined(CONFIG_MTD_SMART) && defined(CONFIG_FS_SMARTFS)
-                  sprintf(partref, "p%d", partno);
+                  snprintf(partref, sizeof(partref), "p%d", partno);
                   smart_initialize(CONFIG_STM32F429I_DISCO_FLASH_MINOR,
                                    mtd_part, partref);
 #endif

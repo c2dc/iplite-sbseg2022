@@ -1,35 +1,20 @@
 /****************************************************************************
- * examples/pwm/pwm_main.c
+ * apps/examples/pwm/pwm_main.c
  *
- *   Copyright (C) 2011-2012, 2015 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -79,6 +64,26 @@
         CONFIG_EXAMPLES_PWM_CHANNEL3 == CONFIG_EXAMPLES_PWM_CHANNEL4
 #      error "Channel numbers must be unique"
 #    endif
+#  endif
+#  if CONFIG_PWM_NCHANNELS > 4
+#    if CONFIG_EXAMPLES_PWM_CHANNEL1 == CONFIG_EXAMPLES_PWM_CHANNEL5 || \
+        CONFIG_EXAMPLES_PWM_CHANNEL2 == CONFIG_EXAMPLES_PWM_CHANNEL5 || \
+        CONFIG_EXAMPLES_PWM_CHANNEL3 == CONFIG_EXAMPLES_PWM_CHANNEL5 || \
+        CONFIG_EXAMPLES_PWM_CHANNEL4 == CONFIG_EXAMPLES_PWM_CHANNEL5
+#      error "Channel numbers must be unique"
+#    endif
+#  endif
+#  if CONFIG_PWM_NCHANNELS > 5
+#    if CONFIG_EXAMPLES_PWM_CHANNEL1 == CONFIG_EXAMPLES_PWM_CHANNEL6 || \
+        CONFIG_EXAMPLES_PWM_CHANNEL2 == CONFIG_EXAMPLES_PWM_CHANNEL6 || \
+        CONFIG_EXAMPLES_PWM_CHANNEL3 == CONFIG_EXAMPLES_PWM_CHANNEL6 || \
+        CONFIG_EXAMPLES_PWM_CHANNEL4 == CONFIG_EXAMPLES_PWM_CHANNEL6 || \
+        CONFIG_EXAMPLES_PWM_CHANNEL5 == CONFIG_EXAMPLES_PWM_CHANNEL6
+#      error "Channel numbers must be unique"
+#    endif
+#  endif
+#  if CONFIG_PWM_NCHANNELS > 6
+#    error "Too many PWM channels"
 #  endif
 #endif
 
@@ -158,6 +163,12 @@ static void pwm_help(FAR struct pwm_state_s *pwm)
 #if CONFIG_PWM_NCHANNELS > 3
     CONFIG_EXAMPLES_PWM_CHANNEL4,
 #endif
+#if CONFIG_PWM_NCHANNELS > 4
+    CONFIG_EXAMPLES_PWM_CHANNEL5,
+#endif
+#if CONFIG_PWM_NCHANNELS > 5
+    CONFIG_EXAMPLES_PWM_CHANNEL6,
+#endif
   };
 
   uint8_t duties[CONFIG_PWM_NCHANNELS] =
@@ -171,6 +182,12 @@ static void pwm_help(FAR struct pwm_state_s *pwm)
 #endif
 #if CONFIG_PWM_NCHANNELS > 3
     CONFIG_EXAMPLES_PWM_DUTYPCT4,
+#endif
+#if CONFIG_PWM_NCHANNELS > 4
+    CONFIG_EXAMPLES_PWM_DUTYPCT5,
+#endif
+#if CONFIG_PWM_NCHANNELS > 5
+    CONFIG_EXAMPLES_PWM_DUTYPCT6,
 #endif
   };
 
@@ -227,7 +244,7 @@ static void pwm_help(FAR struct pwm_state_s *pwm)
 #endif
 #ifdef CONFIG_PWM_PULSECOUNT
   printf("  [-n count] selects the pulse count.  "
-         "Default: %d Current: %u\n",
+         "Default: %d Current: %" PRIx32 "\n",
          CONFIG_EXAMPLES_PWM_PULSECOUNT, pwm->count);
 #endif
   printf("  [-t duration] is the duration of the pulse train in seconds.  "
@@ -313,7 +330,7 @@ static void parse_args(FAR struct pwm_state_s *pwm, int argc,
 #ifdef CONFIG_PWM_MULTICHAN
           case 'c':
             nargs = arg_decimal(&argv[index], &value);
-            if (value < 1 || value > 4)
+            if (value < -1 || value > CONFIG_PWM_NCHANNELS)
               {
                 printf("Channel out of range: %ld\n", value);
                 exit(1);
@@ -329,14 +346,14 @@ static void parse_args(FAR struct pwm_state_s *pwm, int argc,
                         CONFIG_PWM_NCHANNELS - 1);
               }
 
-            pwm->channels[nchannels - 1] = (uint8_t)value;
+            pwm->channels[nchannels - 1] = (int8_t)value;
             index += nargs;
             break;
 #endif
 
           case 'd':
             nargs = arg_decimal(&argv[index], &value);
-            if (value < 1 || value > 99)
+            if (value < 0 || value > 100)
               {
                 printf("Duty out of range: %ld\n", value);
                 exit(1);
@@ -441,6 +458,14 @@ int main(int argc, FAR char *argv[])
       g_pwmstate.channels[3] = CONFIG_EXAMPLES_PWM_CHANNEL4;
       g_pwmstate.duties[3]   = CONFIG_EXAMPLES_PWM_DUTYPCT4;
 #endif
+#if CONFIG_PWM_NCHANNELS > 4
+      g_pwmstate.channels[4] = CONFIG_EXAMPLES_PWM_CHANNEL5;
+      g_pwmstate.duties[4]   = CONFIG_EXAMPLES_PWM_DUTYPCT5;
+#endif
+#if CONFIG_PWM_NCHANNELS > 5
+      g_pwmstate.channels[5] = CONFIG_EXAMPLES_PWM_CHANNEL6;
+      g_pwmstate.duties[5]   = CONFIG_EXAMPLES_PWM_DUTYPCT6;
+#endif
 #else
       g_pwmstate.duty        = CONFIG_EXAMPLES_PWM_DUTYPCT;
 #endif
@@ -498,8 +523,7 @@ int main(int argc, FAR char *argv[])
   for (i = 0; i < CONFIG_PWM_NCHANNELS; i++)
     {
       info.channels[i].channel = g_pwmstate.channels[i];
-      info.channels[i].duty    = ((uint32_t)g_pwmstate.duties[i]
-                                  << 16) / 100;
+      info.channels[i].duty = b16divi(uitoub16(g_pwmstate.duties[i]), 100);
       printf(" channel: %d duty: %08" PRIx32,
         info.channels[i].channel, info.channels[i].duty);
     }
@@ -507,12 +531,13 @@ int main(int argc, FAR char *argv[])
   printf("\n");
 
 #else
-  info.duty      = ((uint32_t)g_pwmstate.duty << 16) / 100;
+  info.duty  = b16divi(uitoub16(g_pwmstate.duty), 100);
 #  ifdef CONFIG_PWM_PULSECOUNT
-  info.count     = g_pwmstate.count;
+  info.count = g_pwmstate.count;
 
   printf("pwm_main: starting output "
-         "with frequency: %" PRIu32 " duty: %08" PRIx32 " count: %u\n",
+         "with frequency: %" PRIu32 " duty: %08" PRIx32
+         " count: %" PRIx32 "\n",
          info.frequency, (uint32_t)info.duty, info.count);
 
 #  else

@@ -24,7 +24,9 @@
 
 #include <nuttx/config.h>
 
-#include "arm_arch.h"
+#include <assert.h>
+
+#include "arm_internal.h"
 #include "chip.h"
 #include "nrf52_ppi.h"
 #include "hardware/nrf52_ppi.h"

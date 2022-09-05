@@ -31,7 +31,8 @@
 #include <arch/board/board.h>
 
 #include "arm_internal.h"
-#include "arm_arch.h"
+
+#include <assert.h>
 #include <debug.h>
 
 #include "xmc4_config.h"
@@ -237,7 +238,7 @@ void xmc4_lowsetup(void)
 
 #ifdef HAVE_UART_DEVICE
 int xmc4_uart_configure(enum usic_channel_e channel,
-                        FAR const struct uart_config_s *config)
+                        const struct uart_config_s *config)
 {
   uintptr_t base;
   uint32_t regval;

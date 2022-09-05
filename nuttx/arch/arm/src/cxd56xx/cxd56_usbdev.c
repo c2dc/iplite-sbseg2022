@@ -33,6 +33,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <fcntl.h>
@@ -51,7 +52,6 @@
 #include <arch/chip/pm.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "cxd56_clock.h"
 #include "cxd56_usbdev.h"
@@ -94,10 +94,6 @@
 #define CONFIG_DEFAULT_PHY_CFG0 \
   (PHY_STAGSELECT | PHY_HSFALLCNTRL | PHY_IHSTX(0xc) | PHY_INHSRFRED | \
    PHY_INHSIPLUS | PHY_INHSDRVSLEW| PHY_INLFSFBCAP)
-
-#ifndef __aligned
-#  define __aligned(x) __attribute__((aligned(x)))
-#endif
 
 /* Debug ********************************************************************/
 
@@ -384,7 +380,7 @@ struct cxd56_usbdev_s
   /* signal */
 
   int signo;
-  int pid;
+  pid_t pid;
 };
 
 /* For maintaining tables of endpoint info */
@@ -424,41 +420,41 @@ static struct pm_cpu_wakelock_s g_wake_lock =
 
 /* Request queue operations *************************************************/
 
-static FAR struct cxd56_req_s *cxd56_rqdequeue(
-                            FAR struct cxd56_ep_s *privep);
-static void cxd56_rqenqueue(FAR struct cxd56_ep_s *privep,
-                            FAR struct cxd56_req_s *req);
+static struct cxd56_req_s *cxd56_rqdequeue(
+                            struct cxd56_ep_s *privep);
+static void cxd56_rqenqueue(struct cxd56_ep_s *privep,
+                            struct cxd56_req_s *req);
 
 /* Low level data transfers and request operations */
 
-static int cxd56_epwrite(FAR struct cxd56_ep_s *privep, FAR uint8_t *buf,
+static int cxd56_epwrite(struct cxd56_ep_s *privep, uint8_t *buf,
                          uint16_t nbytes);
-static inline void cxd56_abortrequest(FAR struct cxd56_ep_s *privep,
-                                      FAR struct cxd56_req_s *privreq,
+static inline void cxd56_abortrequest(struct cxd56_ep_s *privep,
+                                      struct cxd56_req_s *privreq,
                                       int16_t result);
-static void cxd56_reqcomplete(FAR struct cxd56_ep_s *privep, int16_t result);
-static int cxd56_wrrequest(FAR struct cxd56_ep_s *privep);
-static int cxd56_rdrequest(FAR struct cxd56_ep_s *privep);
-static void cxd56_cancelrequests(FAR struct cxd56_ep_s *privep);
-static void cxd56_usbdevreset(FAR struct cxd56_usbdev_s *priv);
-static void cxd56_usbreset(FAR struct cxd56_usbdev_s *priv);
+static void cxd56_reqcomplete(struct cxd56_ep_s *privep, int16_t result);
+static int cxd56_wrrequest(struct cxd56_ep_s *privep);
+static int cxd56_rdrequest(struct cxd56_ep_s *privep);
+static void cxd56_cancelrequests(struct cxd56_ep_s *privep);
+static void cxd56_usbdevreset(struct cxd56_usbdev_s *priv);
+static void cxd56_usbreset(struct cxd56_usbdev_s *priv);
 
 /* Interrupt handling */
 
-static FAR struct cxd56_ep_s *
-  cxd56_epfindbyaddr(FAR struct cxd56_usbdev_s *priv, uint16_t eplog);
-static void cxd56_dispatchrequest(FAR struct cxd56_usbdev_s *priv);
-static inline void cxd56_ep0setup(FAR struct cxd56_usbdev_s *priv);
-static int cxd56_usbinterrupt(int irq, FAR void *context, FAR void *arg);
-static int cxd56_sysinterrupt(int irq, FAR void *context, FAR void *arg);
-static int cxd56_vbusinterrupt(int irq, FAR void *context, FAR void *arg);
-static int cxd56_vbusninterrupt(int irq, FAR void *context, FAR void *arg);
+static struct cxd56_ep_s *
+cxd56_epfindbyaddr(struct cxd56_usbdev_s *priv, uint16_t eplog);
+static void cxd56_dispatchrequest(struct cxd56_usbdev_s *priv);
+static inline void cxd56_ep0setup(struct cxd56_usbdev_s *priv);
+static int cxd56_usbinterrupt(int irq, void *context, void *arg);
+static int cxd56_sysinterrupt(int irq, void *context, void *arg);
+static int cxd56_vbusinterrupt(int irq, void *context, void *arg);
+static int cxd56_vbusninterrupt(int irq, void *context, void *arg);
 
 /* Initialization operations */
 
-static inline void cxd56_ep0hwinitialize(FAR struct cxd56_usbdev_s *priv);
-static void cxd56_ctrlinitialize(FAR struct cxd56_usbdev_s *priv);
-static void cxd56_epinitialize(FAR struct cxd56_usbdev_s *priv);
+static inline void cxd56_ep0hwinitialize(struct cxd56_usbdev_s *priv);
+static void cxd56_ctrlinitialize(struct cxd56_usbdev_s *priv);
+static void cxd56_epinitialize(struct cxd56_usbdev_s *priv);
 
 /* Un-initialization operations */
 
@@ -466,34 +462,34 @@ static void cxd56_usbhwuninit(void);
 
 /* Endpoint methods */
 
-static int cxd56_epconfigure(FAR struct usbdev_ep_s *ep,
-                             FAR const struct usb_epdesc_s *desc, bool last);
-static int cxd56_epdisable(FAR struct usbdev_ep_s *ep);
-static FAR struct usbdev_req_s *cxd56_epallocreq(FAR struct usbdev_ep_s *ep);
-static void cxd56_epfreereq(FAR struct usbdev_ep_s *ep,
-                            FAR struct usbdev_req_s *req);
+static int cxd56_epconfigure(struct usbdev_ep_s *ep,
+                             const struct usb_epdesc_s *desc, bool last);
+static int cxd56_epdisable(struct usbdev_ep_s *ep);
+static struct usbdev_req_s *cxd56_epallocreq(struct usbdev_ep_s *ep);
+static void cxd56_epfreereq(struct usbdev_ep_s *ep,
+                            struct usbdev_req_s *req);
 #ifdef CONFIG_USBDEV_DMA
-static FAR void *cxd56_epallocbuffer(FAR struct usbdev_ep_s *ep,
+static void *cxd56_epallocbuffer(struct usbdev_ep_s *ep,
                                      uint16_t nbytes);
-static void cxd56_epfreebuffer(FAR struct usbdev_ep_s *ep, FAR void *buf);
+static void cxd56_epfreebuffer(struct usbdev_ep_s *ep, void *buf);
 #endif
-static int cxd56_epsubmit(FAR struct usbdev_ep_s *ep,
-                          FAR struct usbdev_req_s *privreq);
-static int cxd56_epcancel(FAR struct usbdev_ep_s *ep,
-                          FAR struct usbdev_req_s *privreq);
-static int cxd56_epstall(FAR struct usbdev_ep_s *ep, bool resume);
+static int cxd56_epsubmit(struct usbdev_ep_s *ep,
+                          struct usbdev_req_s *privreq);
+static int cxd56_epcancel(struct usbdev_ep_s *ep,
+                          struct usbdev_req_s *privreq);
+static int cxd56_epstall(struct usbdev_ep_s *ep, bool resume);
 
 /* USB device controller methods */
 
-static FAR struct usbdev_ep_s *cxd56_allocep(FAR struct usbdev_s *dev,
+static struct usbdev_ep_s *cxd56_allocep(struct usbdev_s *dev,
                                              uint8_t epno, bool in,
                                              uint8_t eptype);
-static void cxd56_freeep(FAR struct usbdev_s *dev,
-                         FAR struct usbdev_ep_s *ep);
-static int cxd56_getframe(FAR struct usbdev_s *dev);
-static int cxd56_wakeup(FAR struct usbdev_s *dev);
-static int cxd56_selfpowered(FAR struct usbdev_s *dev, bool selfpowered);
-static int cxd56_pullup(FAR struct usbdev_s *dev, bool enable);
+static void cxd56_freeep(struct usbdev_s *dev,
+                         struct usbdev_ep_s *ep);
+static int cxd56_getframe(struct usbdev_s *dev);
+static int cxd56_wakeup(struct usbdev_s *dev);
+static int cxd56_selfpowered(struct usbdev_s *dev, bool selfpowered);
+static int cxd56_pullup(struct usbdev_s *dev, bool enable);
 
 /* Notify USB device attach/detach signal */
 
@@ -503,14 +499,14 @@ static void cxd56_notify_signal(uint16_t state, uint16_t power);
 
 /* procfs methods */
 
-static int cxd56_usbdev_open(FAR struct file *filep, FAR const char *relpath,
+static int cxd56_usbdev_open(struct file *filep, const char *relpath,
                              int oflags, mode_t mode);
-static int cxd56_usbdev_close(FAR struct file *filep);
-static ssize_t cxd56_usbdev_read(FAR struct file *filep, FAR char *buffer,
+static int cxd56_usbdev_close(struct file *filep);
+static ssize_t cxd56_usbdev_read(struct file *filep, char *buffer,
                                  size_t buflen);
-static int cxd56_usbdev_dup(FAR const struct file *oldp,
-                            FAR struct file *newp);
-static int cxd56_usbdev_stat(FAR const char *relpath, FAR struct stat *buf);
+static int cxd56_usbdev_dup(const struct file *oldp,
+                            struct file *newp);
+static int cxd56_usbdev_stat(const char *relpath, struct stat *buf);
 
 #endif
 
@@ -555,9 +551,9 @@ static struct cxd56_usbdev_s g_usbdev;
 
 /* DMA Descriptors for each endpoints */
 
-static struct cxd56_setup_desc_s __aligned(4) g_ep0setup;
-static struct cxd56_data_desc_s __aligned(4) g_ep0in;
-static struct cxd56_data_desc_s __aligned(4) g_ep0out;
+static struct cxd56_setup_desc_s aligned_data(4) g_ep0setup;
+static struct cxd56_data_desc_s aligned_data(4) g_ep0in;
+static struct cxd56_data_desc_s aligned_data(4) g_ep0out;
 
 /* Summarizes information about all CXD56 endpoints */
 
@@ -689,9 +685,9 @@ static inline bool cxd56_iscableconnected(void)
  *
  ****************************************************************************/
 
-static FAR struct cxd56_req_s *cxd56_rqdequeue(FAR struct cxd56_ep_s *privep)
+static struct cxd56_req_s *cxd56_rqdequeue(struct cxd56_ep_s *privep)
 {
-  FAR struct cxd56_req_s *ret = privep->head;
+  struct cxd56_req_s *ret = privep->head;
 
   if (ret)
     {
@@ -715,8 +711,8 @@ static FAR struct cxd56_req_s *cxd56_rqdequeue(FAR struct cxd56_ep_s *privep)
  *
  ****************************************************************************/
 
-static void cxd56_rqenqueue(FAR struct cxd56_ep_s *privep,
-                            FAR struct cxd56_req_s *req)
+static void cxd56_rqenqueue(struct cxd56_ep_s *privep,
+                            struct cxd56_req_s *req)
 {
   req->flink = NULL;
   if (!privep->head)
@@ -739,10 +735,10 @@ static void cxd56_rqenqueue(FAR struct cxd56_ep_s *privep,
  *
  ****************************************************************************/
 
-static int cxd56_epwrite(FAR struct cxd56_ep_s *privep, FAR uint8_t *buf,
+static int cxd56_epwrite(struct cxd56_ep_s *privep, uint8_t *buf,
                          uint16_t nbytes)
 {
-  FAR struct cxd56_data_desc_s *desc;
+  struct cxd56_data_desc_s *desc;
   uint32_t ctrl;
   uint8_t epphy = privep->epphy;
 
@@ -755,7 +751,7 @@ static int cxd56_epwrite(FAR struct cxd56_ep_s *privep, FAR uint8_t *buf,
       return 0;
     }
 
-  desc->buf    = (uint32_t)(uintptr_t)buf;
+  desc->buf    = CXD56_PHYSADDR(buf);
   desc->status = nbytes | DESC_LAST; /* always last descriptor */
 
   /* Set Poll bit to ready to send */
@@ -782,8 +778,8 @@ static int cxd56_epwrite(FAR struct cxd56_ep_s *privep, FAR uint8_t *buf,
  *
  ****************************************************************************/
 
-static inline void cxd56_abortrequest(FAR struct cxd56_ep_s *privep,
-                                      FAR struct cxd56_req_s *privreq,
+static inline void cxd56_abortrequest(struct cxd56_ep_s *privep,
+                                      struct cxd56_req_s *privreq,
                                       int16_t result)
 {
   usbtrace(TRACE_DEVERROR(CXD56_TRACEERR_REQABORTED),
@@ -806,9 +802,9 @@ static inline void cxd56_abortrequest(FAR struct cxd56_ep_s *privep,
  *
  ****************************************************************************/
 
-static void cxd56_reqcomplete(FAR struct cxd56_ep_s *privep, int16_t result)
+static void cxd56_reqcomplete(struct cxd56_ep_s *privep, int16_t result)
 {
-  FAR struct cxd56_req_s *privreq;
+  struct cxd56_req_s *privreq;
   int stalled = privep->stalled;
   irqstate_t flags;
 
@@ -853,10 +849,10 @@ static void cxd56_reqcomplete(FAR struct cxd56_ep_s *privep, int16_t result)
  *
  ****************************************************************************/
 
-static void cxd56_txdmacomplete(FAR struct cxd56_ep_s *privep)
+static void cxd56_txdmacomplete(struct cxd56_ep_s *privep)
 {
-  FAR struct cxd56_data_desc_s *desc;
-  FAR struct cxd56_req_s *privreq;
+  struct cxd56_data_desc_s *desc;
+  struct cxd56_req_s *privreq;
 
   desc = privep->epphy == CXD56_EP0 ? &g_ep0in : privep->desc;
 
@@ -895,10 +891,10 @@ static void cxd56_txdmacomplete(FAR struct cxd56_ep_s *privep)
  *
  ****************************************************************************/
 
-static int cxd56_wrrequest(FAR struct cxd56_ep_s *privep)
+static int cxd56_wrrequest(struct cxd56_ep_s *privep)
 {
-  FAR struct cxd56_req_s *privreq;
-  FAR uint8_t *buf;
+  struct cxd56_req_s *privreq;
+  uint8_t *buf;
   int nbytes;
   int bytesleft;
 
@@ -973,10 +969,10 @@ static int cxd56_wrrequest(FAR struct cxd56_ep_s *privep)
  *
  ****************************************************************************/
 
-static void cxd56_rxdmacomplete(FAR struct cxd56_ep_s *privep)
+static void cxd56_rxdmacomplete(struct cxd56_ep_s *privep)
 {
-  FAR struct cxd56_data_desc_s *desc = privep->desc;
-  FAR struct cxd56_req_s *privreq;
+  struct cxd56_data_desc_s *desc = privep->desc;
+  struct cxd56_req_s *privreq;
   uint32_t status = desc->status;
   uint16_t nrxbytes;
 
@@ -1018,10 +1014,10 @@ static void cxd56_rxdmacomplete(FAR struct cxd56_ep_s *privep)
  *
  ****************************************************************************/
 
-static int cxd56_rdrequest(FAR struct cxd56_ep_s *privep)
+static int cxd56_rdrequest(struct cxd56_ep_s *privep)
 {
-  FAR struct cxd56_data_desc_s *desc = privep->desc;
-  FAR struct cxd56_req_s *privreq;
+  struct cxd56_data_desc_s *desc = privep->desc;
+  struct cxd56_req_s *privreq;
   uint32_t ctrl;
 
   /* Check the request from the head of the endpoint request queue */
@@ -1042,7 +1038,7 @@ static int cxd56_rdrequest(FAR struct cxd56_ep_s *privep)
 
   usbtrace(TRACE_READ(privep->epphy), privep->ep.maxpacket);
 
-  desc->buf    = (uint32_t)(uintptr_t)privreq->req.buf;
+  desc->buf    = CXD56_PHYSADDR(privreq->req.buf);
   desc->status = privep->ep.maxpacket | DESC_LAST;
 
   /* Ready to receive next packet */
@@ -1062,7 +1058,7 @@ static int cxd56_rdrequest(FAR struct cxd56_ep_s *privep)
  *
  ****************************************************************************/
 
-static void cxd56_stopinep(FAR struct cxd56_ep_s *privep)
+static void cxd56_stopinep(struct cxd56_ep_s *privep)
 {
   uint32_t ctrl;
 
@@ -1081,7 +1077,7 @@ static void cxd56_stopinep(FAR struct cxd56_ep_s *privep)
  *
  ****************************************************************************/
 
-static void cxd56_stopoutep(FAR struct cxd56_ep_s *privep)
+static void cxd56_stopoutep(struct cxd56_ep_s *privep)
 {
   uint32_t ctrl;
   uint32_t stat;
@@ -1107,7 +1103,7 @@ static void cxd56_stopoutep(FAR struct cxd56_ep_s *privep)
  *
  ****************************************************************************/
 
-static void cxd56_cancelrequests(FAR struct cxd56_ep_s *privep)
+static void cxd56_cancelrequests(struct cxd56_ep_s *privep)
 {
   if (privep->epphy > 0)
     {
@@ -1150,10 +1146,10 @@ static void cxd56_cancelrequests(FAR struct cxd56_ep_s *privep)
  *
  ****************************************************************************/
 
-static FAR struct cxd56_ep_s *
-cxd56_epfindbyaddr(FAR struct cxd56_usbdev_s *priv, uint16_t eplog)
+static struct cxd56_ep_s *
+cxd56_epfindbyaddr(struct cxd56_usbdev_s *priv, uint16_t eplog)
 {
-  FAR struct cxd56_ep_s *privep;
+  struct cxd56_ep_s *privep;
   int i;
 
   /* Endpoint zero is a special case */
@@ -1192,7 +1188,7 @@ cxd56_epfindbyaddr(FAR struct cxd56_usbdev_s *priv, uint16_t eplog)
  *
  ****************************************************************************/
 
-static void cxd56_dispatchrequest(FAR struct cxd56_usbdev_s *priv)
+static void cxd56_dispatchrequest(struct cxd56_usbdev_s *priv)
 {
   int ret;
 
@@ -1220,11 +1216,11 @@ static void cxd56_dispatchrequest(FAR struct cxd56_usbdev_s *priv)
  *
  ****************************************************************************/
 
-static inline void cxd56_ep0setup(FAR struct cxd56_usbdev_s *priv)
+static inline void cxd56_ep0setup(struct cxd56_usbdev_s *priv)
 {
-  FAR struct cxd56_ep_s *ep0      = &priv->eplist[0];
-  FAR struct cxd56_req_s *privreq = cxd56_rqpeek(ep0);
-  FAR struct cxd56_ep_s *privep;
+  struct cxd56_ep_s *ep0      = &priv->eplist[0];
+  struct cxd56_req_s *privreq = cxd56_rqpeek(ep0);
+  struct cxd56_ep_s *privep;
   uint16_t index;
   uint16_t value;
   uint16_t len;
@@ -1530,10 +1526,10 @@ static inline void cxd56_ep0setup(FAR struct cxd56_usbdev_s *priv)
  *
  ****************************************************************************/
 
-static int cxd56_epinterrupt(int irq, FAR void *context)
+static int cxd56_epinterrupt(int irq, void *context)
 {
-  FAR struct cxd56_usbdev_s *priv = &g_usbdev;
-  FAR struct cxd56_ep_s *privep;
+  struct cxd56_usbdev_s *priv = &g_usbdev;
+  struct cxd56_ep_s *privep;
   uint32_t eps;
   uint32_t stat;
   uint32_t ctrl;
@@ -1824,7 +1820,7 @@ static int cxd56_epinterrupt(int irq, FAR void *context)
  *
  ****************************************************************************/
 
-static int cxd56_usbinterrupt(int irq, FAR void *context, FAR void *arg)
+static int cxd56_usbinterrupt(int irq, void *context, void *arg)
 {
   struct usb_ctrlreq_s ctrl;
   uint32_t intr;
@@ -1847,7 +1843,7 @@ static int cxd56_usbinterrupt(int irq, FAR void *context, FAR void *arg)
 
   if (intr & USB_INT_ENUM)
     {
-      FAR struct cxd56_usbdev_s *priv = &g_usbdev;
+      struct cxd56_usbdev_s *priv = &g_usbdev;
       uint32_t speed;
       uint32_t config;
 
@@ -1899,8 +1895,8 @@ static int cxd56_usbinterrupt(int irq, FAR void *context, FAR void *arg)
 
       for (i = 1; i < CXD56_NENDPOINTS; i++)
         {
-          FAR struct cxd56_ep_s *privep =
-            (FAR struct cxd56_ep_s *)&g_usbdev.eplist[i];
+          struct cxd56_ep_s *privep =
+            (struct cxd56_ep_s *)&g_usbdev.eplist[i];
 
           cxd56_cancelrequests(privep);
         }
@@ -1981,9 +1977,9 @@ static int cxd56_usbinterrupt(int irq, FAR void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static int cxd56_sysinterrupt(int irq, FAR void *context, FAR void *arg)
+static int cxd56_sysinterrupt(int irq, void *context, void *arg)
 {
-  FAR struct cxd56_usbdev_s *priv = (FAR struct cxd56_usbdev_s *)arg;
+  struct cxd56_usbdev_s *priv = (struct cxd56_usbdev_s *)arg;
   uint32_t status;
 
   UNUSED(priv);
@@ -2011,7 +2007,7 @@ static int cxd56_sysinterrupt(int irq, FAR void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static void cxd56_ep0hwinitialize(FAR struct cxd56_usbdev_s *priv)
+static void cxd56_ep0hwinitialize(struct cxd56_usbdev_s *priv)
 {
   uint32_t maxp  = g_epinfo[0].maxpacket;
   uint32_t bufsz = g_epinfo[0].bufsize / 4;
@@ -2023,12 +2019,12 @@ static void cxd56_ep0hwinitialize(FAR struct cxd56_usbdev_s *priv)
   memset(&g_ep0in, 0, sizeof(g_ep0in));
   memset(&g_ep0out, 0, sizeof(g_ep0out));
 
-  g_ep0out.buf    = (uint32_t)(uintptr_t)g_ep0outbuffer;
+  g_ep0out.buf    = CXD56_PHYSADDR(g_ep0outbuffer);
   g_ep0out.status = CXD56_EP0MAXPACKET | DESC_LAST;
 
-  putreg32((uint32_t)(uintptr_t)&g_ep0setup, CXD56_USB_OUT_EP_SETUP(0));
-  putreg32((uint32_t)(uintptr_t)&g_ep0in, CXD56_USB_IN_EP_DATADESC(0));
-  putreg32((uint32_t)(uintptr_t)&g_ep0out, CXD56_USB_OUT_EP_DATADESC(0));
+  putreg32(CXD56_PHYSADDR(&g_ep0setup), CXD56_USB_OUT_EP_SETUP(0));
+  putreg32(CXD56_PHYSADDR(&g_ep0in), CXD56_USB_IN_EP_DATADESC(0));
+  putreg32(CXD56_PHYSADDR(&g_ep0out), CXD56_USB_OUT_EP_DATADESC(0));
 
   /* Clear all interrupts */
 
@@ -2055,7 +2051,7 @@ static void cxd56_ep0hwinitialize(FAR struct cxd56_usbdev_s *priv)
  *
  ****************************************************************************/
 
-static void cxd56_ctrlinitialize(FAR struct cxd56_usbdev_s *priv)
+static void cxd56_ctrlinitialize(struct cxd56_usbdev_s *priv)
 {
   uint32_t ctrl;
   uint32_t config;
@@ -2084,7 +2080,7 @@ static void cxd56_ctrlinitialize(FAR struct cxd56_usbdev_s *priv)
  *
  ****************************************************************************/
 
-static void cxd56_usbdevreset(FAR struct cxd56_usbdev_s *priv)
+static void cxd56_usbdevreset(struct cxd56_usbdev_s *priv)
 {
   uint32_t mask;
   int i;
@@ -2194,10 +2190,10 @@ static void cxd56_usbdevreset(FAR struct cxd56_usbdev_s *priv)
  *
  ****************************************************************************/
 
-static int cxd56_epconfigure(FAR struct usbdev_ep_s *ep,
-                             FAR const struct usb_epdesc_s *desc, bool last)
+static int cxd56_epconfigure(struct usbdev_ep_s *ep,
+                             const struct usb_epdesc_s *desc, bool last)
 {
-  FAR struct cxd56_ep_s *privep = (FAR struct cxd56_ep_s *)ep;
+  struct cxd56_ep_s *privep = (struct cxd56_ep_s *)ep;
   int n;
   int eptype;
   uint16_t maxpacket;
@@ -2253,12 +2249,12 @@ static int cxd56_epconfigure(FAR struct usbdev_ep_s *ep,
 
   if (privep->in)
     {
-      putreg32((uint32_t)(uintptr_t)privep->desc,
+      putreg32(CXD56_PHYSADDR(privep->desc),
                CXD56_USB_IN_EP_DATADESC(privep->epphy));
     }
   else
     {
-      putreg32((uint32_t)(uintptr_t)privep->desc,
+      putreg32(CXD56_PHYSADDR(privep->desc),
                CXD56_USB_OUT_EP_DATADESC(privep->epphy));
     }
 
@@ -2273,9 +2269,9 @@ static int cxd56_epconfigure(FAR struct usbdev_ep_s *ep,
  *
  ****************************************************************************/
 
-static int cxd56_epdisable(FAR struct usbdev_ep_s *ep)
+static int cxd56_epdisable(struct usbdev_ep_s *ep)
 {
-  FAR struct cxd56_ep_s *privep = (FAR struct cxd56_ep_s *)ep;
+  struct cxd56_ep_s *privep = (struct cxd56_ep_s *)ep;
   irqstate_t flags;
 
 #ifdef CONFIG_DEBUG_FEATURES
@@ -2287,7 +2283,7 @@ static int cxd56_epdisable(FAR struct usbdev_ep_s *ep)
 
 #endif
   usbtrace(TRACE_EPDISABLE, privep->epphy);
-  uinfo("EP%d\n", ((FAR struct cxd56_ep_s *)ep)->epphy);
+  uinfo("EP%d\n", ((struct cxd56_ep_s *)ep)->epphy);
 
   /* Cancel any ongoing activity and reset the endpoint */
 
@@ -2306,9 +2302,9 @@ static int cxd56_epdisable(FAR struct usbdev_ep_s *ep)
  *
  ****************************************************************************/
 
-static FAR struct usbdev_req_s *cxd56_epallocreq(FAR struct usbdev_ep_s *ep)
+static struct usbdev_req_s *cxd56_epallocreq(struct usbdev_ep_s *ep)
 {
-  FAR struct cxd56_req_s *privreq;
+  struct cxd56_req_s *privreq;
 
 #ifdef CONFIG_DEBUG_FEATURES
   if (!ep)
@@ -2317,9 +2313,9 @@ static FAR struct usbdev_req_s *cxd56_epallocreq(FAR struct usbdev_ep_s *ep)
     }
 
 #endif
-  usbtrace(TRACE_EPALLOCREQ, ((FAR struct cxd56_ep_s *)ep)->epphy);
+  usbtrace(TRACE_EPALLOCREQ, ((struct cxd56_ep_s *)ep)->epphy);
 
-  privreq = (FAR struct cxd56_req_s *)kmm_malloc(sizeof(struct cxd56_req_s));
+  privreq = (struct cxd56_req_s *)kmm_malloc(sizeof(struct cxd56_req_s));
   if (!privreq)
     {
       usbtrace(TRACE_DEVERROR(CXD56_TRACEERR_ALLOCFAIL), 0);
@@ -2338,10 +2334,10 @@ static FAR struct usbdev_req_s *cxd56_epallocreq(FAR struct usbdev_ep_s *ep)
  *
  ****************************************************************************/
 
-static void cxd56_epfreereq(FAR struct usbdev_ep_s *ep,
-                            FAR struct usbdev_req_s *req)
+static void cxd56_epfreereq(struct usbdev_ep_s *ep,
+                            struct usbdev_req_s *req)
 {
-  FAR struct cxd56_req_s *privreq = (FAR struct cxd56_req_s *)req;
+  struct cxd56_req_s *privreq = (struct cxd56_req_s *)req;
 
 #ifdef CONFIG_DEBUG_FEATURES
   if (!ep || !req)
@@ -2351,7 +2347,7 @@ static void cxd56_epfreereq(FAR struct usbdev_ep_s *ep,
     }
 #endif
 
-  usbtrace(TRACE_EPFREEREQ, ((FAR struct cxd56_ep_s *)ep)->epphy);
+  usbtrace(TRACE_EPFREEREQ, ((struct cxd56_ep_s *)ep)->epphy);
   kmm_free(privreq);
 }
 
@@ -2364,10 +2360,10 @@ static void cxd56_epfreereq(FAR struct usbdev_ep_s *ep,
  ****************************************************************************/
 
 #ifdef CONFIG_USBDEV_DMA
-static FAR void *cxd56_epallocbuffer(FAR struct usbdev_ep_s *ep,
+static void *cxd56_epallocbuffer(struct usbdev_ep_s *ep,
                                      uint16_t bytes)
 {
-  FAR struct cxd56_ep_s *privep = (FAR struct cxd56_ep_s *)ep;
+  struct cxd56_ep_s *privep = (struct cxd56_ep_s *)ep;
 
   UNUSED(privep);
   usbtrace(TRACE_EPALLOCBUFFER, privep->epphy);
@@ -2385,9 +2381,9 @@ static FAR void *cxd56_epallocbuffer(FAR struct usbdev_ep_s *ep,
  ****************************************************************************/
 
 #ifdef CONFIG_USBDEV_DMA
-static void cxd56_epfreebuffer(FAR struct usbdev_ep_s *ep, FAR void *buf)
+static void cxd56_epfreebuffer(struct usbdev_ep_s *ep, void *buf)
 {
-  FAR struct cxd56_ep_s *privep = (FAR struct cxd56_ep_s *)ep;
+  struct cxd56_ep_s *privep = (struct cxd56_ep_s *)ep;
 
   UNUSED(privep);
   usbtrace(TRACE_EPFREEBUFFER, privep->epphy);
@@ -2404,12 +2400,12 @@ static void cxd56_epfreebuffer(FAR struct usbdev_ep_s *ep, FAR void *buf)
  *
  ****************************************************************************/
 
-static int cxd56_epsubmit(FAR struct usbdev_ep_s *ep,
-                          FAR struct usbdev_req_s *req)
+static int cxd56_epsubmit(struct usbdev_ep_s *ep,
+                          struct usbdev_req_s *req)
 {
-  FAR struct cxd56_req_s *privreq = (FAR struct cxd56_req_s *)req;
-  FAR struct cxd56_ep_s *privep   = (FAR struct cxd56_ep_s *)ep;
-  FAR struct cxd56_usbdev_s *priv;
+  struct cxd56_req_s *privreq = (struct cxd56_req_s *)req;
+  struct cxd56_ep_s *privep   = (struct cxd56_ep_s *)ep;
+  struct cxd56_usbdev_s *priv;
   uint32_t ctrl;
   irqstate_t flags;
   int ret = OK;
@@ -2485,9 +2481,9 @@ static int cxd56_epsubmit(FAR struct usbdev_ep_s *ep,
       if (priv->ctrl.req == USB_REQ_GETDESCRIPTOR &&
           priv->ctrl.value[1] == USB_DESC_TYPE_CONFIG)
         {
-          FAR struct usb_cfgdesc_s *cfgdesc;
+          struct usb_cfgdesc_s *cfgdesc;
 
-          cfgdesc     = (FAR struct usb_cfgdesc_s *)req->buf;
+          cfgdesc     = (struct usb_cfgdesc_s *)req->buf;
           priv->power = cfgdesc->mxpower * 2;
         }
 
@@ -2549,10 +2545,10 @@ static int cxd56_epsubmit(FAR struct usbdev_ep_s *ep,
  *
  ****************************************************************************/
 
-static int cxd56_epcancel(FAR struct usbdev_ep_s *ep,
-                          FAR struct usbdev_req_s *req)
+static int cxd56_epcancel(struct usbdev_ep_s *ep,
+                          struct usbdev_req_s *req)
 {
-  FAR struct cxd56_ep_s *privep = (FAR struct cxd56_ep_s *)ep;
+  struct cxd56_ep_s *privep = (struct cxd56_ep_s *)ep;
   irqstate_t flags;
 
 #ifdef CONFIG_DEBUG_FEATURES
@@ -2579,9 +2575,9 @@ static int cxd56_epcancel(FAR struct usbdev_ep_s *ep,
  *
  ****************************************************************************/
 
-static int cxd56_epstall(FAR struct usbdev_ep_s *ep, bool resume)
+static int cxd56_epstall(struct usbdev_ep_s *ep, bool resume)
 {
-  FAR struct cxd56_ep_s *privep = (FAR struct cxd56_ep_s *)ep;
+  struct cxd56_ep_s *privep = (struct cxd56_ep_s *)ep;
   uint32_t ctrl;
   uint32_t addr;
 
@@ -2610,7 +2606,7 @@ static int cxd56_epstall(FAR struct usbdev_ep_s *ep, bool resume)
  * Device Methods
  ****************************************************************************/
 
-static int cxd56_allocepbuffer(FAR struct cxd56_ep_s *privep)
+static int cxd56_allocepbuffer(struct cxd56_ep_s *privep)
 {
   DEBUGASSERT(!privep->desc && !privep->buffer);
   DEBUGASSERT(privep->epphy); /* Do not use for EP0 */
@@ -2629,19 +2625,19 @@ static int cxd56_allocepbuffer(FAR struct cxd56_ep_s *privep)
 
   if (privep->in)
     {
-      putreg32((uint32_t)(uintptr_t)privep->desc,
+      putreg32(CXD56_PHYSADDR(privep->desc),
                CXD56_USB_IN_EP_DATADESC(privep->epphy));
     }
   else
     {
-      putreg32((uint32_t)(uintptr_t)privep->desc,
+      putreg32(CXD56_PHYSADDR(privep->desc),
                CXD56_USB_OUT_EP_DATADESC(privep->epphy));
     }
 
   return 0;
 }
 
-static void cxd56_freeepbuffer(FAR struct cxd56_ep_s *privep)
+static void cxd56_freeepbuffer(struct cxd56_ep_s *privep)
 {
   DEBUGASSERT(privep->epphy); /* Do not use for EP0 */
 
@@ -2686,11 +2682,11 @@ static void cxd56_freeepbuffer(FAR struct cxd56_ep_s *privep)
  *
  ****************************************************************************/
 
-static FAR struct usbdev_ep_s *cxd56_allocep(FAR struct usbdev_s *dev,
+static struct usbdev_ep_s *cxd56_allocep(struct usbdev_s *dev,
                                              uint8_t eplog, bool in,
                                              uint8_t eptype)
 {
-  FAR struct cxd56_usbdev_s *priv = (FAR struct cxd56_usbdev_s *)dev;
+  struct cxd56_usbdev_s *priv = (struct cxd56_usbdev_s *)dev;
   int ndx;
 
   usbtrace(TRACE_DEVALLOCEP, eplog);
@@ -2770,11 +2766,11 @@ static FAR struct usbdev_ep_s *cxd56_allocep(FAR struct usbdev_s *dev,
  *
  ****************************************************************************/
 
-static void cxd56_freeep(FAR struct usbdev_s *dev,
-                         FAR struct usbdev_ep_s *ep)
+static void cxd56_freeep(struct usbdev_s *dev,
+                         struct usbdev_ep_s *ep)
 {
-  FAR struct cxd56_ep_s *privep   = (FAR struct cxd56_ep_s *)ep;
-  FAR struct cxd56_usbdev_s *pdev = privep->dev;
+  struct cxd56_ep_s *privep   = (struct cxd56_ep_s *)ep;
+  struct cxd56_usbdev_s *pdev = privep->dev;
   irqstate_t flags;
 
   usbtrace(TRACE_DEVFREEEP, (uint16_t)privep->epphy);
@@ -2794,7 +2790,7 @@ static void cxd56_freeep(FAR struct usbdev_s *dev,
  *
  ****************************************************************************/
 
-static int cxd56_getframe(FAR struct usbdev_s *dev)
+static int cxd56_getframe(struct usbdev_s *dev)
 {
   irqstate_t flags;
   int ret = 0;
@@ -2827,7 +2823,7 @@ static int cxd56_getframe(FAR struct usbdev_s *dev)
  *
  ****************************************************************************/
 
-static int cxd56_wakeup(FAR struct usbdev_s *dev)
+static int cxd56_wakeup(struct usbdev_s *dev)
 {
   irqstate_t flags;
 
@@ -2847,9 +2843,9 @@ static int cxd56_wakeup(FAR struct usbdev_s *dev)
  *
  ****************************************************************************/
 
-static int cxd56_selfpowered(FAR struct usbdev_s *dev, bool selfpowered)
+static int cxd56_selfpowered(struct usbdev_s *dev, bool selfpowered)
 {
-  FAR struct cxd56_usbdev_s *priv = &g_usbdev;
+  struct cxd56_usbdev_s *priv = &g_usbdev;
 
   usbtrace(TRACE_DEVSELFPOWERED, (uint16_t)selfpowered);
 
@@ -2873,7 +2869,7 @@ static int cxd56_selfpowered(FAR struct usbdev_s *dev, bool selfpowered)
  *
  ****************************************************************************/
 
-static int cxd56_pullup(FAR struct usbdev_s *dev, bool enable)
+static int cxd56_pullup(struct usbdev_s *dev, bool enable)
 {
   uint32_t ctrl;
   uint32_t ep;
@@ -2908,7 +2904,7 @@ static int cxd56_pullup(FAR struct usbdev_s *dev, bool enable)
  *
  ****************************************************************************/
 
-static void cxd56_epinitialize(FAR struct cxd56_usbdev_s *priv)
+static void cxd56_epinitialize(struct cxd56_usbdev_s *priv)
 {
   int i;
 
@@ -2941,8 +2937,8 @@ static void cxd56_epinitialize(FAR struct cxd56_usbdev_s *priv)
 
   for (i = 1; i < CXD56_NENDPOINTS; i++)
     {
-      FAR const struct cxd56_epinfo_s *info = &g_epinfo[i];
-      FAR struct cxd56_ep_s *privep;
+      const struct cxd56_epinfo_s *info = &g_epinfo[i];
+      struct cxd56_ep_s *privep;
 
       /* Set up the standard stuff */
 
@@ -2992,9 +2988,9 @@ static void cxd56_usbhwuninit(void)
  * Name: cxd56_vbusinterrupt
  ****************************************************************************/
 
-static int cxd56_vbusinterrupt(int irq, FAR void *context, FAR void *arg)
+static int cxd56_vbusinterrupt(int irq, void *context, void *arg)
 {
-  FAR struct cxd56_usbdev_s *priv = (FAR struct cxd56_usbdev_s *)arg;
+  struct cxd56_usbdev_s *priv = (struct cxd56_usbdev_s *)arg;
 
   cxd56_cableconnected(true);
 
@@ -3034,10 +3030,10 @@ static int cxd56_vbusinterrupt(int irq, FAR void *context, FAR void *arg)
  * Name: cxd56_vbusninterrupt
  ****************************************************************************/
 
-static int cxd56_vbusninterrupt(int irq, FAR void *context, FAR void *arg)
+static int cxd56_vbusninterrupt(int irq, void *context, void *arg)
 {
-  FAR struct cxd56_usbdev_s *priv = (FAR struct cxd56_usbdev_s *)arg;
-  FAR struct cxd56_ep_s *privep;
+  struct cxd56_usbdev_s *priv = (struct cxd56_usbdev_s *)arg;
+  struct cxd56_ep_s *privep;
   int i;
 
   cxd56_cableconnected(false);
@@ -3055,7 +3051,7 @@ static int cxd56_vbusninterrupt(int irq, FAR void *context, FAR void *arg)
 
   for (i = 1; i < CXD56_NENDPOINTS; i++)
     {
-      privep = (FAR struct cxd56_ep_s *)&priv->eplist[i];
+      privep = (struct cxd56_ep_s *)&priv->eplist[i];
 
       cxd56_epstall(&privep->ep, false);
       cxd56_cancelrequests(privep);
@@ -3148,7 +3144,7 @@ errout:
 
 void arm_usbuninitialize(void)
 {
-  FAR struct cxd56_usbdev_s *priv = &g_usbdev;
+  struct cxd56_usbdev_s *priv = &g_usbdev;
   irqstate_t flags;
 
   usbtrace(TRACE_DEVUNINIT, 0);
@@ -3192,7 +3188,7 @@ void arm_usbuninitialize(void)
  *
  ****************************************************************************/
 
-int usbdev_register(FAR struct usbdevclass_driver_s *driver)
+int usbdev_register(struct usbdevclass_driver_s *driver)
 {
   int ret;
 
@@ -3250,9 +3246,9 @@ int usbdev_register(FAR struct usbdevclass_driver_s *driver)
  *
  ****************************************************************************/
 
-int usbdev_unregister(FAR struct usbdevclass_driver_s *driver)
+int usbdev_unregister(struct usbdevclass_driver_s *driver)
 {
-  FAR struct cxd56_usbdev_s *priv = &g_usbdev;
+  struct cxd56_usbdev_s *priv = &g_usbdev;
   irqstate_t flags;
 
   usbtrace(TRACE_DEVUNREGISTER, 0);
@@ -3306,7 +3302,7 @@ int usbdev_unregister(FAR struct usbdevclass_driver_s *driver)
  *
  ****************************************************************************/
 
-static void cxd56_usbreset(FAR struct cxd56_usbdev_s *priv)
+static void cxd56_usbreset(struct cxd56_usbdev_s *priv)
 {
   uint32_t mask;
   int i;
@@ -3339,12 +3335,12 @@ static void cxd56_usbreset(FAR struct cxd56_usbdev_s *priv)
 
       if (priv->eplist[i].in)
         {
-          putreg32((uint32_t)(uintptr_t)priv->eplist[i].desc,
+          putreg32(CXD56_PHYSADDR(priv->eplist[i].desc),
                    CXD56_USB_IN_EP_DATADESC(priv->eplist[i].epphy));
         }
       else
         {
-          putreg32((uint32_t)(uintptr_t)priv->eplist[i].desc,
+          putreg32(CXD56_PHYSADDR(priv->eplist[i].desc),
                    CXD56_USB_OUT_EP_DATADESC(priv->eplist[i].epphy));
         }
 
@@ -3362,7 +3358,7 @@ static void cxd56_usbreset(FAR struct cxd56_usbdev_s *priv)
 
 int cxd56_usbdev_setsigno(int signo)
 {
-  FAR struct cxd56_usbdev_s *priv = &g_usbdev;
+  struct cxd56_usbdev_s *priv = &g_usbdev;
 
   uinfo("signo = %d\n", signo);
 
@@ -3382,7 +3378,7 @@ int cxd56_usbdev_setsigno(int signo)
 
 static void cxd56_notify_signal(uint16_t state, uint16_t power)
 {
-  FAR struct cxd56_usbdev_s *priv = &g_usbdev;
+  struct cxd56_usbdev_s *priv = &g_usbdev;
 
   if (priv->signo > 0)
     {
@@ -3398,10 +3394,10 @@ static void cxd56_notify_signal(uint16_t state, uint16_t power)
  * Name: cxd56_usbdev_open
  ****************************************************************************/
 
-static int cxd56_usbdev_open(FAR struct file *filep, FAR const char *relpath,
+static int cxd56_usbdev_open(struct file *filep, const char *relpath,
                              int oflags, mode_t mode)
 {
-  FAR struct cxd56_usbdev_file_s *priv;
+  struct cxd56_usbdev_file_s *priv;
 
   uinfo("Open '%s'\n", relpath);
 
@@ -3419,7 +3415,7 @@ static int cxd56_usbdev_open(FAR struct file *filep, FAR const char *relpath,
 
   /* Allocate the open file structure */
 
-  priv = (FAR struct cxd56_usbdev_file_s *)kmm_zalloc(
+  priv = (struct cxd56_usbdev_file_s *)kmm_zalloc(
     sizeof(struct cxd56_usbdev_file_s));
   if (!priv)
     {
@@ -3431,7 +3427,7 @@ static int cxd56_usbdev_open(FAR struct file *filep, FAR const char *relpath,
    * filep->f_priv.
    */
 
-  filep->f_priv = (FAR void *)priv;
+  filep->f_priv = (void *)priv;
   return OK;
 }
 
@@ -3439,13 +3435,13 @@ static int cxd56_usbdev_open(FAR struct file *filep, FAR const char *relpath,
  * Name: modprocfs_close
  ****************************************************************************/
 
-static int cxd56_usbdev_close(FAR struct file *filep)
+static int cxd56_usbdev_close(struct file *filep)
 {
-  FAR struct cxd56_usbdev_file_s *priv;
+  struct cxd56_usbdev_file_s *priv;
 
   /* Recover our private data from the struct file instance */
 
-  priv = (FAR struct cxd56_usbdev_file_s *)filep->f_priv;
+  priv = (struct cxd56_usbdev_file_s *)filep->f_priv;
   DEBUGASSERT(priv);
 
   /* Release the file attributes structure */
@@ -3459,11 +3455,11 @@ static int cxd56_usbdev_close(FAR struct file *filep)
  * Name: cxd56_usbdev_read
  ****************************************************************************/
 
-static ssize_t cxd56_usbdev_read(FAR struct file *filep, FAR char *buffer,
+static ssize_t cxd56_usbdev_read(struct file *filep, char *buffer,
                                  size_t buflen)
 {
-  FAR struct cxd56_usbdev_file_s *attr;
-  FAR struct cxd56_usbdev_s *priv = &g_usbdev;
+  struct cxd56_usbdev_file_s *attr;
+  struct cxd56_usbdev_s *priv = &g_usbdev;
   off_t offset;
   int ret;
 
@@ -3471,7 +3467,7 @@ static ssize_t cxd56_usbdev_read(FAR struct file *filep, FAR char *buffer,
 
   /* Recover our private data from the struct file instance */
 
-  attr = (FAR struct cxd56_usbdev_file_s *)filep->f_priv;
+  attr = (struct cxd56_usbdev_file_s *)filep->f_priv;
   DEBUGASSERT(attr);
 
   /* Traverse all installed modules */
@@ -3499,22 +3495,22 @@ static ssize_t cxd56_usbdev_read(FAR struct file *filep, FAR char *buffer,
  * Name: cxd56_usbdev_dup
  ****************************************************************************/
 
-static int cxd56_usbdev_dup(FAR const struct file *oldp,
-                            FAR struct file *newp)
+static int cxd56_usbdev_dup(const struct file *oldp,
+                            struct file *newp)
 {
-  FAR struct cxd56_usbdev_file_s *oldattr;
-  FAR struct cxd56_usbdev_file_s *newattr;
+  struct cxd56_usbdev_file_s *oldattr;
+  struct cxd56_usbdev_file_s *newattr;
 
   uinfo("Dup %p->%p\n", oldp, newp);
 
   /* Recover our private data from the old struct file instance */
 
-  oldattr = (FAR struct cxd56_usbdev_file_s *)oldp->f_priv;
+  oldattr = (struct cxd56_usbdev_file_s *)oldp->f_priv;
   DEBUGASSERT(oldattr);
 
   /* Allocate a new container to hold the task and attribute selection */
 
-  newattr = (FAR struct cxd56_usbdev_file_s *)kmm_malloc(
+  newattr = (struct cxd56_usbdev_file_s *)kmm_malloc(
     sizeof(struct cxd56_usbdev_file_s));
   if (!newattr)
     {
@@ -3528,7 +3524,7 @@ static int cxd56_usbdev_dup(FAR const struct file *oldp,
 
   /* Save the new attributes in the new file structure */
 
-  newp->f_priv = (FAR void *)newattr;
+  newp->f_priv = (void *)newattr;
   return OK;
 }
 
@@ -3536,7 +3532,7 @@ static int cxd56_usbdev_dup(FAR const struct file *oldp,
  * Name: cxd56_usbdev_stat
  ****************************************************************************/
 
-static int cxd56_usbdev_stat(FAR const char *relpath, FAR struct stat *buf)
+static int cxd56_usbdev_stat(const char *relpath, struct stat *buf)
 {
   buf->st_mode    = S_IFREG | S_IROTH | S_IRGRP | S_IRUSR;
   buf->st_size    = 0;

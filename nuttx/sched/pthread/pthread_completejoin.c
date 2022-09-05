@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -53,7 +54,7 @@ static bool pthread_notifywaiters(FAR struct join_s *pjoin)
   int ntasks_waiting;
   int status;
 
-  sinfo("pjoin=0x%p\n", pjoin);
+  sinfo("pjoin=%p\n", pjoin);
 
   /* Are any tasks waiting for our exit value? */
 
@@ -84,7 +85,7 @@ static bool pthread_notifywaiters(FAR struct join_s *pjoin)
        * value.
        */
 
-      pthread_sem_take(&pjoin->data_sem, NULL, false);
+      nxsem_wait_uninterruptible(&pjoin->data_sem);
       return true;
     }
 
@@ -195,7 +196,7 @@ int pthread_completejoin(pid_t pid, FAR void *exit_value)
 
   /* First, find thread's structure in the private data set. */
 
-  pthread_sem_take(&group->tg_joinsem, NULL, false);
+  nxsem_wait_uninterruptible(&group->tg_joinsem);
   pjoin = pthread_findjoininfo(group, pid);
   if (!pjoin)
     {
@@ -256,7 +257,7 @@ int pthread_completejoin(pid_t pid, FAR void *exit_value)
 void pthread_destroyjoin(FAR struct task_group_s *group,
                          FAR struct join_s *pjoin)
 {
-  sinfo("pjoin=0x%p\n", pjoin);
+  sinfo("pjoin=%p\n", pjoin);
 
   /* Remove the join info from the set of joins */
 

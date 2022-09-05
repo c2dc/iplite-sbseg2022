@@ -26,13 +26,14 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
 #include <nuttx/spi/spi.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include "sam_gpio.h"
 #include "sam_spi.h"
@@ -73,6 +74,14 @@ void sam_spidev_initialize(void)
   sam_configgpio(CLICK_MB2_CS);
 
 #endif
+
+#ifdef CONFIG_LCD_ST7789
+  /* Enable CS and CMD/DATA for LCD */
+
+  sam_configgpio(SPI0_NPCS1);
+  sam_configgpio(GPIO_LCD_CD);
+#endif
+
 #endif /* CONFIG_SAMV7_SPI0_MASTER */
 
 #ifdef CONFIG_SAMV7_SPI0_SLAVE
@@ -167,6 +176,12 @@ void sam_spi0select(uint32_t devid, bool selected)
         break;
 #endif
 
+#ifdef CONFIG_LCD_ST7789
+      case SPIDEV_DISPLAY(0):
+        sam_gpiowrite(SPI0_NPCS1, !selected);
+        break;
+#endif
+
       default:
         break;
     }
@@ -196,17 +211,58 @@ void sam_spi1select(uint32_t devid, bool selected)
  ****************************************************************************/
 
 #ifdef CONFIG_SAMV7_SPI0_MASTER
-uint8_t sam_spi0status(FAR struct spi_dev_s *dev, uint32_t devid)
+uint8_t sam_spi0status(struct spi_dev_s *dev, uint32_t devid)
 {
   return 0;
 }
 #endif
 
 #ifdef CONFIG_SAMV7_SPI1_MASTER
-uint8_t sam_spi1status(FAR struct spi_dev_s *dev, uint32_t devid)
+uint8_t sam_spi1status(struct spi_dev_s *dev, uint32_t devid)
 {
   return 0;
 }
 #endif
+
+/****************************************************************************
+ * Name: sam_spi[n]cmddata
+ *
+ * Description:
+ *   Some SPI devices require an additional control to determine if the SPI
+ *   data being sent is a command or is data.  If CONFIG_SPI_CMDDATA then
+ *   this function will be called to different be command and data transfers.
+ *
+ *   This is often needed, for example, by LCD drivers.  Some LCD hardware
+ *   may be configured to use 9-bit data transfers with the 9th bit
+ *   indicating command or data.  That same hardware may be configurable,
+ *   instead, to use 8-bit data but to require an additional, board-
+ *   specific GPIO control to distinguish command and data.  This function
+ *   would be needed in that latter case.
+ *
+ * Input Parameters:
+ *   dev - SPI device info
+ *   devid - Identifies the (logical) device
+ *
+ * Returned Value:
+ *   Zero on success; a negated errno on failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_SPI_CMDDATA
+#ifdef CONFIG_SAMV7_SPI0_MASTER
+int sam_spi0cmddata(struct spi_dev_s *dev, uint32_t devid, bool cmd)
+{
+  if (devid == SPIDEV_DISPLAY(0))
+    {
+      sam_gpiowrite(GPIO_LCD_CD, !cmd);
+      return OK;
+    }
+  else
+    {
+      return -ENODEV;
+    }
+}
+#endif /* CONFIG_SAMV7_SPI0_MASTER */
+#endif /* CONFIG_SPI_CMDDATA */
 
 #endif /* CONFIG_SAMV7_SPI */

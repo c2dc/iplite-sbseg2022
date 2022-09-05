@@ -100,7 +100,7 @@ const struct sock_intf_s g_can_sockif =
  *
  * Input Parameters:
  *   dev      The structure of the network driver that caused the event
- *   conn     The connection structure associated with the socket
+ *   pvpriv   An instance of struct can_poll_s cast to void*
  *   flags    Set of events describing why the callback was invoked
  *
  * Returned Value:
@@ -112,10 +112,9 @@ const struct sock_intf_s g_can_sockif =
  ****************************************************************************/
 
 static uint16_t can_poll_eventhandler(FAR struct net_driver_s *dev,
-                                      FAR void *conn,
                                       FAR void *pvpriv, uint16_t flags)
 {
-  FAR struct can_poll_s *info = (FAR struct can_poll_s *)pvpriv;
+  FAR struct can_poll_s *info = pvpriv;
 
   DEBUGASSERT(!info || (info->psock && info->fds));
 
@@ -139,15 +138,13 @@ static uint16_t can_poll_eventhandler(FAR struct net_driver_s *dev,
           eventset |= (POLLHUP | POLLERR);
         }
 
-#if 0
       /* A poll is a sign that we are free to send data. */
 
       else if ((flags & CAN_POLL) != 0 &&
-                 psock_udp_cansend(info->psock) >= 0)
+                 psock_can_cansend(info->psock) >= 0)
         {
           eventset |= (POLLOUT & info->fds->events);
         }
-#endif
 
       /* Awaken the caller of poll() is requested event occurred. */
 
@@ -220,12 +217,6 @@ static int can_setup(FAR struct socket *psock, int protocol)
 
           return -ENOMEM;
         }
-
-#ifdef CONFIG_NET_TIMESTAMP
-      /* Store psock in conn se we can read the SO_TIMESTAMP value */
-
-      conn->psock = psock;
-#endif
 
       /* Initialize the connection instance */
 
@@ -614,14 +605,12 @@ static int can_poll_local(FAR struct socket *psock, FAR struct pollfd *fds,
           fds->revents |= (POLLRDNORM & fds->events);
         }
 
-    #if 0
-      if (psock_udp_cansend(psock) >= 0)
+      if (psock_can_cansend(psock) >= 0)
         {
-          /* Normal data may be sent without blocking (at least one byte). */
+          /* A CAN frame may be sent without blocking. */
 
           fds->revents |= (POLLWRNORM & fds->events);
         }
-    #endif
 
       /* Check if any requested events are already in effect */
 

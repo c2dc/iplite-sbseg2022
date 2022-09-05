@@ -31,7 +31,7 @@
 #include <nuttx/arch.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "lc823450_clockconfig.h"
 #include "lc823450_syscontrol.h"
 
@@ -152,7 +152,7 @@ void lc823450_clockconfig()
     }
   else
     {
-      DEBUGASSERT(false);
+      DEBUGPANIC();
     }
 #endif
 

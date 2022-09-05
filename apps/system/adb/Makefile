@@ -1,5 +1,5 @@
 ############################################################################
-# system/adb/Makefile
+# apps/system/adb/Makefile
 #
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -20,21 +20,19 @@
 
 include $(APPDIR)/Make.defs
 
-ADB_DIR := $(APPDIR)/system/adb
-CONFIG_ADBD_URL ?= "https://github.com/spiriou/microADB.git"
-CONFIG_ADBD_VERSION ?= b7025c67b866925d1e64c016a844a6a3392557a4
+ADBD_URL ?= "https://github.com/spiriou/microADB/archive"
+ADBD_VERSION ?= 5b3c9229e70f74fedfbbf1a0b9000836c9a34789
 
+ADB_DIR := $(APPDIR)/system/adb
 ADB_UNPACKNAME := microADB
 ADB_UNPACKDIR := $(ADB_DIR)/$(ADB_UNPACKNAME)
 
 $(ADB_UNPACKDIR):
 	@echo "Downloading: $(ADB_UNPACKNAME)"
-	$(call DELDIR, "$@")
-	$(Q) mkdir "$@"
-	$(Q) cd "$@" && git init && \
-	git remote add origin "$(CONFIG_ADBD_URL)" && \
-	git fetch origin $(CONFIG_ADBD_VERSION) --depth=1 && \
-	git reset --hard FETCH_HEAD
+	$(Q) curl -O -L $(ADBD_URL)/$(ADBD_VERSION).zip
+	$(Q) unzip -o $(ADBD_VERSION).zip
+	$(call DELFILE, $(ADBD_VERSION).zip)
+	$(call MOVEFILE, $(ADB_UNPACKNAME)-$(ADBD_VERSION), $(ADB_UNPACKDIR))
 
 # adb server app
 
@@ -53,7 +51,6 @@ CSRCS += $(ADB_UNPACKNAME)/adb_frame.c
 CSRCS += $(ADB_UNPACKNAME)/hal/hal_uv.c
 CSRCS += $(ADB_UNPACKNAME)/hal/hal_uv_packet.c
 
-CFLAGS += -D__NUTTX__=1
 CFLAGS += -I$(ADB_UNPACKNAME)
 
 ifeq ($(CONFIG_ADBD_TCP_SERVER),y)
@@ -77,16 +74,23 @@ CSRCS += logcat_service.c
 endif
 
 ifeq ($(CONFIG_ADBD_SHELL_SERVICE),y)
-CSRCS += shell_service.c
-CSRCS += shell_pipe.c
+CSRCS += $(ADB_UNPACKNAME)/hal/shell_service_uv.c
 endif
 
-context:: $(ADB_UNPACKDIR)
+ifeq ($(CONFIG_ADBD_SOCKET_SERVICE),y)
+CSRCS += $(ADB_UNPACKNAME)/tcp_service.c
+CSRCS += $(ADB_UNPACKNAME)/hal/hal_uv_socket.c
+endif
 
 clean::
 	$(call DELFILE, $(OBJS))
 
+# Download and unpack tarball if no git repo found
+ifeq ($(wildcard $(ADB_UNPACKDIR)/.git),)
+context:: $(ADB_UNPACKDIR)
+
 distclean::
 	$(call DELDIR, $(ADB_UNPACKDIR))
+endif
 
 include $(APPDIR)/Application.mk

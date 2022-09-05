@@ -24,6 +24,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <assert.h>
 #include <errno.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/kthread.h>
@@ -33,7 +34,7 @@
 #include <arch/board/rx65n_gpio.h>
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
-#include "up_arch.h"
+#include "up_internal.h"
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -2007,7 +2008,7 @@ static void rx65n_riic_pre_end_set(FAR struct rx65n_i2c_priv_s *priv)
       RIIC0.ICMR3.BIT.ACKBT = 1;
       RIIC0.ICMR3.BIT.ACKWP = 0;
 
-      (void)rx65n_getreg(RX65N_RIIC0_ICMR3);
+      rx65n_getreg(RX65N_RIIC0_ICMR3);
     }
 
   else if (1 == priv->bus)
@@ -2019,7 +2020,7 @@ static void rx65n_riic_pre_end_set(FAR struct rx65n_i2c_priv_s *priv)
       RIIC1.ICMR3.BIT.ACKBT = 1;
       RIIC1.ICMR3.BIT.ACKWP = 0;
 
-      (void)rx65n_getreg(RX65N_RIIC1_ICMR3);
+      rx65n_getreg(RX65N_RIIC1_ICMR3);
     }
 
   else
@@ -2031,7 +2032,7 @@ static void rx65n_riic_pre_end_set(FAR struct rx65n_i2c_priv_s *priv)
       RIIC2.ICMR3.BIT.ACKBT = 1;
       RIIC2.ICMR3.BIT.ACKWP = 0;
 
-      (void)rx65n_getreg(RX65N_RIIC2_ICMR3);
+      rx65n_getreg(RX65N_RIIC2_ICMR3);
     }
 }
 

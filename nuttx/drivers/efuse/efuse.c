@@ -36,7 +36,6 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/irq.h>
 #include <nuttx/kmalloc.h>
-#include <nuttx/power/pm.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/efuse/efuse.h>
 
@@ -66,8 +65,6 @@ struct efuse_upperhalf_s
  * Private Function Prototypes
  ****************************************************************************/
 
-static int     efuse_open(FAR struct file *filep);
-static int     efuse_close(FAR struct file *filep);
 static ssize_t efuse_read(FAR struct file *filep, FAR char *buffer,
                           size_t buflen);
 static ssize_t efuse_write(FAR struct file *filep, FAR const char *buffer,
@@ -81,44 +78,21 @@ static int     efuse_ioctl(FAR struct file *filep, int cmd,
 
 static const struct file_operations g_efuseops =
 {
-  efuse_open,  /* open */
-  efuse_close, /* close */
+  NULL,        /* open */
+  NULL,        /* close */
   efuse_read,  /* read */
   efuse_write, /* write */
   NULL,        /* seek */
   efuse_ioctl, /* ioctl */
   NULL         /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL       /* unlink */
+#endif
 };
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
-
-/****************************************************************************
- * Name: efuse_open
- *
- * Description:
- *   This function is called whenever the efuse timer device is opened.
- *
- ****************************************************************************/
-
-static int efuse_open(FAR struct file *filep)
-{
-  return OK;
-}
-
-/****************************************************************************
- * Name: efuse_close
- *
- * Description:
- *   This function is called when the efuse timer device is closed.
- *
- ****************************************************************************/
-
-static int efuse_close(FAR struct file *filep)
-{
-  return OK;
-}
 
 /****************************************************************************
  * Name: efuse_read

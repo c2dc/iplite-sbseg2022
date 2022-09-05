@@ -42,12 +42,6 @@
 #define ESP32C3_INT_PRIO_DEF        1
 
 /****************************************************************************
- * Name: up_irqinitialize
- ****************************************************************************/
-
-void up_irqinitialize(void);
-
-/****************************************************************************
  * Name: esp32c3_bind_irq
  *
  * Description:
@@ -100,22 +94,5 @@ int esp32c3_request_irq(uint8_t periphid, uint8_t prio, uint32_t flags);
  ****************************************************************************/
 
 void esp32c3_free_cpuint(uint8_t periphid);
-
-/****************************************************************************
- * Name: esp32c3_dispatch_irq
- *
- * Description:
- *   Process interrupt and its callback function.
- *
- * Input Parameters:
- *   mcause - RISC-V "mcause" register value
- *   regs   - Saved register value array
- *
- * Returned Value:
- *   None.
- *
- ****************************************************************************/
-
-uint32_t *esp32c3_dispatch_irq(uint32_t mcause, uint32_t *regs);
 
 #endif /* __ARCH_RISCV_SRC_ESP32C3_ESP32C3_IRQ_H */

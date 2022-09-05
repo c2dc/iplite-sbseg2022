@@ -40,10 +40,10 @@
  ****************************************************************************/
 
 #include <arch/chip/core-isa.h>
+#include <arch/xtensa/core.h>
+#include <arch/xtensa/xtensa_abi.h>
 #include <arch/xtensa/xtensa_specregs.h>
 #include <arch/xtensa/xtensa_corebits.h>
-
-#include "xtensa_abi.h"
 
 /****************************************************************************
  * Public Functions
@@ -116,8 +116,6 @@ _xtensa_window_spill:
 	ret
 
 #else /* XCHAL_HAVE_WINDOWED */
-#  define WSBITS  (XCHAL_NUM_AREGS / 4)			/* Width of WINDOWSTART register in bits */
-#  define WBBITS  (XCHAL_NUM_AREGS_LOG2 - 2)	/* Width of WINDOWBASE register in bits */
 
 	/*
 	 * Rearrange (rotate) window start bits relative to the current

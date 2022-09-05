@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <stdbool.h>
 #include <fcntl.h>
 #include <sched.h>
@@ -46,12 +47,12 @@
  * Name: file_vopen
  ****************************************************************************/
 
-static int file_vopen(FAR struct file *filep,
-                      FAR const char *path, int oflags, va_list ap)
+static int file_vopen(FAR struct file *filep, FAR const char *path,
+                      int oflags, mode_t umask, va_list ap)
 {
   struct inode_search_s desc;
   FAR struct inode *inode;
-#if defined(CONFIG_FILE_MODE) || !defined(CONFIG_DISABLE_MOUNTPOINT)
+#ifndef CONFIG_DISABLE_MOUNTPOINT
   mode_t mode = 0666;
 #endif
   int ret;
@@ -61,10 +62,7 @@ static int file_vopen(FAR struct file *filep,
       return -EINVAL;
     }
 
-#ifdef CONFIG_FILE_MODE
-#  ifdef CONFIG_CPP_HAVE_WARNING
-#    warning "File creation not implemented"
-#  endif
+#ifndef CONFIG_DISABLE_MOUNTPOINT
 
   /* If the file is opened for creation, then get the mode bits */
 
@@ -72,6 +70,8 @@ static int file_vopen(FAR struct file *filep,
     {
       mode = va_arg(ap, mode_t);
     }
+
+  mode &= ~umask;
 #endif
 
   /* Get an inode for this file */
@@ -116,24 +116,7 @@ static int file_vopen(FAR struct file *filep,
 
       return block_proxy(filep, path, oflags);
     }
-  else
 #endif
-
-  /* Verify that the inode is either a "normal" character driver or a
-   * mountpoint.  We specifically "special" inodes (semaphores, message
-   * queues, shared memory).
-   */
-
-#ifndef CONFIG_DISABLE_MOUNTPOINT
-  if ((!INODE_IS_DRIVER(inode) && !INODE_IS_MOUNTPT(inode)) ||
-      !inode->u.i_ops)
-#else
-  if (!INODE_IS_DRIVER(inode) || !inode->u.i_ops)
-#endif
-    {
-      ret = -ENXIO;
-      goto errout_with_inode;
-    }
 
   /* Make sure that the inode supports the requested access */
 
@@ -155,19 +138,29 @@ static int file_vopen(FAR struct file *filep,
    * because it may also be closed that many times.
    */
 
-  ret = OK;
-  if (inode->u.i_ops->open)
+  if (oflags & O_DIRECTORY)
     {
+      ret = dir_allocate(filep, desc.relpath);
+    }
 #ifndef CONFIG_DISABLE_MOUNTPOINT
-      if (INODE_IS_MOUNTPT(inode))
+  else if (INODE_IS_MOUNTPT(inode))
+    {
+      if (inode->u.i_mops->open != NULL)
         {
           ret = inode->u.i_mops->open(filep, desc.relpath, oflags, mode);
         }
-      else
+    }
 #endif
+  else if (INODE_IS_DRIVER(inode))
+    {
+      if (inode->u.i_ops->open != NULL)
         {
           ret = inode->u.i_ops->open(filep);
         }
+    }
+  else
+    {
+      ret = -ENXIO;
     }
 
   if (ret < 0)
@@ -199,7 +192,7 @@ static int nx_vopen(FAR const char *path, int oflags, va_list ap)
 
   /* Let file_vopen() do all of the work */
 
-  ret = file_vopen(&filep, path, oflags, ap);
+  ret = file_vopen(&filep, path, oflags, getumask(), ap);
   if (ret < 0)
     {
       return ret;
@@ -232,6 +225,16 @@ static int nx_vopen(FAR const char *path, int oflags, va_list ap)
 
 int inode_checkflags(FAR struct inode *inode, int oflags)
 {
+  if (INODE_IS_PSEUDODIR(inode))
+    {
+      return OK;
+    }
+
+  if (inode->u.i_ops == NULL)
+    {
+      return -ENXIO;
+    }
+
   if (((oflags & O_RDOK) != 0 && !inode->u.i_ops->read) ||
       ((oflags & O_WROK) != 0 && !inode->u.i_ops->write))
     {
@@ -270,7 +273,7 @@ int file_open(FAR struct file *filep, FAR const char *path, int oflags, ...)
   int ret;
 
   va_start(ap, oflags);
-  ret = file_vopen(filep, path, oflags, ap);
+  ret = file_vopen(filep, path, oflags, 0, ap);
   va_end(ap);
 
   return ret;

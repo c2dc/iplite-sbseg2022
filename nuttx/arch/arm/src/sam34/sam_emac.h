@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_SAM34_SAM_ETHERNET_H
-#define __ARCH_ARM_SRC_SAM34_SAM_ETHERNET_H
+#ifndef __ARCH_ARM_SRC_SAM34_SAM_EMAC_H
+#define __ARCH_ARM_SRC_SAM34_SAM_EMAC_H
 
 /****************************************************************************
  * Included Files
@@ -56,25 +56,6 @@ extern "C"
 #endif
 
 /****************************************************************************
- * Function: arm_netinitialize
- *
- * Description:
- *   Initialize the EMAC driver.  Also prototyped in arm_internal.h.
- *
- * Input Parameters:
- *   None
- *
- * Returned Value:
- *   OK on success; Negated errno on failure.
- *
- * Assumptions:
- *   Called very early in the initialization sequence.
- *
- ****************************************************************************/
-
-void arm_netinitialize(void);
-
-/****************************************************************************
  * Function: sam_phy_boardinitialize
  *
  * Description:
@@ -106,4 +87,4 @@ int sam_phy_boardinitialize(int intf);
 
 #endif /* __ASSEMBLY__ */
 #endif /* CONFIG_SAM34_EMAC */
-#endif /* __ARCH_ARM_SRC_SAM34_SAM_ETHERNET_H */
+#endif /* __ARCH_ARM_SRC_SAM34_SAM_EMAC_H */

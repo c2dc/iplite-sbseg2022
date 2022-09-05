@@ -50,7 +50,7 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define IDLE_STACK      ((unsigned)&_ebss+CONFIG_IDLETHREAD_STACKSIZE-4)
+#define IDLE_STACK      ((unsigned)&_ebss+CONFIG_IDLETHREAD_STACKSIZE)
 
 #ifndef ARMV6M_PERIPHERAL_INTERRUPTS
 #  error ARMV6M_PERIPHERAL_INTERRUPTS must be defined to the number of I/O interrupts to be supported
@@ -78,10 +78,10 @@ extern void exception_common(void);
  * As all exceptions (interrupts) are routed via exception_common, we just
  * need to fill this array with pointers to it.
  *
- * Note that the [ ... ] desginated initialiser is a GCC extension.
+ * Note that the [ ... ] designated initialiser is a GCC extension.
  */
 
-unsigned _vectors[] __attribute__((section(".vectors"))) =
+unsigned _vectors[] locate_data(".vectors") =
 {
   /* Initial stack */
 

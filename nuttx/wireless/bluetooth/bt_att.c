@@ -1,12 +1,5 @@
 /****************************************************************************
  * wireless/bluetooth/bt_att.c
- * Attribute protocol handling.
- *
- *   Copyright (C) 2018 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *
- * Ported from the Intel/Zephyr arduino101_firmware_source-v1.tar package
- * where the code was released with a compatible 3-clause BSD license:
  *
  *   Copyright (c) 2016, Intel Corporation
  *   All rights reserved.
@@ -48,6 +41,7 @@
 
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -1205,7 +1199,7 @@ static uint8_t att_read_mult_req(FAR struct bt_conn_s *conn,
     {
       handle = bt_buf_get_le16(buf);
 
-      wlinfo("handle 0x%04x \n", handle);
+      wlinfo("handle 0x%04x\n", handle);
 
       bt_gatt_foreach_attr(handle, handle, read_cb, &data);
 

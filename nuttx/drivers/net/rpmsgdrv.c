@@ -32,7 +32,6 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/kthread.h>
 #include <nuttx/semaphore.h>
-#include <nuttx/wdog.h>
 #include <nuttx/wqueue.h>
 
 #include <nuttx/net/arp.h>
@@ -46,74 +45,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-/* The address family that we used to create the socket really does not
- * matter. It should, however, be valid in the current configuration.
- */
-
-#if defined(CONFIG_NET_IPv4)
-#  define NET_RPMSG_DRV_FAMILY     AF_INET
-#elif defined(CONFIG_NET_IPv6)
-#  define NET_RPMSG_DRV_FAMILY     AF_INET6
-#elif defined(CONFIG_NET_IEEE802154)
-#  define NET_RPMSG_DRV_FAMILY     AF_IEEE802154
-#elif defined(CONFIG_WIRELESS_PKTRADIO)
-#  define NET_RPMSG_DRV_FAMILY     AF_PKTRADIO
-#elif defined(CONFIG_NET_USRSOCK)
-#  define NET_RPMSG_DRV_FAMILY     AF_INET
-#elif defined(CONFIG_NET_PKT)
-#  define NET_RPMSG_DRV_FAMILY     AF_PACKET
-#elif defined(CONFIG_NET_LOCAL)
-#  define NET_RPMSG_DRV_FAMILY     AF_LOCAL
-#else
-#  define NET_RPMSG_DRV_FAMILY     AF_UNSPEC
-#endif
-
-/* SOCK_DGRAM is the preferred socket type to use when we just want a
- * socket for performing driver ioctls.  However, we can't use SOCK_DRAM
- * if UDP is disabled.
- *
- * Pick a socket type (and perhaps protocol) compatible with the currently
- * selected address family.
- */
-
-#if NET_RPMSG_DRV_FAMILY == AF_INET
-#  if defined(CONFIG_NET_UDP)
-#    define NET_RPMSG_DRV_TYPE     SOCK_DGRAM
-#  elif defined(CONFIG_NET_TCP)
-#   define NET_RPMSG_DRV_TYPE      SOCK_STREAM
-#  elif defined(CONFIG_NET_ICMP_SOCKET)
-#   define NET_RPMSG_DRV_TYPE      SOCK_DGRAM
-#   define NET_RPMSG_DRV_PROTOCOL  IPPROTO_ICMP
-#  endif
-#elif NET_RPMSG_DRV_FAMILY == AF_INET6
-#  if defined(CONFIG_NET_UDP)
-#    define NET_RPMSG_DRV_TYPE     SOCK_DGRAM
-#  elif defined(CONFIG_NET_TCP)
-#   define NET_RPMSG_DRV_TYPE      SOCK_STREAM
-#  elif defined(CONFIG_NET_ICMPv6_SOCKET)
-#   define NET_RPMSG_DRV_TYPE      SOCK_DGRAM
-#   define NET_RPMSG_DRV_PROTOCOL  IPPROTO_ICMP6
-#  endif
-#elif NET_RPMSG_DRV_FAMILY == AF_IEEE802154
-#  define NET_RPMSG_DRV_TYPE       SOCK_DGRAM
-#elif NET_RPMSG_DRV_FAMILY == AF_PKTRADIO
-#  define NET_RPMSG_DRV_TYPE       SOCK_DGRAM
-#elif NET_RPMSG_DRV_FAMILY == AF_PACKET
-#  define NET_RPMSG_DRV_TYPE       SOCK_RAW
-#elif NET_RPMSG_DRV_FAMILY == AF_LOCAL
-#  if defined(CONFIG_NET_LOCAL_DGRAM)
-#    define NET_RPMSG_DRV_TYPE     SOCK_DGRAM
-#  elif defined(CONFIG_NET_LOCAL_STREAM)
-#     define NET_RPMSG_DRV_TYPE    SOCK_STREAM
-#  endif
-#endif
-
-/* Socket protocol of zero normally works */
-
-#ifndef NET_RPMSG_DRV_PROTOCOL
-#  define NET_RPMSG_DRV_PROTOCOL   0
-#endif
-
 /* Work queue support is required. */
 
 #if !defined(CONFIG_SCHED_WORKQUEUE)
@@ -125,12 +56,6 @@
 #else
 #  define net_rpmsg_drv_dumppacket(m, b, l)
 #endif
-
-/* TX poll delay = 1 seconds. CLK_TCK is the number of clock ticks per
- * second.
- */
-
-#define NET_RPMSG_DRV_WDDELAY      (1*CLK_TCK)
 
 /****************************************************************************
  * Private Types
@@ -151,7 +76,6 @@ struct net_rpmsg_drv_s
   FAR const char        *cpuname;
   FAR const char        *devname;
   struct rpmsg_endpoint ept;
-  struct wdog_s         txpoll;   /* TX poll timer */
   struct work_s         pollwork; /* For deferring poll work to the work queue */
 
   /* This holds the information visible to the NuttX network */
@@ -191,11 +115,6 @@ static int  net_rpmsg_drv_ept_cb(FAR struct rpmsg_endpoint *ept, void *data,
 
 static int  net_rpmsg_drv_send_recv(struct net_driver_s *dev,
                     void *header_, uint32_t command, int len);
-
-/* Watchdog timer expirations */
-
-static void net_rpmsg_drv_poll_work(FAR void *arg);
-static void net_rpmsg_drv_poll_expiry(wdparm_t arg);
 
 /* NuttX callback functions */
 
@@ -458,9 +377,9 @@ static int net_rpmsg_drv_sockioctl_task(int argc, FAR char *argv[])
   FAR struct rpmsg_endpoint *ept;
   struct socket sock;
 
-  int domain   = NET_RPMSG_DRV_FAMILY;
-  int type     = NET_RPMSG_DRV_TYPE;
-  int protocol = NET_RPMSG_DRV_PROTOCOL;
+  int domain   = NET_SOCK_FAMILY;
+  int type     = NET_SOCK_TYPE;
+  int protocol = NET_SOCK_PROTOCOL;
 
   /* Restore pointers from argv */
 
@@ -505,8 +424,8 @@ static int net_rpmsg_drv_sockioctl_handler(FAR struct rpmsg_endpoint *ept,
 
   /* Save pointers into argv */
 
-  sprintf(arg1, "%#p", ept);
-  sprintf(arg2, "%#p", data);
+  sprintf(arg1, "%p", ept);
+  sprintf(arg2, "%p", data);
 
   argv[0] = arg1;
   argv[1] = arg2;
@@ -525,8 +444,8 @@ static int net_rpmsg_drv_sockioctl_handler(FAR struct rpmsg_endpoint *ept,
 static bool net_rpmsg_drv_is_ipv4(FAR struct net_driver_s *dev)
 {
   FAR struct ipv4_hdr_s *ip =
-    (struct ipv4_hdr_s *)(dev->d_buf + dev->d_llhdrlen);
-  FAR struct eth_hdr_s *eth = (struct eth_hdr_s *)dev->d_buf;
+    (FAR struct ipv4_hdr_s *)(dev->d_buf + dev->d_llhdrlen);
+  FAR struct eth_hdr_s *eth = (FAR struct eth_hdr_s *)dev->d_buf;
 
   if (dev->d_lltype == NET_LL_ETHERNET || dev->d_lltype == NET_LL_IEEE80211)
     {
@@ -543,8 +462,8 @@ static bool net_rpmsg_drv_is_ipv4(FAR struct net_driver_s *dev)
 static bool net_rpmsg_drv_is_ipv6(FAR struct net_driver_s *dev)
 {
   FAR struct ipv6_hdr_s *ip =
-    (struct ipv6_hdr_s *)(dev->d_buf + dev->d_llhdrlen);
-  FAR struct eth_hdr_s *eth = (struct eth_hdr_s *)dev->d_buf;
+    (FAR struct ipv6_hdr_s *)(dev->d_buf + dev->d_llhdrlen);
+  FAR struct eth_hdr_s *eth = (FAR struct eth_hdr_s *)dev->d_buf;
 
   if (dev->d_lltype == NET_LL_ETHERNET || dev->d_lltype == NET_LL_IEEE80211)
     {
@@ -560,7 +479,7 @@ static bool net_rpmsg_drv_is_ipv6(FAR struct net_driver_s *dev)
 #ifdef CONFIG_NET_ARP
 static bool net_rpmsg_drv_is_arp(FAR struct net_driver_s *dev)
 {
-  FAR struct eth_hdr_s *eth = (struct eth_hdr_s *)dev->d_buf;
+  FAR struct eth_hdr_s *eth = (FAR struct eth_hdr_s *)dev->d_buf;
 
   if (dev->d_lltype == NET_LL_ETHERNET || dev->d_lltype == NET_LL_IEEE80211)
     {
@@ -768,100 +687,6 @@ out:
 }
 
 /****************************************************************************
- * Name: net_rpmsg_drv_poll_work
- *
- * Description:
- *   Perform periodic polling from the worker thread
- *
- * Parameters:
- *   arg - The argument passed when work_queue() as called.
- *
- * Returned Value:
- *   OK on success
- *
- * Assumptions:
- *   Run on a work queue thread.
- *
- ****************************************************************************/
-
-static void net_rpmsg_drv_poll_work(FAR void *arg)
-{
-  FAR struct net_driver_s *dev = arg;
-  FAR struct net_rpmsg_drv_s *priv = dev->d_private;
-  uint32_t size;
-
-  /* Lock the network and serialize driver operations if necessary.
-   * NOTE: Serialization is only required in the case where the driver work
-   * is performed on an LP worker thread and where more than one LP worker
-   * thread has been configured.
-   */
-
-  net_lock();
-
-  /* Perform the poll */
-
-  /* Check if there is room in the send another TX packet.  We cannot perform
-   * the TX poll if he are unable to accept another packet for transmission.
-   */
-
-  if (dev->d_buf == NULL)
-    {
-      /* Try to get the payload buffer if not yet */
-
-      dev->d_buf = rpmsg_get_tx_payload_buffer(&priv->ept, &size, false);
-      if (dev->d_buf)
-        {
-          dev->d_buf += sizeof(struct net_rpmsg_transfer_s);
-          dev->d_pktsize = size - sizeof(struct net_rpmsg_transfer_s);
-        }
-    }
-
-  if (dev->d_buf)
-    {
-      /* If so, update TCP timing states and poll the network for new XMIT
-       * data.  Hmmm.. might be bug here.  Does this mean if there is a
-       * transmit in progress, we will missing TCP time state updates?
-       */
-
-      devif_timer(dev, NET_RPMSG_DRV_WDDELAY, net_rpmsg_drv_txpoll);
-    }
-
-  /* Setup the watchdog poll timer again */
-
-  wd_start(&priv->txpoll, NET_RPMSG_DRV_WDDELAY,
-           net_rpmsg_drv_poll_expiry, (wdparm_t)dev);
-  net_unlock();
-}
-
-/****************************************************************************
- * Name: net_rpmsg_drv_poll_expiry
- *
- * Description:
- *   Periodic timer handler.  Called from the timer interrupt handler.
- *
- * Parameters:
- *   arg  - The argument
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   Runs in the context of a the timer interrupt handler.  Local
- *   interrupts are disabled by the interrupt logic.
- *
- ****************************************************************************/
-
-static void net_rpmsg_drv_poll_expiry(wdparm_t arg)
-{
-  FAR struct net_driver_s *dev = (FAR struct net_driver_s *)arg;
-  FAR struct net_rpmsg_drv_s *priv = dev->d_private;
-
-  /* Schedule to perform the interrupt processing on the worker thread. */
-
-  work_queue(LPWORK, &priv->pollwork, net_rpmsg_drv_poll_work, dev, 0);
-}
-
-/****************************************************************************
  * Name: net_rpmsg_drv_ifup
  *
  * Description:
@@ -881,7 +706,6 @@ static void net_rpmsg_drv_poll_expiry(wdparm_t arg)
 
 static int net_rpmsg_drv_ifup(FAR struct net_driver_s *dev)
 {
-  FAR struct net_rpmsg_drv_s *priv = dev->d_private;
   struct net_rpmsg_ifup_s msg =
   {
   };
@@ -950,11 +774,6 @@ static int net_rpmsg_drv_ifup(FAR struct net_driver_s *dev)
   net_rpmsg_drv_ipv6multicast(dev);
 #endif
 
-  /* Set and activate a timer process */
-
-  wd_start(&priv->txpoll, NET_RPMSG_DRV_WDDELAY,
-           net_rpmsg_drv_poll_expiry, (wdparm_t)dev);
-
   net_unlock();
 
 #ifdef CONFIG_NETDB_DNSCLIENT
@@ -966,7 +785,7 @@ static int net_rpmsg_drv_ifup(FAR struct net_driver_s *dev)
       };
 
       dnsaddr.sin_family = AF_INET;
-      dnsaddr.sin_port   = htons(DNS_DEFAULT_PORT);
+      dnsaddr.sin_port   = HTONS(DNS_DEFAULT_PORT);
       memcpy(&dnsaddr.sin_addr, &msg.dnsaddr, sizeof(msg.dnsaddr));
 
       dns_add_nameserver((FAR const struct sockaddr *)&dnsaddr,
@@ -982,7 +801,7 @@ static int net_rpmsg_drv_ifup(FAR struct net_driver_s *dev)
       };
 
       dnsaddr.sin6_family = AF_INET6;
-      dnsaddr.sin6_port   = htons(DNS_DEFAULT_PORT);
+      dnsaddr.sin6_port   = HTONS(DNS_DEFAULT_PORT);
       memcpy(&dnsaddr.sin6_addr, msg.ipv6dnsaddr, sizeof(msg.ipv6dnsaddr));
 
       dns_add_nameserver((FAR const struct sockaddr *)&dnsaddr,
@@ -1021,9 +840,6 @@ static int net_rpmsg_drv_ifdown(FAR struct net_driver_s *dev)
 
   flags = enter_critical_section();
 
-  /* Cancel the TX poll timer and work */
-
-  wd_cancel(&priv->txpoll);
   work_cancel(LPWORK, &priv->pollwork);
 
   leave_critical_section(flags);
@@ -1091,7 +907,7 @@ static void net_rpmsg_drv_txavail_work(FAR void *arg)
         {
           /* If so, then poll the network for new XMIT data */
 
-          devif_timer(dev, 0, net_rpmsg_drv_txpoll);
+          devif_poll(dev, net_rpmsg_drv_txpoll);
         }
     }
 
@@ -1384,6 +1200,7 @@ int net_rpmsg_drv_init(FAR const char *cpuname,
   rpmsg_register_callback(dev,
                           net_rpmsg_drv_device_created,
                           net_rpmsg_drv_device_destroy,
+                          NULL,
                           NULL);
 
   /* Register the device with the OS so that socket IOCTLs can be performed */

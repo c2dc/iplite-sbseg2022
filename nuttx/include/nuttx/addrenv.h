@@ -250,7 +250,7 @@ typedef CODE void (*addrenv_sigtramp_t)(_sa_sigaction_t sighand, int signo,
 struct addrenv_reserve_s
 {
   addrenv_sigtramp_t ar_sigtramp;  /* Signal trampoline */
-  struct mm_heap_s   ar_usrheap;   /* User space heap structure */
+  struct mm_heap_s  *ar_usrheap;   /* User space heap structure */
 };
 
 /* Each instance of this structure resides at the beginning of the user-
@@ -282,6 +282,8 @@ struct addrenv_reserve_s
  *   up_addrenv_vtext    - Returns the virtual base address of the .text
  *                         address environment
  *   up_addrenv_vdata    - Returns the virtual base address of the .bss/.data
+ *                         address environment
+ *   up_addrenv_vheap    - Returns the virtual base address of the heap
  *                         address environment
  *   up_addrenv_heapsize - Returns the size of the initial heap allocation.
  *   up_addrenv_select   - Instantiate an address environment

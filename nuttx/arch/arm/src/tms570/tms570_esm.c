@@ -48,13 +48,12 @@
 
 #include <sys/types.h>
 #include <stdint.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <arch/irq.h>
 
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "hardware/tms570_esm.h"
 #include "tms570_esm.h"
 
@@ -145,7 +144,7 @@ int tms570_esm_initialize(void)
  *
  ****************************************************************************/
 
-int tms570_esm_interrupt(int irq, void *context, FAR void *arg)
+int tms570_esm_interrupt(int irq, void *context, void *arg)
 {
   /* Save the saved processor context in CURRENT_REGS where it can be
    * accessed for register dumps and possibly context switching.

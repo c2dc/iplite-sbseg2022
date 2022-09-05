@@ -64,6 +64,8 @@ static void mod_dumploadinfo(FAR struct mod_loadinfo_s *loadinfo)
   binfo("  datastart:    %08lx\n", (long)loadinfo->datastart);
   binfo("  textsize:     %ld\n",   (long)loadinfo->textsize);
   binfo("  datasize:     %ld\n",   (long)loadinfo->datasize);
+  binfo("  textalign:    %zu\n",   loadinfo->textalign);
+  binfo("  dataalign:    %zu\n",   loadinfo->dataalign);
   binfo("  filelen:      %ld\n",   (long)loadinfo->filelen);
   binfo("  filfd:        %d\n",    loadinfo->filfd);
   binfo("  symtabidx:    %d\n",    loadinfo->symtabidx);
@@ -173,7 +175,6 @@ FAR void *insmod(FAR const char *filename, FAR const char *modname)
 
   if (modlib_registry_find(modname) != NULL)
     {
-      modlib_registry_unlock();
       ret = -EEXIST;
       goto errout_with_lock;
     }
@@ -191,15 +192,17 @@ FAR void *insmod(FAR const char *filename, FAR const char *modname)
   /* Allocate a module registry entry to hold the module data */
 
   modp = (FAR struct module_s *)kmm_zalloc(sizeof(struct module_s));
-  if (ret != 0)
+  if (modp == NULL)
     {
-      binfo("Failed to initialize for load of ELF program: %d\n", ret);
+      berr("Failed to allocate struct module_s\n");
       goto errout_with_loadinfo;
     }
 
+#ifdef HAVE_MODLIB_NAMES
   /* Save the module name in the registry entry */
 
-  strncpy(modp->modname, modname, MODLIB_NAMEMAX);
+  strlcpy(modp->modname, modname, sizeof(modp->modname));
+#endif
 
   /* Load the program binary */
 
@@ -222,12 +225,8 @@ FAR void *insmod(FAR const char *filename, FAR const char *modname)
 
   /* Save the load information */
 
-#if defined(CONFIG_ARCH_USE_MODULE_TEXT)
   modp->textalloc   = (FAR void *)loadinfo.textalloc;
   modp->dataalloc   = (FAR void *)loadinfo.datastart;
-#else
-  modp->alloc       = (FAR void *)loadinfo.textalloc;
-#endif
 #if defined(CONFIG_FS_PROCFS) && !defined(CONFIG_FS_PROCFS_EXCLUDE_MODULE)
   modp->textsize    = loadinfo.textsize;
   modp->datasize    = loadinfo.datasize;

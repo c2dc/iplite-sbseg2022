@@ -26,13 +26,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <arch/board/board.h>
 #include <nuttx/power/pm.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "stm32_gpio.h"
 #include "nucleo-f091rc.h"

@@ -45,13 +45,20 @@ if PWM_MULTICHAN
 config PWM_NCHANNELS
 	int "Number of Output Channels Per Timer"
 	default 1
-	range 1 6
+	range 1 16
 	---help---
 		Specifies the number of output channels per timer.  Each timer
 		may support fewer output channels than this value.
 
 endif # PWM_MULTICHAN
 endif # PWM
+
+config CAPTURE
+	bool "Capture Driver Support"
+	default n
+	---help---
+		This selection enables building of the "upper-half" Capture driver.
+		See include/nuttx/timers/capture.h for further Capture driver information.
 
 config TIMER
 	bool "Timer Support"
@@ -291,11 +298,40 @@ config MCP794XX_I2C_FREQUENCY
 
 endif # RTC_MCP794XX
 
+config RTC_RX8010SJ
+	bool "RX8010SJ RTC Driver"
+	default n
+	select I2C
+	select RTC_DATETIME
+	depends on RTC_EXTERNAL
+	---help---
+		Enables support for the EPSON RX-8010SJ I2C RTC timer.
+
+if RTC_RX8010SJ
+
+config RX8010SJ_I2C_FREQUENCY
+	int "RX8010SJ I2C frequency"
+	default 400000
+	range 1 400000
+
+endif # RTC_RX8010SJ
+
 config RTC_RPMSG
 	bool "Rpmsg RTC Driver"
 	default n
-	depends on OPENAMP
+	depends on RPTUN
 	select ARCH_HAVE_RTC_SUBSECONDS
+
+config RTC_RPMSG_SERVER
+	bool "The RTC Rpmsg Role"
+	depends on RPTUN
+
+config RTC_RPMSG_SERVER_NAME
+	string "The name of RTC Rpmsg Server"
+	depends on RTC_RPMSG
+	---help---
+		The proc name of rtc server. Client requests time from
+		specified name of remote proc.
 
 endif # RTC
 

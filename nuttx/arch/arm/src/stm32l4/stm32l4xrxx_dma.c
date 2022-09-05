@@ -1,43 +1,20 @@
 /****************************************************************************
  * arch/arm/src/stm32l4/stm32l4xrxx_dma.c
  *
- *   Copyright (C) 2019 Gregory Nutt. All rights reserved.
- *   Author: Jussi Kivilinna <jussi.kivilinna@haltian.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Based on STM32H7 DMAMUX/DMA driver:
- *   Author: Mateusz Szafoni <raiden00@railab.me>
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * Based on STM32L4X6XX DMA driver:
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *   Author: Sebastien Lorquet <sebastien@lorquet.fr>
- *   Author: dev@ziggurat29.com
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -50,14 +27,13 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 #include <arch/stm32l4/chip.h>
-
-#include "arm_arch.h"
 
 #include "arm_internal.h"
 #include "sched/sched.h"
@@ -111,7 +87,7 @@ struct stm32l4_dmamux_s
   uint32_t base;                /* DMAMUX base address */
 };
 
-typedef FAR const struct stm32l4_dmamux_s *DMA_MUX;
+typedef const struct stm32l4_dmamux_s *DMA_MUX;
 
 /* This structure describes one DMA controller */
 
@@ -139,7 +115,7 @@ struct stm32l4_dmach_s
   void             *arg;         /* Argument passed to callback function */
 };
 
-typedef FAR struct stm32l4_dmach_s *DMA_CHANNEL;
+typedef struct stm32l4_dmach_s *DMA_CHANNEL;
 
 /* DMA operations */
 
@@ -147,40 +123,40 @@ struct stm32l4_dma_ops_s
 {
   /* Disable the DMA transfer */
 
-  CODE void (*dma_disable)(DMA_CHANNEL dmachan);
+  void (*dma_disable)(DMA_CHANNEL dmachan);
 
   /* DMA interrupt */
 
-  CODE int (*dma_interrupt)(int irq, void *context, FAR void *arg);
+  int (*dma_interrupt)(int irq, void *context, void *arg);
 
   /* Setup the DMA */
 
-  CODE void (*dma_setup)(DMA_HANDLE handle, uint32_t paddr, uint32_t maddr,
-                         size_t ntransfers, uint32_t ccr);
+  void (*dma_setup)(DMA_HANDLE handle, uint32_t paddr, uint32_t maddr,
+                    size_t ntransfers, uint32_t ccr);
 
   /* Start the DMA */
 
-  CODE void (*dma_start)(DMA_HANDLE handle, dma_callback_t callback,
-                         void *arg, bool half);
+  void (*dma_start)(DMA_HANDLE handle, dma_callback_t callback,
+                    void *arg, bool half);
 
   /* Read remaining DMA bytes */
 
-  CODE size_t (*dma_residual)(DMA_HANDLE handle);
+  size_t (*dma_residual)(DMA_HANDLE handle);
 
   /* Check the DMA configuration  */
 
-  CODE bool (*dma_capable)(uint32_t maddr, uint32_t count, uint32_t ccr);
+  bool (*dma_capable)(uint32_t maddr, uint32_t count, uint32_t ccr);
 
 #ifdef CONFIG_DEBUG_DMA_INFO
   /* Sample the DMA registers */
 
-  CODE void (*dma_sample)(DMA_HANDLE handle, struct stm32l4_dmaregs_s *regs);
+  void (*dma_sample)(DMA_HANDLE handle, struct stm32l4_dmaregs_s *regs);
 
   /* Dump the DMA registers */
 
-  CODE void (*dma_dump)(DMA_HANDLE handle,
-                        const struct stm32l4_dmaregs_s *regs,
-                        const char *msg);
+  void (*dma_dump)(DMA_HANDLE handle,
+                   const struct stm32l4_dmaregs_s *regs,
+                   const char *msg);
 #endif
 };
 
@@ -190,7 +166,7 @@ struct stm32l4_dma_ops_s
 
 #if defined(CONFIG_STM32L4_DMA1) || defined(CONFIG_STM32L4_DMA2)
 static void stm32l4_dma12_disable(DMA_CHANNEL dmachan);
-static int stm32l4_dma12_interrupt(int irq, void *context, FAR void *arg);
+static int stm32l4_dma12_interrupt(int irq, void *context, void *arg);
 static void stm32l4_dma12_setup(DMA_HANDLE handle, uint32_t paddr,
                                 uint32_t maddr, size_t ntransfers,
                                 uint32_t ccr);
@@ -223,8 +199,8 @@ static void stm32l4_dmamux_dump(DMA_MUX dmamux, uint8_t channel,
 #endif
 static DMA_CHANNEL stm32l4_dma_channel_get(uint8_t channel,
                                            uint8_t controller);
-static void stm32l4_gdma_limits_get(uint8_t controller, FAR uint8_t *first,
-                                    FAR uint8_t *last);
+static void stm32l4_gdma_limits_get(uint8_t controller, uint8_t *first,
+                                    uint8_t *last);
 
 /****************************************************************************
  * Private Data
@@ -577,8 +553,8 @@ static DMA_CHANNEL stm32l4_dma_channel_get(uint8_t channel,
  *
  ****************************************************************************/
 
-static void stm32l4_gdma_limits_get(uint8_t controller, FAR uint8_t *first,
-                                    FAR uint8_t *nchan)
+static void stm32l4_gdma_limits_get(uint8_t controller, uint8_t *first,
+                                    uint8_t *nchan)
 {
   DEBUGASSERT(first != NULL);
   DEBUGASSERT(nchan != NULL);
@@ -633,7 +609,7 @@ static void stm32l4_dma12_disable(DMA_CHANNEL dmachan)
  *
  ****************************************************************************/
 
-static int stm32l4_dma12_interrupt(int irq, void *context, FAR void *arg)
+static int stm32l4_dma12_interrupt(int irq, void *context, void *arg)
 {
   DMA_CHANNEL dmachan;
   uint32_t isr;
@@ -1022,9 +998,9 @@ void weak_function arm_dma_initialize(void)
  *     in hardware/stm32l4xrxx_dmamux.h
  *
  * Returned Value:
- *   One success, this function returns a non-NULL, void* DMA channel
- *   handle.  NULL is returned on any failure.  This function can fail only
- *   if no DMA channel is available.
+ *   On success, this function returns a non-NULL, void* DMA channel handle.
+ *   NULL is returned on any failure.  This function can fail only if no DMA
+ *   channel is available.
  *
  * Assumptions:
  *   - The caller does not hold he DMA channel.

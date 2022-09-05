@@ -26,10 +26,13 @@
 #include <nuttx/config.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/spinlock.h>
+
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "lc823450_gpio.h"
 #include "lc823450_syscontrol.h"
 
@@ -50,12 +53,12 @@
  ****************************************************************************/
 
 #ifdef CONFIG_IOEX
-static FAR struct ioex_dev_s *g_ioex_dev;
+static struct ioex_dev_s *g_ioex_dev;
 #endif
 
 #ifdef CONFIG_LC823450_VGPIO
 #define GPIO_VIRTUAL_NUM 32
-static FAR struct vgpio_ops_s *vgpio_ops[GPIO_VIRTUAL_NUM];
+static struct vgpio_ops_s *vgpio_ops[GPIO_VIRTUAL_NUM];
 #endif /* CONFIG_LC823450_VGPIO */
 
 /****************************************************************************
@@ -322,7 +325,7 @@ int lc823450_gpio_config(uint16_t gpiocfg)
                 pupd = IOEX_PUPD_PULLDOWN;
                 break;
               default:
-                DEBUGASSERT(0);
+                DEBUGPANIC();
                 return -EINVAL;
             }
         }
@@ -464,7 +467,7 @@ bool lc823450_gpio_read(uint16_t gpiocfg)
 #endif /* CONFIG_IOEX */
   else
     {
-      DEBUGASSERT(0);
+      DEBUGPANIC();
     }
 
   return value;
@@ -501,7 +504,7 @@ int lc823450_gpio_initialize(void)
  ****************************************************************************/
 
 #ifdef CONFIG_LC823450_VGPIO
-int lc823450_vgpio_register(unsigned int pin, FAR struct vgpio_ops_s *ops)
+int lc823450_vgpio_register(unsigned int pin, struct vgpio_ops_s *ops)
 {
   assert(pin < GPIO_VIRTUAL_NUM);
   vgpio_ops[pin] = ops;

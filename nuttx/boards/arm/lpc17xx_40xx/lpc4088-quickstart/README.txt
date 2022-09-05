@@ -247,7 +247,7 @@ Information Common to All Configurations
        CONFIG_WINDOWS_CYGWIN=y             : Cywin under Windows
 
      System Type -> Toolchain:
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y : GNU ARM EABI toolchain
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : GNU ARM EABI toolchain
 
   3. By Default, UART0 is used as the serial console in all configurations.
      This may be connected to your computer via an external RS-232 driver or
@@ -412,9 +412,6 @@ Configuration Directories
           System Type:
             CONFIG_LPC17_40_GPIOIRQ=y            : GPIO interrupt support
             CONFIG_LPC17_40_SSP1=y               : Enable support for SSP1
-
-          RTOS Features:
-            CONFIG_DISABLE_SIGNALS=n          : Signals are required
 
           Library Support:
             CONFIG_SCHED_WORKQUEUE=y          : Work queue support required

@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -41,12 +42,14 @@
 
 #include <arch/irq.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
+#include "s32k1xx_edma.h"
 #include "s32k1xx_pin.h"
+#include "hardware/s32k1xx_dmamux.h"
 #include "hardware/s32k1xx_pinmux.h"
 #include "s32k1xx_lpi2c.h"
 #include "s32k1xx_periphclocks.h"
+#include "s32k1xx_pin.h"
 
 #include <arch/board/board.h>
 
@@ -104,22 +107,11 @@
 #  define CONFIG_I2C_NTRACE 32
 #endif
 
-#ifdef CONFIG_I2C_SLAVE
-#  error I2C slave logic is not supported yet for S32K1XX
-#endif
-
 #define LPI2C_MASTER    1
 #define LPI2C_SLAVE     2
 
-#define MKI2C_OUTPUT(p) (((p) & GPIO_PADMUX_MASK) | \
-                         IOMUX_OPENDRAIN | IOMUX_DRIVE_33OHM | \
-                         IOMUX_SLEW_SLOW | (5 << GPIO_ALT_SHIFT) | \
-                         IOMUX_PULL_NONE | GPIO_OUTPUT_ONE)
-
-#define MKI2C_INPUT(p) (((p) & GPIO_PADMUX_MASK) | \
-                        IOMUX_DRIVE_HIZ | IOMUX_SLEW_SLOW | \
-                        IOMUX_CMOS_INPUT | (5 << GPIO_ALT_SHIFT) | \
-                        IOMUX_PULL_NONE)
+#define MKI2C_OUTPUT(p) (((p) & (~_PIN_MODE_MASK)) | GPIO_OUTPUT | GPIO_OUTPUT_ONE)
+#define MKI2C_INPUT(p)  (((p) & (~_PIN_MODE_MASK)) | GPIO_INPUT)
 
 /****************************************************************************
  * Private Types
@@ -141,10 +133,10 @@ enum s32k1xx_trace_e
   I2CEVENT_NONE = 0,      /* No events have occurred with this status */
   I2CEVENT_SENDADDR,      /* Start/Master bit set and address sent, param = msgc */
   I2CEVENT_SENDBYTE,      /* Send byte, param = dcnt */
-  I2CEVENT_RCVBYTE,       /* Read more dta, param = dcnt */
+  I2CEVENT_RCVBYTE,       /* Read more data, param = dcnt */
   I2CEVENT_NOSTART,       /* BTF on last byte with no restart, param = msgc */
   I2CEVENT_STARTRESTART,  /* Last byte sent, re-starting, param = msgc */
-  I2CEVENT_STOP,          /* Last byte sten, send stop, param = 0 */
+  I2CEVENT_STOP,          /* Last byte sent, send stop, param = 0 */
   I2CEVENT_ERROR          /* Error occurred, param = 0 */
 };
 
@@ -159,7 +151,7 @@ struct s32k1xx_trace_s
   clock_t time;                  /* First of event or first status */
 };
 
-/* I2C Device hardware configuration */
+/* I2C device hardware configuration */
 
 struct s32k1xx_lpi2c_config_s
 {
@@ -172,6 +164,10 @@ struct s32k1xx_lpi2c_config_s
   uint8_t mode;               /* Master or Slave mode */
 #ifndef CONFIG_I2C_POLLED
   uint32_t irq;               /* Event IRQ */
+#endif
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+  uint32_t        dma_rxreqsrc;  /* DMA mux rx source */
+  uint32_t        dma_txreqsrc;  /* DMA mux tx source */
 #endif
 };
 
@@ -212,6 +208,11 @@ struct s32k1xx_lpi2c_priv_s
   struct s32k1xx_trace_s trace[CONFIG_I2C_NTRACE];
 #endif
 
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+  DMACH_HANDLE rxdma;                                  /* rx DMA handle */
+  DMACH_HANDLE txdma;                                  /* tx DMA handle */
+  uint16_t     cmnds[CONFIG_S32K1XX_LPI2C_DMA_MAXMSG]; /* Commands */
+#endif
   uint32_t status;             /* End of transfer SR2|SR1 status */
 };
 
@@ -220,67 +221,74 @@ struct s32k1xx_lpi2c_priv_s
  ****************************************************************************/
 
 static inline uint32_t
-  s32k1xx_lpi2c_getreg(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                       uint16_t offset);
+s32k1xx_lpi2c_getreg(struct s32k1xx_lpi2c_priv_s *priv,
+                     uint16_t offset);
 static inline void
-  s32k1xx_lpi2c_putreg(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                       uint16_t offset, uint32_t value);
+s32k1xx_lpi2c_putreg(struct s32k1xx_lpi2c_priv_s *priv,
+                     uint16_t offset, uint32_t value);
 static inline void
-  s32k1xx_lpi2c_modifyreg(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                          uint16_t offset, uint32_t clearbits,
-                          uint32_t setbits);
+s32k1xx_lpi2c_modifyreg(struct s32k1xx_lpi2c_priv_s *priv,
+                        uint16_t offset, uint32_t clearbits,
+                        uint32_t setbits);
 static inline int
-  s32k1xx_lpi2c_sem_wait(FAR struct s32k1xx_lpi2c_priv_s *priv);
+s32k1xx_lpi2c_sem_wait(struct s32k1xx_lpi2c_priv_s *priv);
 
 #ifdef CONFIG_S32K1XX_I2C_DYNTIMEO
-static useconds_t
-  s32k1xx_lpi2c_tousecs(int msgc, FAR struct i2c_msg_s *msgs);
+static uint32_t
+s32k1xx_lpi2c_toticks(int msgc, struct i2c_msg_s *msgs);
 #endif /* CONFIG_S32K1XX_I2C_DYNTIMEO */
 
 static inline int
-  s32k1xx_lpi2c_sem_waitdone(FAR struct s32k1xx_lpi2c_priv_s *priv);
+s32k1xx_lpi2c_sem_waitdone(struct s32k1xx_lpi2c_priv_s *priv);
 static inline void
-  s32k1xx_lpi2c_sem_waitstop(FAR struct s32k1xx_lpi2c_priv_s *priv);
+s32k1xx_lpi2c_sem_waitstop(struct s32k1xx_lpi2c_priv_s *priv);
 static inline void
-  s32k1xx_lpi2c_sem_post(FAR struct s32k1xx_lpi2c_priv_s *priv);
+s32k1xx_lpi2c_sem_post(struct s32k1xx_lpi2c_priv_s *priv);
 static inline void
-  s32k1xx_lpi2c_sem_init(FAR struct s32k1xx_lpi2c_priv_s *priv);
+s32k1xx_lpi2c_sem_init(struct s32k1xx_lpi2c_priv_s *priv);
 static inline void
-  s32k1xx_lpi2c_sem_destroy(FAR struct s32k1xx_lpi2c_priv_s *priv);
+s32k1xx_lpi2c_sem_destroy(struct s32k1xx_lpi2c_priv_s *priv);
 
 #ifdef CONFIG_I2C_TRACE
-static void s32k1xx_lpi2c_tracereset(FAR struct s32k1xx_lpi2c_priv_s *priv);
-static void s32k1xx_lpi2c_tracenew(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                                 uint32_t status);
-static void s32k1xx_lpi2c_traceevent(FAR struct s32k1xx_lpi2c_priv_s *priv,
+static void s32k1xx_lpi2c_tracereset(struct s32k1xx_lpi2c_priv_s *priv);
+static void s32k1xx_lpi2c_tracenew(struct s32k1xx_lpi2c_priv_s *priv,
+                                   uint32_t status);
+static void s32k1xx_lpi2c_traceevent(struct s32k1xx_lpi2c_priv_s *priv,
                                      enum s32k1xx_trace_e event,
                                      uint32_t parm);
-static void s32k1xx_lpi2c_tracedump(FAR struct s32k1xx_lpi2c_priv_s *priv);
+static void s32k1xx_lpi2c_tracedump(struct s32k1xx_lpi2c_priv_s *priv);
 #endif /* CONFIG_I2C_TRACE */
 
 static uint32_t s32k1xx_lpi2c_pckfreq(uintptr_t base);
-static void s32k1xx_lpi2c_setclock(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                               uint32_t frequency);
+static void s32k1xx_lpi2c_setclock(struct s32k1xx_lpi2c_priv_s *priv,
+                                   uint32_t frequency);
 static inline void
-  s32k1xx_lpi2c_sendstart(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                          uint8_t address);
+s32k1xx_lpi2c_sendstart(struct s32k1xx_lpi2c_priv_s *priv,
+                        uint8_t address);
 static inline void
-  s32k1xx_lpi2c_sendstop(FAR struct s32k1xx_lpi2c_priv_s *priv);
+s32k1xx_lpi2c_sendstop(struct s32k1xx_lpi2c_priv_s *priv);
 static inline uint32_t
-  s32k1xx_lpi2c_getstatus(FAR struct s32k1xx_lpi2c_priv_s *priv);
+s32k1xx_lpi2c_getstatus(struct s32k1xx_lpi2c_priv_s *priv);
 
-static int s32k1xx_lpi2c_isr_process(struct s32k1xx_lpi2c_priv_s * priv);
+static int s32k1xx_lpi2c_isr_process(struct s32k1xx_lpi2c_priv_s *priv);
 
 #ifndef CONFIG_I2C_POLLED
-static int s32k1xx_lpi2c_isr(int irq, void *context, FAR void *arg);
+static int s32k1xx_lpi2c_isr(int irq, void *context, void *arg);
 #endif /* !CONFIG_I2C_POLLED */
 
-static int s32k1xx_lpi2c_init(FAR struct s32k1xx_lpi2c_priv_s *priv);
-static int s32k1xx_lpi2c_deinit(FAR struct s32k1xx_lpi2c_priv_s *priv);
-static int s32k1xx_lpi2c_transfer(FAR struct i2c_master_s *dev,
-                                FAR struct i2c_msg_s *msgs, int count);
+static int s32k1xx_lpi2c_init(struct s32k1xx_lpi2c_priv_s *priv);
+static int s32k1xx_lpi2c_deinit(struct s32k1xx_lpi2c_priv_s *priv);
+static int s32k1xx_lpi2c_transfer(struct i2c_master_s *dev,
+                                  struct i2c_msg_s *msgs, int count);
 #ifdef CONFIG_I2C_RESET
-static int s32k1xx_lpi2c_reset(FAR struct i2c_master_s *dev);
+static int s32k1xx_lpi2c_reset(struct i2c_master_s *dev);
+#endif
+
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+static void s32k1xx_rxdma_callback(DMACH_HANDLE handle, void *arg, bool done,
+                                  int result);
+static void s32k1xx_txdma_callback(DMACH_HANDLE handle, void *arg, bool done,
+                                  int result);
 #endif
 
 /****************************************************************************
@@ -307,9 +315,9 @@ static const char *g_trace_names[] =
 
 static const struct i2c_ops_s s32k1xx_lpi2c_ops =
 {
-  .transfer = s32k1xx_lpi2c_transfer
+  .transfer = s32k1xx_lpi2c_transfer,
 #ifdef CONFIG_I2C_RESET
-  , .reset  = s32k1xx_lpi2c_reset
+  .reset  = s32k1xx_lpi2c_reset,
 #endif
 };
 
@@ -324,13 +332,13 @@ static const struct s32k1xx_lpi2c_config_s s32k1xx_lpi2c0_config =
   .filtsda    = CONFIG_LPI2C0_FILTSDA,
   .scl_pin    = PIN_LPI2C0_SCL,
   .sda_pin    = PIN_LPI2C0_SDA,
-#ifndef CONFIG_I2C_SLAVE
   .mode       = LPI2C_MASTER,
-#else
-  .mode       = LPI2C_SLAVE,
-#endif
 #ifndef CONFIG_I2C_POLLED
   .irq        = S32K1XX_IRQ_LPI2C0M,
+#endif
+#ifdef CONFIG_LPI2C0_DMA
+  .dma_rxreqsrc    = S32K1XX_DMACHAN_LPI2C0_RX,
+  .dma_txreqsrc    = S32K1XX_DMACHAN_LPI2C0_TX,
 #endif
 };
 
@@ -345,9 +353,9 @@ static struct s32k1xx_lpi2c_priv_s s32k1xx_lpi2c0_priv =
   .ptr        = NULL,
   .dcnt       = 0,
   .flags      = 0,
-  .status     = 0
+  .status     = 0,
 };
-#endif
+#endif /* CONFIG_S32K1XX_LPI2C0 */
 
 #ifdef CONFIG_S32K1XX_LPI2C1
 static const struct s32k1xx_lpi2c_config_s s32k1xx_lpi2c1_config =
@@ -358,13 +366,13 @@ static const struct s32k1xx_lpi2c_config_s s32k1xx_lpi2c1_config =
   .filtsda    = CONFIG_LPI2C1_FILTSDA,
   .scl_pin    = PIN_LPI2C1_SCL,
   .sda_pin    = PIN_LPI2C1_SDA,
-#ifndef CONFIG_I2C_SLAVE
   .mode       = LPI2C_MASTER,
-#else
-  .mode       = LPI2C_SLAVE,
-#endif
 #ifndef CONFIG_I2C_POLLED
   .irq        = S32K1XX_IRQ_LPI2C1M,
+#endif
+#ifdef CONFIG_LPI2C1_DMA
+  .dma_rxreqsrc    = S32K1XX_DMACHAN_LPI2C1_RX,
+  .dma_txreqsrc    = S32K1XX_DMACHAN_LPI2C1_TX,
 #endif
 };
 
@@ -379,9 +387,9 @@ static struct s32k1xx_lpi2c_priv_s s32k1xx_lpi2c1_priv =
   .ptr        = NULL,
   .dcnt       = 0,
   .flags      = 0,
-  .status     = 0
+  .status     = 0,
 };
-#endif
+#endif /* CONFIG_S32K1XX_LPI2C1 */
 
 /****************************************************************************
  * Private Functions
@@ -396,8 +404,8 @@ static struct s32k1xx_lpi2c_priv_s s32k1xx_lpi2c1_priv =
  ****************************************************************************/
 
 static inline uint32_t
-  s32k1xx_lpi2c_getreg(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                       uint16_t offset)
+s32k1xx_lpi2c_getreg(struct s32k1xx_lpi2c_priv_s *priv,
+                     uint16_t offset)
 {
   return getreg32(priv->config->base + offset);
 }
@@ -411,8 +419,8 @@ static inline uint32_t
  ****************************************************************************/
 
 static inline void
-  s32k1xx_lpi2c_putreg(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                       uint16_t offset, uint32_t value)
+s32k1xx_lpi2c_putreg(struct s32k1xx_lpi2c_priv_s *priv,
+                     uint16_t offset, uint32_t value)
 {
   putreg32(value, priv->config->base + offset);
 }
@@ -426,9 +434,9 @@ static inline void
  ****************************************************************************/
 
 static inline void
-  s32k1xx_lpi2c_modifyreg(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                          uint16_t offset, uint32_t clearbits,
-                          uint32_t setbits)
+s32k1xx_lpi2c_modifyreg(struct s32k1xx_lpi2c_priv_s *priv,
+                        uint16_t offset, uint32_t clearbits,
+                        uint32_t setbits)
 {
   modifyreg32(priv->config->base + offset, clearbits, setbits);
 }
@@ -443,13 +451,13 @@ static inline void
  ****************************************************************************/
 
 static inline int
-  s32k1xx_lpi2c_sem_wait(FAR struct s32k1xx_lpi2c_priv_s *priv)
+s32k1xx_lpi2c_sem_wait(struct s32k1xx_lpi2c_priv_s *priv)
 {
   return nxsem_wait(&priv->sem_excl);
 }
 
 /****************************************************************************
- * Name: s32k1xx_lpi2c_tousecs
+ * Name: s32k1xx_lpi2c_toticks
  *
  * Description:
  *   Return a micro-second delay based on the number of bytes left to be
@@ -458,7 +466,7 @@ static inline int
  ****************************************************************************/
 
 #ifdef CONFIG_S32K1XX_I2C_DYNTIMEO
-static useconds_t s32k1xx_lpi2c_tousecs(int msgc, FAR struct i2c_msg_s *msgs)
+static uint32_t s32k1xx_lpi2c_toticks(int msgc, struct i2c_msg_s *msgs)
 {
   size_t bytecount = 0;
   int i;
@@ -474,7 +482,7 @@ static useconds_t s32k1xx_lpi2c_tousecs(int msgc, FAR struct i2c_msg_s *msgs)
    * factor.
    */
 
-  return (useconds_t)(CONFIG_S32K1XX_I2C_DYNTIMEO_USECPERBYTE * bytecount);
+  return USEC2TICK(CONFIG_S32K1XX_I2C_DYNTIMEO_USECPERBYTE * bytecount);
 }
 #endif
 
@@ -488,22 +496,25 @@ static useconds_t s32k1xx_lpi2c_tousecs(int msgc, FAR struct i2c_msg_s *msgs)
 
 #ifndef CONFIG_I2C_POLLED
 static inline int
-  s32k1xx_lpi2c_sem_waitdone(FAR struct s32k1xx_lpi2c_priv_s *priv)
+s32k1xx_lpi2c_sem_waitdone(struct s32k1xx_lpi2c_priv_s *priv)
 {
-  struct timespec abstime;
   irqstate_t flags;
   uint32_t regval;
   int ret;
 
   flags = enter_critical_section();
 
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+  if (priv->rxdma == NULL && priv->txdma == NULL)
+    {
+#endif
   /* Enable Interrupts when master mode */
 
   if (priv->config->mode == LPI2C_MASTER)
     {
       if ((priv->flags & I2C_M_READ) != 0)
         {
-          regval = LPI2C_MIER_TDIE | LPI2C_MIER_RDIE | LPI2C_MIER_NDIE | \
+          regval = LPI2C_MIER_TDIE | LPI2C_MIER_RDIE | LPI2C_MIER_NDIE |
                    LPI2C_MIER_ALIE | LPI2C_MIER_SDIE;
           s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MIER_OFFSET, regval);
         }
@@ -524,50 +535,29 @@ static inline int
 
   /* Signal the interrupt handler that we are waiting.  NOTE:  Interrupts
    * are currently disabled but will be temporarily re-enabled below when
-   * nxsem_timedwait() sleeps.
+   * nxsem_tickwait_uninterruptible() sleeps.
    */
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+    }
 
+#endif
   priv->intstate = INTSTATE_WAITING;
   do
     {
-      /* Get the current time */
-
-      clock_gettime(CLOCK_REALTIME, &abstime);
-
-      /* Calculate a time in the future */
-
-#if CONFIG_S32K1XX_I2CTIMEOSEC > 0
-      abstime.tv_sec += CONFIG_S32K1XX_I2CTIMEOSEC;
-#endif
-
-      /* Add a value proportional to the number of bytes in the transfer */
-
-#ifdef CONFIG_S32K1XX_I2C_DYNTIMEO
-      abstime.tv_nsec +=
-        1000 * s32k1xx_lpi2c_tousecs(priv->msgc, priv->msgv);
-
-      if (abstime.tv_nsec >= 1000 * 1000 * 1000)
-        {
-          abstime.tv_sec++;
-          abstime.tv_nsec -= 1000 * 1000 * 1000;
-        }
-
-#elif CONFIG_S32K1XX_I2CTIMEOMS > 0
-      abstime.tv_nsec += CONFIG_S32K1XX_I2CTIMEOMS * 1000 * 1000;
-      if (abstime.tv_nsec >= 1000 * 1000 * 1000)
-        {
-          abstime.tv_sec++;
-          abstime.tv_nsec -= 1000 * 1000 * 1000;
-        }
-#endif
-
       /* Wait until either the transfer is complete or the timeout expires */
 
-      ret = nxsem_timedwait_uninterruptible(&priv->sem_isr, &abstime);
+#ifdef CONFIG_S32K1XX_I2C_DYNTIMEO
+      ret = nxsem_tickwait_uninterruptible(&priv->sem_isr,
+                     s32k1xx_lpi2c_toticks(priv->msgc, priv->msgv));
+#else
+      ret = nxsem_tickwait_uninterruptible(&priv->sem_isr,
+                                           CONFIG_S32K1XX_I2CTIMEOTICKS);
+#endif
       if (ret < 0)
         {
           /* Break out of the loop on irrecoverable errors.  This would
-           * include timeouts and mystery errors reported by nxsem_timedwait.
+           * include timeouts and mystery errors reported by
+           * nxsem_tickwait_uninterruptible.
            */
 
           break;
@@ -591,19 +581,21 @@ static inline int
       s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MIER_OFFSET, 0);
     }
 
+#if 0
   /* Enable Interrupts when slave mode */
 
   else
     {
       s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_SIER_OFFSET, 0);
     }
+#endif
 
   leave_critical_section(flags);
   return ret;
 }
 #else
 static inline int
-  s32k1xx_lpi2c_sem_waitdone(FAR struct s32k1xx_lpi2c_priv_s *priv)
+s32k1xx_lpi2c_sem_waitdone(struct s32k1xx_lpi2c_priv_s *priv)
 {
   clock_t timeout;
   clock_t start;
@@ -613,14 +605,14 @@ static inline int
   /* Get the timeout value */
 
 #ifdef CONFIG_S32K1XX_I2C_DYNTIMEO
-  timeout = USEC2TICK(s32k1xx_lpi2c_tousecs(priv->msgc, priv->msgv));
+  timeout = s32k1xx_lpi2c_toticks(priv->msgc, priv->msgv);
 #else
   timeout = CONFIG_S32K1XX_I2CTIMEOTICKS;
 #endif
 
   /* Signal the interrupt handler that we are waiting.  NOTE:  Interrupts
    * are currently disabled but will be temporarily re-enabled below when
-   * nxsem_timedwait() sleeps.
+   * nxsem_tickwait_uninterruptible() sleeps.
    */
 
   priv->intstate = INTSTATE_WAITING;
@@ -663,7 +655,7 @@ static inline int
  ****************************************************************************/
 
 static inline void
-  s32k1xx_lpi2c_sem_waitstop(FAR struct s32k1xx_lpi2c_priv_s *priv)
+s32k1xx_lpi2c_sem_waitstop(struct s32k1xx_lpi2c_priv_s *priv)
 {
   clock_t start;
   clock_t elapsed;
@@ -765,7 +757,7 @@ static inline void s32k1xx_lpi2c_sem_post(struct s32k1xx_lpi2c_priv_s *priv)
  ****************************************************************************/
 
 static inline void
-  s32k1xx_lpi2c_sem_init(FAR struct s32k1xx_lpi2c_priv_s *priv)
+s32k1xx_lpi2c_sem_init(struct s32k1xx_lpi2c_priv_s *priv)
 {
   nxsem_init(&priv->sem_excl, 0, 1);
 
@@ -788,13 +780,119 @@ static inline void
  ****************************************************************************/
 
 static inline void
-  s32k1xx_lpi2c_sem_destroy(FAR struct s32k1xx_lpi2c_priv_s *priv)
+s32k1xx_lpi2c_sem_destroy(struct s32k1xx_lpi2c_priv_s *priv)
 {
   nxsem_destroy(&priv->sem_excl);
 #ifndef CONFIG_I2C_POLLED
   nxsem_destroy(&priv->sem_isr);
 #endif
 }
+
+/****************************************************************************
+ * Name: s32k1xx_rxdma_callback
+ *
+ * Description:
+ *   This function performs the next I2C operation
+ *
+ ****************************************************************************/
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+static void s32k1xx_rxdma_callback(DMACH_HANDLE handle, void *arg, bool done,
+                              int result)
+{
+  struct s32k1xx_lpi2c_priv_s *priv = (struct s32k1xx_lpi2c_priv_s *)arg;
+
+  s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MIER_OFFSET, 0,
+                              LPI2C_MIER_SDIE);
+
+  if (result != OK)
+    {
+      priv->status = s32k1xx_lpi2c_getstatus(priv);
+
+      if ((priv->status & LPI2C_MSR_ERROR_MASK) != 0)
+        {
+          i2cerr("ERROR: MSR: status: 0x0%" PRIx32 "\n", priv->status);
+
+          s32k1xx_lpi2c_traceevent(priv, I2CEVENT_ERROR, 0);
+
+          /* Clear the TX and RX FIFOs */
+
+          s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MCR_OFFSET, 0,
+                                LPI2C_MCR_RTF | LPI2C_MCR_RRF);
+
+          /* Clear the error */
+
+          s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MSR_OFFSET,
+                             (priv->status & (LPI2C_MSR_NDF |
+                                              LPI2C_MSR_ALF |
+                                              LPI2C_MSR_FEF |
+                                              LPI2C_MSR_PLTF)));
+
+          if (priv->intstate == INTSTATE_WAITING)
+            {
+              /* inform the thread that transfer is complete
+               * and wake it up
+               */
+
+              priv->intstate = INTSTATE_DONE;
+              nxsem_post(&priv->sem_isr);
+            }
+        }
+    }
+}
+#endif
+
+/****************************************************************************
+ * Name: s32k1xx_txdma_callback
+ *
+ * Description:
+ *   This function performs the next I2C operation
+ *
+ ****************************************************************************/
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+static void s32k1xx_txdma_callback(DMACH_HANDLE handle, void *arg, bool done,
+                              int result)
+{
+  struct s32k1xx_lpi2c_priv_s *priv = (struct s32k1xx_lpi2c_priv_s *)arg;
+
+  s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MIER_OFFSET, 0,
+                              LPI2C_MIER_SDIE);
+
+  if (result != OK)
+    {
+      priv->status = s32k1xx_lpi2c_getstatus(priv);
+
+      if ((priv->status & LPI2C_MSR_ERROR_MASK) != 0)
+        {
+          i2cerr("ERROR: MSR: status: 0x0%" PRIx32 "\n", priv->status);
+
+          s32k1xx_lpi2c_traceevent(priv, I2CEVENT_ERROR, 0);
+
+          /* Clear the TX and RX FIFOs */
+
+          s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MCR_OFFSET, 0,
+                                LPI2C_MCR_RTF | LPI2C_MCR_RRF);
+
+          /* Clear the error */
+
+          s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MSR_OFFSET,
+                             (priv->status & (LPI2C_MSR_NDF |
+                                              LPI2C_MSR_ALF |
+                                              LPI2C_MSR_FEF |
+                                              LPI2C_MSR_PLTF)));
+
+          if (priv->intstate == INTSTATE_WAITING)
+            {
+              /* inform the thread that transfer is complete
+               * and wake it up
+               */
+
+              priv->intstate = INTSTATE_DONE;
+              nxsem_post(&priv->sem_isr);
+            }
+        }
+    }
+}
+#endif
 
 /****************************************************************************
  * Name: s32k1xx_lpi2c_trace*
@@ -805,7 +903,7 @@ static inline void
  ****************************************************************************/
 
 #ifdef CONFIG_I2C_TRACE
-static void s32k1xx_lpi2c_traceclear(FAR struct s32k1xx_lpi2c_priv_s *priv)
+static void s32k1xx_lpi2c_traceclear(struct s32k1xx_lpi2c_priv_s *priv)
 {
   struct s32k1xx_trace_s *trace = &priv->trace[priv->tndx];
 
@@ -816,7 +914,7 @@ static void s32k1xx_lpi2c_traceclear(FAR struct s32k1xx_lpi2c_priv_s *priv)
   trace->time   = 0;              /* Time of first status or event */
 }
 
-static void s32k1xx_lpi2c_tracereset(FAR struct s32k1xx_lpi2c_priv_s *priv)
+static void s32k1xx_lpi2c_tracereset(struct s32k1xx_lpi2c_priv_s *priv)
 {
   /* Reset the trace info for a new data collection */
 
@@ -825,8 +923,8 @@ static void s32k1xx_lpi2c_tracereset(FAR struct s32k1xx_lpi2c_priv_s *priv)
   s32k1xx_lpi2c_traceclear(priv);
 }
 
-static void s32k1xx_lpi2c_tracenew(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                                 uint32_t status)
+static void s32k1xx_lpi2c_tracenew(struct s32k1xx_lpi2c_priv_s *priv,
+                                   uint32_t status)
 {
   struct s32k1xx_trace_s *trace = &priv->trace[priv->tndx];
 
@@ -865,8 +963,9 @@ static void s32k1xx_lpi2c_tracenew(FAR struct s32k1xx_lpi2c_priv_s *priv,
     }
 }
 
-static void s32k1xx_lpi2c_traceevent(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                                 enum s32k1xx_trace_e event, uint32_t parm)
+static void s32k1xx_lpi2c_traceevent(struct s32k1xx_lpi2c_priv_s *priv,
+                                     enum s32k1xx_trace_e event,
+                                     uint32_t parm)
 {
   struct s32k1xx_trace_s *trace;
 
@@ -892,7 +991,7 @@ static void s32k1xx_lpi2c_traceevent(FAR struct s32k1xx_lpi2c_priv_s *priv,
     }
 }
 
-static void s32k1xx_lpi2c_tracedump(FAR struct s32k1xx_lpi2c_priv_s *priv)
+static void s32k1xx_lpi2c_tracedump(struct s32k1xx_lpi2c_priv_s *priv)
 {
   struct s32k1xx_trace_s *trace;
   int i;
@@ -973,8 +1072,8 @@ static uint32_t s32k1xx_lpi2c_pckfreq(uintptr_t base)
  *
  ****************************************************************************/
 
-static void s32k1xx_lpi2c_setclock(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                                 uint32_t frequency)
+static void s32k1xx_lpi2c_setclock(struct s32k1xx_lpi2c_priv_s *priv,
+                                   uint32_t frequency)
 {
   uint32_t src_freq = 0;
   uint32_t regval;
@@ -1111,8 +1210,8 @@ static void s32k1xx_lpi2c_setclock(FAR struct s32k1xx_lpi2c_priv_s *priv,
  ****************************************************************************/
 
 static inline void
-  s32k1xx_lpi2c_sendstart(FAR struct s32k1xx_lpi2c_priv_s *priv,
-                          uint8_t address)
+s32k1xx_lpi2c_sendstart(struct s32k1xx_lpi2c_priv_s *priv,
+                        uint8_t address)
 {
   uint32_t txcount = 0;
   uint32_t status = 0;
@@ -1123,7 +1222,7 @@ static inline void
   /* Turn off auto_stop option */
 
   s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MCFGR1_OFFSET,
-                        LPI2C_MCFGR1_IGNACK, 0);
+                          LPI2C_MCFGR1_IGNACK, 0);
 
   do
     {
@@ -1151,7 +1250,7 @@ static inline void
     }
 
   s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MTDR_OFFSET,
-                    (LPI2C_MTDR_CMD_START | LPI2C_MTDR_DATA(addr)));
+                       (LPI2C_MTDR_CMD_START | LPI2C_MTDR_DATA(addr)));
 }
 
 /****************************************************************************
@@ -1163,7 +1262,7 @@ static inline void
  ****************************************************************************/
 
 static inline void
-  s32k1xx_lpi2c_sendstop(FAR struct s32k1xx_lpi2c_priv_s *priv)
+s32k1xx_lpi2c_sendstop(struct s32k1xx_lpi2c_priv_s *priv)
 {
   s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MTDR_OFFSET, LPI2C_MTDR_CMD_STOP);
 }
@@ -1177,9 +1276,23 @@ static inline void
  ****************************************************************************/
 
 static inline uint32_t
-  s32k1xx_lpi2c_getstatus(FAR struct s32k1xx_lpi2c_priv_s *priv)
+s32k1xx_lpi2c_getstatus(struct s32k1xx_lpi2c_priv_s *priv)
 {
   return s32k1xx_lpi2c_getreg(priv, S32K1XX_LPI2C_MSR_OFFSET);
+}
+
+/****************************************************************************
+ * Name: imxrt_lpi2c_getenabledints
+ *
+ * Description:
+ *   Get 32-bit status
+ *
+ ****************************************************************************/
+
+static inline uint32_t
+s32k1xx_lpi2c_getenabledints(struct s32k1xx_lpi2c_priv_s *priv)
+{
+  return s32k1xx_lpi2c_getreg(priv, S32K1XX_LPI2C_MIER_OFFSET);
 }
 
 /****************************************************************************
@@ -1194,11 +1307,91 @@ static int s32k1xx_lpi2c_isr_process(struct s32k1xx_lpi2c_priv_s *priv)
 {
   uint32_t status = s32k1xx_lpi2c_getstatus(priv);
 
-  /* Check for new trace setup */
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+  uint32_t current_status = status;
+
+  /* Condition the status with only the enabled interrupts */
+
+  status &= s32k1xx_lpi2c_getenabledints(priv);
+
+  if (priv->rxdma != NULL || priv->txdma != NULL)
+    {
+      /* End of packet or Stop */
+
+      if ((status & (LPI2C_MSR_SDF | LPI2C_MSR_EPF)) != 0)
+        {
+          s32k1xx_lpi2c_traceevent(priv, I2CEVENT_STOP, 0);
+
+          /* Acknowledge End of packet or Stop */
+
+          s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MSR_OFFSET, status &
+                                                           (LPI2C_MSR_SDF |
+                                                           LPI2C_MSR_EPF));
+        }
+
+      /* Is there an Error condition */
+
+      if (current_status & LPI2C_MSR_ERROR_MASK)
+        {
+          s32k1xx_lpi2c_traceevent(priv, I2CEVENT_ERROR, 0);
+
+          /* Shutdown DMA */
+
+          if (priv->rxdma != NULL)
+            {
+              s32k1xx_dmach_stop(priv->rxdma);
+            }
+
+          if (priv->txdma != NULL)
+            {
+               s32k1xx_dmach_stop(priv->txdma);
+            }
+
+          /* Clear the TX and RX FIFOs */
+
+          s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MCR_OFFSET, 0,
+                                LPI2C_MCR_RTF | LPI2C_MCR_RRF);
+
+          /* Clear the error */
+
+          s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MSR_OFFSET,
+                            (current_status & (LPI2C_MSR_NDF |
+                                               LPI2C_MSR_ALF |
+                                               LPI2C_MSR_FEF)));
+
+          /* Return the full error status */
+
+          status = current_status;
+        }
+
+      /* Mark that this transaction stopped */
+
+      priv->msgv = NULL;
+      priv->msgc = 0;
+      priv->dcnt = -1;
+
+      if (priv->intstate == INTSTATE_WAITING)
+        {
+          /* Update Status once at the end */
+
+          priv->status = status;
+
+          /* inform the thread that transfer is complete
+           * and wake it up
+           */
+
+          priv->intstate = INTSTATE_DONE;
+          nxsem_post(&priv->sem_isr);
+        }
+
+      return OK;
+    }
+
+#endif  /* Check for new trace setup */
 
   s32k1xx_lpi2c_tracenew(priv, status);
 
-  /* After an error we can get an SDF  */
+  /* After an error we can get a STOP Detect Flag  */
 
   if (priv->intstate == INTSTATE_DONE && (status & LPI2C_MSR_SDF) != 0)
     {
@@ -1271,9 +1464,9 @@ static int s32k1xx_lpi2c_isr_process(struct s32k1xx_lpi2c_priv_s *priv)
     {
       if (priv->msgc > 0 && priv->msgv != NULL)
         {
-          priv->ptr        = priv->msgv->buffer;
-          priv->dcnt    = priv->msgv->length;
-          priv->flags    = priv->msgv->flags;
+          priv->ptr   = priv->msgv->buffer;
+          priv->dcnt  = priv->msgv->length;
+          priv->flags = priv->msgv->flags;
 
           if ((priv->msgv->flags & I2C_M_NOSTART) == 0)
             {
@@ -1337,8 +1530,8 @@ static int s32k1xx_lpi2c_isr_process(struct s32k1xx_lpi2c_priv_s *priv)
                * and wake it up
                */
 
-              nxsem_post(&priv->sem_isr);
               priv->intstate = INTSTATE_DONE;
+              nxsem_post(&priv->sem_isr);
             }
 #else
           priv->status = status;
@@ -1390,8 +1583,8 @@ static int s32k1xx_lpi2c_isr_process(struct s32k1xx_lpi2c_priv_s *priv)
                * and wake it up
                */
 
-              nxsem_post(&priv->sem_isr);
               priv->intstate = INTSTATE_DONE;
+              nxsem_post(&priv->sem_isr);
             }
 #else
           priv->status = status;
@@ -1411,7 +1604,7 @@ static int s32k1xx_lpi2c_isr_process(struct s32k1xx_lpi2c_priv_s *priv)
  ****************************************************************************/
 
 #ifndef CONFIG_I2C_POLLED
-static int s32k1xx_lpi2c_isr(int irq, void *context, FAR void *arg)
+static int s32k1xx_lpi2c_isr(int irq, void *context, void *arg)
 {
   struct s32k1xx_lpi2c_priv_s *priv = (struct s32k1xx_lpi2c_priv_s *)arg;
 
@@ -1428,11 +1621,11 @@ static int s32k1xx_lpi2c_isr(int irq, void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static int s32k1xx_lpi2c_init(FAR struct s32k1xx_lpi2c_priv_s *priv)
+static int s32k1xx_lpi2c_init(struct s32k1xx_lpi2c_priv_s *priv)
 {
-  /* Power-up and configure GPIOs .
+  /* Power-up and configure pins.
    *
-   * NOTE: Clocking to the LPSPI peripheral must be provided by
+   * NOTE: Clocking to the LPI2C peripheral must be provided by
    * board-specific logic as part of the clock configuration logic.
    */
 
@@ -1446,25 +1639,25 @@ static int s32k1xx_lpi2c_init(FAR struct s32k1xx_lpi2c_priv_s *priv)
   s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MCR_OFFSET, LPI2C_MCR_RST);
   s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MCR_OFFSET, 0);
 
-  /* Disable doze mode (Set DOZEN bit in 1 to disable) */
+  /* Disable doze mode (Set DOZEN bit to 1 to disable) */
 
   s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MCR_OFFSET, LPI2C_MCR_DOZEN);
 
   /* Disable host request */
 
   s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MCFGR0_OFFSET,
-                        LPI2C_MCFG0_HREN | LPI2C_MCFG0_HRSEL,
-                        LPI2C_MCFG0_HRPOL);
+                          LPI2C_MCFG0_HREN | LPI2C_MCFG0_HRSEL,
+                          LPI2C_MCFG0_HRPOL);
 
   /* Pin config and ignore NACK disable */
 
   s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MCFGR1_OFFSET,
-                        LPI2C_MCFGR1_IGNACK | LPI2C_MCFGR1_PINCFG_MASK, 0);
+                          LPI2C_MCFGR1_IGNACK | LPI2C_MCFGR1_PINCFG_MASK, 0);
 
   /* Set tx and rx watermarks */
 
   s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MFCR_OFFSET,
-                     LPI2C_MFCR_TXWATER(0) | LPI2C_MFCR_RXWATER(0));
+                       LPI2C_MFCR_TXWATER(0) | LPI2C_MFCR_RXWATER(0));
 
   /* Force a frequency update */
 
@@ -1474,14 +1667,14 @@ static int s32k1xx_lpi2c_init(FAR struct s32k1xx_lpi2c_priv_s *priv)
   /* Set scl, sda glitch filters and busy idle */
 
   s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MCFGR2_OFFSET,
-                    LPI2C_MCFG2_BUSIDLE(priv->config->busy_idle) |
-                    LPI2C_MCFG2_FILTSCL_CYCLES(priv->config->filtscl) |
-                    LPI2C_MCFG2_FILTSDA_CYCLES(priv->config->filtsda));
+                       LPI2C_MCFG2_BUSIDLE(priv->config->busy_idle) |
+                       LPI2C_MCFG2_FILTSCL_CYCLES(priv->config->filtscl) |
+                       LPI2C_MCFG2_FILTSDA_CYCLES(priv->config->filtsda));
 
   /* Set pin low cycles to 0 (disable) */
 
   s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MCFGR3_OFFSET,
-                     LPI2C_MCFG3_PINLOW_CYCLES(0));
+                       LPI2C_MCFG3_PINLOW_CYCLES(0));
 
   /* Attach ISRs */
 
@@ -1504,7 +1697,7 @@ static int s32k1xx_lpi2c_init(FAR struct s32k1xx_lpi2c_priv_s *priv)
  *
  ****************************************************************************/
 
-static int s32k1xx_lpi2c_deinit(FAR struct s32k1xx_lpi2c_priv_s *priv)
+static int s32k1xx_lpi2c_deinit(struct s32k1xx_lpi2c_priv_s *priv)
 {
   /* Disable I2C */
 
@@ -1532,6 +1725,223 @@ static int s32k1xx_lpi2c_deinit(FAR struct s32k1xx_lpi2c_priv_s *priv)
  ****************************************************************************/
 
 /****************************************************************************
+ * Name: s32k1xx_lpi2c_dma_command_configure
+ *
+ * Description:
+ *   Create a command TCD
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+static int
+s32k1xx_lpi2c_dma_command_configure(struct s32k1xx_lpi2c_priv_s
+                                    *priv, uint16_t *ccmd,
+                                     uint32_t ncmd)
+{
+  struct s32k1xx_edma_xfrconfig_s config;
+  memset(&config, 0, sizeof(config));
+
+  config.saddr  = (uint32_t) ccmd;
+  config.daddr  = priv->config->base + S32K1XX_LPI2C_MTDR_OFFSET;
+  config.soff   = sizeof(uint16_t);
+  config.doff   = 0;
+  config.iter   = 1;
+  config.flags  = EDMA_CONFIG_LINKTYPE_LINKNONE;
+  config.ssize  = EDMA_16BIT;
+  config.dsize  = EDMA_16BIT;
+  config.nbytes = sizeof(uint16_t) * ncmd;
+
+  up_clean_dcache((uintptr_t)config.saddr,
+                  (uintptr_t)config.saddr + config.nbytes);
+
+  return s32k1xx_dmach_xfrsetup(priv->txdma, &config);
+}
+#endif
+
+/****************************************************************************
+ * Name: s32k1xx_lpi2c_dma_data_configure
+ *
+ * Description:
+ *   Create a data TCD
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+static int s32k1xx_lpi2c_dma_data_configure(struct s32k1xx_lpi2c_priv_s
+                                              *priv,
+                                              struct i2c_msg_s *msg)
+{
+  DMACH_HANDLE dma;
+  struct s32k1xx_edma_xfrconfig_s config;
+  memset(&config, 0, sizeof(config));
+
+  config.iter   = msg->length;
+  config.flags  = EDMA_CONFIG_LINKTYPE_LINKNONE;
+  config.ssize  = EDMA_8BIT;
+  config.dsize  = EDMA_8BIT;
+  config.nbytes = sizeof(msg->buffer[0]);
+
+  if (msg->flags & I2C_M_READ)
+    {
+      dma           = priv->rxdma;
+      config.saddr  = priv->config->base + S32K1XX_LPI2C_MRDR_OFFSET;
+      config.daddr  = (uint32_t) msg->buffer;
+      config.soff   = 0;
+      config.doff   = sizeof(msg->buffer[0]);
+      up_invalidate_dcache((uintptr_t)msg->buffer,
+                           (uintptr_t)msg->buffer + msg->length);
+    }
+  else
+    {
+      dma           = priv->txdma;
+      config.saddr  = (uint32_t) msg->buffer;
+      config.daddr  = priv->config->base + S32K1XX_LPI2C_MTDR_OFFSET;
+      config.soff   = sizeof(msg->buffer[0]);
+      config.doff   = 0;
+      up_clean_dcache((uintptr_t)msg->buffer,
+                      (uintptr_t)msg->buffer + msg->length);
+    }
+
+  return s32k1xx_dmach_xfrsetup(dma, &config) ? 0 : msg->length;
+}
+#endif
+
+/****************************************************************************
+ * Name: s32k1xx_lpi2c_configure_dma_transfer
+ *
+ * Description:
+ *   DMA based I2C transfer function
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+static int s32k1xx_lpi2c_form_command_list(struct s32k1xx_lpi2c_priv_s
+                                              *priv, struct i2c_msg_s *msg,
+                                              int ncmds)
+{
+  ssize_t length = 0;
+
+  if (priv->flags & I2C_M_NOSTART)
+    {
+      if (priv->flags & I2C_M_READ)
+        {
+          /* No start read operation */
+
+          priv->cmnds[ncmds++] = LPI2C_MTDR_CMD_RXD |
+                                 LPI2C_MTDR_DATA(msg->length - 1);
+        }
+    }
+  else
+    {
+      /* A start based read or write operation */
+
+      /* Create bus address with R/W */
+
+      uint16_t badd = (priv->flags & I2C_M_READ) ? I2C_READADDR8(msg->addr) :
+                                                   I2C_WRITEADDR8(msg->addr);
+
+      priv->cmnds[ncmds++] = LPI2C_MTDR_CMD_START | LPI2C_MTDR_DATA(badd);
+
+      if (badd & I2C_READBIT)
+        {
+          length =  msg->length;
+          while (length)
+            {
+              if (length > 256u)
+                {
+                  priv->cmnds[ncmds++] = LPI2C_MTDR_CMD_RXD |
+                                         LPI2C_MTDR_DATA(256u - 1);
+                  length -= 256u;
+                }
+              else
+                {
+                  priv->cmnds[ncmds++] = LPI2C_MTDR_CMD_RXD |
+                                         LPI2C_MTDR_DATA(length - 1);
+                  length = 0;
+                }
+            }
+        }
+    }
+
+  return ncmds;
+}
+#endif
+
+/****************************************************************************
+ * Name: s32k1xx_lpi2c_dma_transfer
+ *
+ * Description:
+ *   DMA based I2C transfer function
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+static int s32k1xx_lpi2c_dma_transfer(struct s32k1xx_lpi2c_priv_s *priv)
+{
+  int m;
+  int ntotcmds = 0;
+  int ncmds = 0;
+  uint16_t *ccmnd = NULL;
+
+  /* Disable Interrupts */
+
+  s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MIER_OFFSET,
+                            LPI2C_MIER_RDIE | LPI2C_MIER_TDIE, 0);
+
+  /* Disable DMA */
+
+  s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MDER_OFFSET, LPI2C_MDER_TDDE |
+                                                       LPI2C_MDER_RDDE, 0);
+
+  /* Turn off auto_stop option */
+
+  s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MCFGR1_OFFSET, 0,
+                          LPI2C_MCFGR1_IGNACK | LPI2C_MCFGR1_AUTOSTOP);
+
+  /* Form chains of tcd to process the messages */
+
+  for (m = 0; m < priv->msgc; m++)
+    {
+      ncmds = 0;
+      priv->flags = priv->msgv[m].flags;
+
+      /* Form a command list */
+
+      ccmnd = &priv->cmnds[ntotcmds];
+
+      ncmds = s32k1xx_lpi2c_form_command_list(priv, &priv->msgv[m],
+                                              ntotcmds);
+
+      /* Have commands for this message ? */
+
+      if (ncmds != 0)
+        {
+          /* Build up a TCD with the command from this message */
+
+          s32k1xx_lpi2c_dma_command_configure(priv, ccmnd, ncmds - ntotcmds);
+
+          ntotcmds += ncmds;
+
+          DEBUGASSERT(ntotcmds < CONFIG_S32K1XX_LPI2C_DMA_MAXMSG);
+
+          s32k1xx_lpi2c_dma_data_configure(priv, &priv->msgv[m]);
+        }
+    }
+
+  s32k1xx_lpi2c_putreg(priv, S32K1XX_LPI2C_MIER_OFFSET,
+                     LPI2C_MIER_NDIE | LPI2C_MIER_ALIE |
+                     LPI2C_MIER_PLTIE | LPI2C_MIER_FEIE);
+
+  s32k1xx_dmach_start(priv->rxdma, s32k1xx_rxdma_callback, (void *)priv);
+  s32k1xx_dmach_start(priv->txdma, s32k1xx_txdma_callback, (void *)priv);
+
+  s32k1xx_lpi2c_modifyreg(priv, S32K1XX_LPI2C_MDER_OFFSET, 0,
+                          LPI2C_MDER_TDDE | LPI2C_MDER_RDDE);
+  return OK;
+}
+#endif
+
+/****************************************************************************
  * Name: s32k1xx_lpi2c_transfer
  *
  * Description:
@@ -1539,10 +1949,10 @@ static int s32k1xx_lpi2c_deinit(FAR struct s32k1xx_lpi2c_priv_s *priv)
  *
  ****************************************************************************/
 
-static int s32k1xx_lpi2c_transfer(FAR struct i2c_master_s *dev,
-                                FAR struct i2c_msg_s *msgs, int count)
+static int s32k1xx_lpi2c_transfer(struct i2c_master_s *dev,
+                                  struct i2c_msg_s *msgs, int count)
 {
-  FAR struct s32k1xx_lpi2c_priv_s *priv = (struct s32k1xx_lpi2c_priv_s *)dev;
+  struct s32k1xx_lpi2c_priv_s *priv = (struct s32k1xx_lpi2c_priv_s *)dev;
   int ret;
 
   DEBUGASSERT(count > 0);
@@ -1572,7 +1982,7 @@ static int s32k1xx_lpi2c_transfer(FAR struct i2c_master_s *dev,
   priv->msgc  = count;
   priv->flags = msgs->flags;
 
-  i2cinfo("Flags %x, len %d \n", msgs->flags, msgs->length);
+  i2cinfo("Flags %x, len %d\n", msgs->flags, msgs->length);
 
   /* Reset I2C trace logic */
 
@@ -1584,12 +1994,31 @@ static int s32k1xx_lpi2c_transfer(FAR struct i2c_master_s *dev,
 
   priv->status = 0;
 
-  /* Wait for an ISR, if there was a timeout, fetch latest status to get
+  /* Wait for ISR. If there was a timeout, fetch latest status to get
    * the BUSY flag.
    */
 
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+  if (priv->rxdma || priv->txdma)
+    {
+      s32k1xx_lpi2c_dma_transfer(priv);
+    }
+#endif
+
   if (s32k1xx_lpi2c_sem_waitdone(priv) < 0)
     {
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+      if (priv->rxdma != NULL)
+        {
+          s32k1xx_dmach_stop(priv->rxdma);
+        }
+
+      if (priv->txdma != NULL)
+        {
+          s32k1xx_dmach_stop(priv->txdma);
+        }
+
+#endif
       ret = -ETIMEDOUT;
 
       i2cerr("ERROR: Timed out: MCR: status: 0x%" PRIx32 "\n", priv->status);
@@ -1654,10 +2083,9 @@ static int s32k1xx_lpi2c_transfer(FAR struct i2c_master_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_I2C_RESET
-static int s32k1xx_lpi2c_reset(FAR struct i2c_master_s *dev)
+static int s32k1xx_lpi2c_reset(struct i2c_master_s *dev)
 {
-  FAR struct s32k1xx_lpi2c_priv_s *priv =
-    (FAR struct s32k1xx_lpi2c_priv_s *)dev;
+  struct s32k1xx_lpi2c_priv_s *priv = (struct s32k1xx_lpi2c_priv_s *)dev;
   unsigned int clock_count;
   unsigned int stretch_count;
   uint32_t scl_gpio;
@@ -1699,12 +2127,12 @@ static int s32k1xx_lpi2c_reset(FAR struct i2c_master_s *dev)
 
   /* Let SDA go high */
 
-  s32k1xx_gpio_write(sda_gpio, 1);
+  s32k1xx_gpiowrite(sda_gpio, 1);
 
   /* Clock the bus until any slaves currently driving it let it go. */
 
   clock_count = 0;
-  while (!s32k1xx_gpio_read(sda_gpio))
+  while (!s32k1xx_gpioread(sda_gpio))
     {
       /* Give up if we have tried too hard */
 
@@ -1719,7 +2147,7 @@ static int s32k1xx_lpi2c_reset(FAR struct i2c_master_s *dev)
        */
 
       stretch_count = 0;
-      while (!s32k1xx_gpio_read(scl_gpio))
+      while (!s32k1xx_gpioread(scl_gpio))
         {
           /* Give up if we have tried too hard */
 
@@ -1733,12 +2161,12 @@ static int s32k1xx_lpi2c_reset(FAR struct i2c_master_s *dev)
 
       /* Drive SCL low */
 
-      s32k1xx_gpio_write(scl_gpio, 0);
+      s32k1xx_gpiowrite(scl_gpio, 0);
       up_udelay(10);
 
       /* Drive SCL high again */
 
-      s32k1xx_gpio_write(scl_gpio, 1);
+      s32k1xx_gpiowrite(scl_gpio, 1);
       up_udelay(10);
     }
 
@@ -1746,13 +2174,13 @@ static int s32k1xx_lpi2c_reset(FAR struct i2c_master_s *dev)
    * state machines.
    */
 
-  s32k1xx_gpio_write(sda_gpio, 0);
+  s32k1xx_gpiowrite(sda_gpio, 0);
   up_udelay(10);
-  s32k1xx_gpio_write(scl_gpio, 0);
+  s32k1xx_gpiowrite(scl_gpio, 0);
   up_udelay(10);
-  s32k1xx_gpio_write(scl_gpio, 1);
+  s32k1xx_gpiowrite(scl_gpio, 1);
   up_udelay(10);
-  s32k1xx_gpio_write(sda_gpio, 1);
+  s32k1xx_gpiowrite(sda_gpio, 1);
   up_udelay(10);
 
   /* Revert the GPIO configuration. */
@@ -1793,7 +2221,7 @@ out:
  *
  ****************************************************************************/
 
-FAR struct i2c_master_s *s32k1xx_i2cbus_initialize(int port)
+struct i2c_master_s *s32k1xx_i2cbus_initialize(int port)
 {
   struct s32k1xx_lpi2c_priv_s * priv = NULL;
   irqstate_t flags;
@@ -1819,7 +2247,7 @@ FAR struct i2c_master_s *s32k1xx_i2cbus_initialize(int port)
     }
 
   /* Initialize private data for the first time, increment reference count,
-   * power-up hardware and configure GPIOs.
+   * power-up hardware and configure pins.
    */
 
   flags = enter_critical_section();
@@ -1828,6 +2256,22 @@ FAR struct i2c_master_s *s32k1xx_i2cbus_initialize(int port)
     {
       s32k1xx_lpi2c_sem_init(priv);
       s32k1xx_lpi2c_init(priv);
+
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+      if (priv->config->dma_txreqsrc != 0)
+        {
+          priv->txdma = s32k1xx_dmach_alloc(priv->config->dma_txreqsrc |
+                                        DMAMUX_CHCFG_ENBL, 0);
+          DEBUGASSERT(priv->txdma != NULL);
+        }
+
+      if (priv->config->dma_rxreqsrc != 0)
+        {
+          priv->rxdma = s32k1xx_dmach_alloc(priv->config->dma_rxreqsrc |
+                                        DMAMUX_CHCFG_ENBL, 0);
+          DEBUGASSERT(priv->rxdma != NULL);
+        }
+#endif
     }
 
   leave_critical_section(flags);
@@ -1843,9 +2287,9 @@ FAR struct i2c_master_s *s32k1xx_i2cbus_initialize(int port)
  *
  ****************************************************************************/
 
-int s32k1xx_i2cbus_uninitialize(FAR struct i2c_master_s *dev)
+int s32k1xx_i2cbus_uninitialize(struct i2c_master_s *dev)
 {
-  FAR struct s32k1xx_lpi2c_priv_s *priv = (struct s32k1xx_lpi2c_priv_s *)dev;
+  struct s32k1xx_lpi2c_priv_s *priv = (struct s32k1xx_lpi2c_priv_s *)dev;
   irqstate_t flags;
 
   DEBUGASSERT(dev);
@@ -1868,6 +2312,22 @@ int s32k1xx_i2cbus_uninitialize(FAR struct i2c_master_s *dev)
   leave_critical_section(flags);
 
   /* Disable power and other HW resource (GPIO's) */
+
+#ifdef CONFIG_S32K1XX_LPI2C_DMA
+  if (priv->rxdma != NULL)
+    {
+      s32k1xx_dmach_stop(priv->rxdma);
+      s32k1xx_dmach_free(priv->rxdma);
+      priv->rxdma = NULL;
+    }
+
+  if (priv->txdma != NULL)
+    {
+      s32k1xx_dmach_stop(priv->txdma);
+      s32k1xx_dmach_free(priv->txdma);
+      priv->txdma = NULL;
+    }
+#endif
 
   s32k1xx_lpi2c_deinit(priv);
 

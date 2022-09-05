@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __INCLUDE_NUTTX_LCD_H
-#define __INCLUDE_NUTTX_LCD_H
+#ifndef __INCLUDE_NUTTX_LCD_LCD_H
+#define __INCLUDE_NUTTX_LCD_LCD_H
 
 /****************************************************************************
  * Included Files
@@ -45,6 +45,8 @@
  * Type Definitions
  ****************************************************************************/
 
+struct lcd_dev_s;
+
 /* This structure describes one color plane.  Some YUV formats may support
  * up to 4 planes (although they probably wouldn't be used on LCD hardware).
  * The framebuffer driver provides the video memory address in its
@@ -58,6 +60,7 @@ struct lcd_planeinfo_s
 
   /* This method can be used to write a partial raster line to the LCD:
    *
+   *  dev     - LCD interface to write to
    *  row     - Starting row to write to (range: 0 <= row < yres)
    *  col     - Starting column to write to (range: 0 <= col <= xres-npixels)
    *  buffer  - The buffer containing the run to be written to the LCD
@@ -65,29 +68,36 @@ struct lcd_planeinfo_s
    *            (range: 0 < npixels <= xres-col)
    */
 
-  int (*putrun)(fb_coord_t row, fb_coord_t col, FAR const uint8_t *buffer,
-                size_t npixels);
+  int (*putrun)(FAR struct lcd_dev_s *dev, fb_coord_t row, fb_coord_t col,
+                FAR const uint8_t *buffer, size_t npixels);
 
   /* This method can be used to write a rectangular area to the LCD:
    *
+   *  dev       - LCD interface to write to
    *  row_start - Starting row to write to (range: 0 <= row < yres)
    *  row_end   - Ending row to write to (range: row_start <= row < yres)
    *  col_start - Starting column to write to (range: 0 <= col <= xres)
    *  col_end   - Ending column to write to
    *              (range: col_start <= col_end < xres)
    *  buffer    - The buffer containing the area to be written to the LCD
+   *  stride    - Length of a line in bytes. This parameter may be necessary
+   *              to allow the LCD driver to calculate the offset for partial
+   *              writes when the buffer needs to be splited for row-by-row
+   *              writing.
    *
    * NOTE: this operation may not be supported by the device, in which case
    * the callback pointer will be NULL. In that case, putrun() should be
    * used.
    */
 
-  int (*putarea)(fb_coord_t row_start, fb_coord_t row_end,
-                 fb_coord_t col_start, fb_coord_t col_end,
-                 FAR const uint8_t *buffer);
+  int (*putarea)(FAR struct lcd_dev_s *dev, fb_coord_t row_start,
+                 fb_coord_t row_end, fb_coord_t col_start,
+                 fb_coord_t col_end, FAR const uint8_t *buffer,
+                 fb_coord_t stride);
 
   /* This method can be used to read a partial raster line from the LCD:
    *
+   *  dev     - LCD interface to read from
    *  row     - Starting row to read from (range: 0 <= row < yres)
    *  col     - Starting column to read read
    *            (range: 0 <= col <= xres-npixels)
@@ -96,26 +106,44 @@ struct lcd_planeinfo_s
    *            (range: 0 < npixels <= xres-col)
    */
 
-  int (*getrun)(fb_coord_t row, fb_coord_t col, FAR uint8_t *buffer,
-                size_t npixels);
+  int (*getrun)(FAR struct lcd_dev_s *dev, fb_coord_t row,
+                fb_coord_t col, FAR uint8_t *buffer, size_t npixels);
 
   /* This method can be used to read a rectangular area from the LCD:
    *
+   *  dev       - LCD interface to read from
    *  row_start - Starting row to read from (range: 0 <= row < yres)
    *  row_end   - Ending row to read from (range: row_start <= row < yres)
    *  col_start - Starting column to read from (range: 0 <= col <= xres)
    *  col_end   - Ending column to read from
    *              (range: col_start <= col_end < xres)
    *  buffer    - The buffer where the data will be written
+   *  stride    - Length of a line in bytes.
    *
    * NOTE: this operation may not be supported by the device, in which case
    * the callback pointer will be NULL. In that case, getrun() should be
    * used.
    */
 
-  int (*getarea)(fb_coord_t row_start, fb_coord_t row_end,
-                 fb_coord_t col_start, fb_coord_t col_end,
-                 FAR uint8_t *buffer);
+  int (*getarea)(FAR struct lcd_dev_s *dev, fb_coord_t row_start,
+                 fb_coord_t row_end, fb_coord_t col_start,
+                 fb_coord_t col_end, FAR uint8_t *buffer,
+                 fb_coord_t stride);
+
+  /* This method can be used to redraw display's content.
+   *
+   *  dev       - LCD interface to redraw its memory content
+   *
+   * NOTE: In case of non e-ink dispalys redrawing is cheap and can be done
+   * after each memory modification. Redrawing e-ink display is time and
+   * energy consuming.
+   * In order to avoid such operation (time and energy consumption) we can
+   * implement callback function putrun without redrawing the screen.
+   * Function putrun is called many times unless the function putarea is
+   * implemented.
+   */
+
+  int (*redraw)(FAR struct lcd_dev_s *dev);
 
   /* Plane color characteristics ********************************************/
 
@@ -131,7 +159,7 @@ struct lcd_planeinfo_s
    * buffers.
    */
 
-  uint8_t *buffer;
+  FAR uint8_t *buffer;
 
   /* This is the number of bits in one pixel.  This may be one of {1, 2, 4,
    * 8, 16, 24, or 32} unless support for one or more of those resolutions
@@ -139,6 +167,12 @@ struct lcd_planeinfo_s
    */
 
   uint8_t  bpp;
+
+  /* This is the LCD interface corresponding to which this color plane
+   * belongs.
+   */
+
+  FAR struct lcd_dev_s *dev;
 };
 
 /* This structure defines an LCD interface */
@@ -204,6 +238,14 @@ struct lcd_dev_s
   /* Set LCD panel contrast (0-CONFIG_LCD_MAXCONTRAST) */
 
   int (*setcontrast)(struct lcd_dev_s *dev, unsigned int contrast);
+
+  /* Set LCD panel frame rate (0: disable refresh) */
+
+  int (*setframerate)(struct lcd_dev_s *dev, int rate);
+
+  /* Get LCD panel frame rate (0: disable refresh) */
+
+  int (*getframerate)(struct lcd_dev_s *dev);
 };
 
 /****************************************************************************
@@ -223,4 +265,4 @@ extern "C"
 }
 #endif
 
-#endif /* __INCLUDE_NUTTX_LCD_H */
+#endif /* __INCLUDE_NUTTX_LCD_LCD_H */

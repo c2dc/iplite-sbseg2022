@@ -78,7 +78,7 @@ Configurations
 
   jumbo:
 
-    This configuration enables many Apache Nuttx features.  This is
+    This configuration enables many Apache NuttX features.  This is
     mostly to help provide additional code coverage in CI, but also
     allows for a users to see a wide range of features that are
     supported by the OS.
@@ -92,13 +92,14 @@ Configurations
        - Syslog with process name, priority, and timestamp
        - Process Snapshot with stack usage, cpu usage, and signal information
        - Interrupt Statistics
+       - procfs filesystem (required for ifconfig, ifup/ifdown)
 
       Networking:
        - IPv4 Networking
        - Ethernet
        - DHCP Client
        - iperf
-       - telnet deamon
+       - telnet daemon
 
       File Systems:
        - FAT filesystem
@@ -237,8 +238,6 @@ nsh> cat /mnt/sda/afile
 This will stay on the USB drive
 nsh> 
 ```
-
-
 
 ```
 ❯ telnet 192.168.86.249

@@ -38,7 +38,6 @@
 
 #include <arch/board/board.h>
 
-#include "up_arch.h"
 #include "sched/sched.h"
 #include "up_internal.h"
 
@@ -61,24 +60,28 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Name: up_stackdump
+ * Name: x86_64_stackdump
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_STACKDUMP
-static void up_stackdump(uint64_t sp, uint64_t stack_base)
+static void x86_64_stackdump(uint64_t sp, uint64_t stack_top)
 {
-  uint64_t stack ;
+  uint64_t stack;
 
-  for (stack = sp & ~0x1f; stack < stack_base; stack += 32)
+  /* Flush any buffered SYSLOG data to avoid overwrite */
+
+  syslog_flush();
+
+  for (stack = sp & ~0x1f; stack < (stack_top & ~0x1f); stack += 32)
     {
       uint32_t *ptr = (uint32_t *)stack;
-      _alert("%08x: %08x %08x %08x %08x %08x %08x %08x %08x\n",
-            stack, ptr[0], ptr[1], ptr[2], ptr[3],
-            ptr[4], ptr[5], ptr[6], ptr[7]);
+      _alert("%016" PRIx64 ": %08" PRIx32 " %08" PRIx32 " %08" PRIx32
+             " %08" PRIx32 " %08" PRIx32 " %08" PRIx32 " %08" PRIx32
+             " %08" PRIx32 "\n",
+             stack, ptr[0], ptr[1], ptr[2], ptr[3],
+             ptr[4], ptr[5], ptr[6], ptr[7]);
     }
 }
-#else
-# define up_stackdump()
 #endif
 
 /****************************************************************************
@@ -86,7 +89,7 @@ static void up_stackdump(uint64_t sp, uint64_t stack_base)
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_USBDUMP
-static int usbtrace_syslog(FAR const char *fmt, ...)
+static int usbtrace_syslog(const char *fmt, ...)
 {
   va_list ap;
 
@@ -98,7 +101,7 @@ static int usbtrace_syslog(FAR const char *fmt, ...)
   return OK;
 }
 
-static int assert_tracecallback(FAR struct usbtrace_s *trace, FAR void *arg)
+static int assert_tracecallback(struct usbtrace_s *trace, void *arg)
 {
   usbtrace_trprintf(usbtrace_syslog, trace->event, trace->value);
   return 0;
@@ -112,8 +115,8 @@ static int assert_tracecallback(FAR struct usbtrace_s *trace, FAR void *arg)
 #ifdef CONFIG_ARCH_STACKDUMP
 static void up_dumpstate(void)
 {
-  struct tcb_s *rtcb = this_task();
-  uint64_t sp = x64_getsp();
+  struct tcb_s *rtcb = running_task();
+  uint64_t sp = up_getsp();
   uint64_t ustackbase;
   uint64_t ustacksize;
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
@@ -123,64 +126,68 @@ static void up_dumpstate(void)
 
   /* Get the limits on the user stack memory */
 
-  ustackbase = (uint64_t)rtcb->adj_stack_ptr;
+  ustackbase = (uint64_t)rtcb->stack_base_ptr;
   ustacksize = (uint64_t)rtcb->adj_stack_size;
 
   /* Get the limits on the interrupt stack memory */
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
-  istackbase = (uint64_t)&g_intstackbase;
-  istacksize = (CONFIG_ARCH_INTERRUPTSTACK & ~3) - 8;
+  istackbase = (uint64_t)&g_intstackalloc;
+  istacksize = (CONFIG_ARCH_INTERRUPTSTACK & ~3);
 
   /* Show interrupt stack info */
 
-  _alert("sp:     %016x\n", sp);
+  _alert("sp:     %016" PRIx64 "\n", sp);
   _alert("IRQ stack:\n");
-  _alert("  base: %016x\n", istackbase);
-  _alert("  size: %016x\n", istacksize);
+  _alert("  base: %016" PRIx64 "\n", istackbase);
+  _alert("  size: %016" PRIx64 "\n", istacksize);
 
   /* Does the current stack pointer lie within the interrupt
    * stack?
    */
 
-  if (sp <= istackbase && sp > istackbase - istacksize)
+  if (sp >= istackbase && sp < istackbase + istacksize)
     {
       /* Yes.. dump the interrupt stack */
 
-      up_stackdump(sp, istackbase);
+      x86_64_stackdump(sp, istackbase + istacksize);
 
       /* Extract the user stack pointer which should lie
        * at the base of the interrupt stack.
        */
 
-      sp = g_intstackbase;
-      _alert("sp:     %016x\n", sp);
+      sp = g_intstacktop;
+      _alert("sp:     %016" PRIx64 "\n", sp);
+    }
+  else if (g_current_regs)
+    {
+      _alert("ERROR: Stack pointer is not within the interrupt stack\n");
+      x86_64_stackdump(istackbase, istackbase + istacksize);
     }
 
   /* Show user stack info */
 
   _alert("User stack:\n");
-  _alert("  base: %016x\n", ustackbase);
-  _alert("  size: %016x\n", ustacksize);
+  _alert("  base: %016" PRIx64 "\n", ustackbase);
+  _alert("  size: %016" PRIx64 "\n", ustacksize);
 #else
-  _alert("sp:         %016x\n", sp);
-  _alert("stack base: %016x\n", ustackbase);
-  _alert("stack size: %016x\n", ustacksize);
+  _alert("sp:         %016" PRIx64 "\n", sp);
+  _alert("stack base: %016" PRIx64 "\n", ustackbase);
+  _alert("stack size: %016" PRIx64 "\n", ustacksize);
 #endif
 
   /* Dump the user stack if the stack pointer lies within the allocated user
    * stack memory.
    */
 
-  if (sp > ustackbase || sp <= ustackbase - ustacksize)
+  if (sp >= ustackbase && sp < ustackbase + ustacksize)
     {
-#if !defined(CONFIG_ARCH_INTERRUPTSTACK) || CONFIG_ARCH_INTERRUPTSTACK < 4
-      _alert("ERROR: Stack pointer is not within allocated stack\n");
-#endif
+      x86_64_stackdump(sp, ustackbase + ustacksize);
     }
   else
     {
-      up_stackdump(sp, ustackbase);
+      _alert("ERROR: Stack pointer is not within allocated stack\n");
+      x86_64_stackdump(ustackbase, ustackbase + ustacksize);
     }
 
   /* Then dump the registers (if available) */
@@ -193,7 +200,7 @@ static void up_dumpstate(void)
 #ifdef CONFIG_ARCH_USBDUMP
   /* Dump USB trace data */
 
-  (void)usbtrace_enumerate(assert_tracecallback, NULL);
+  usbtrace_enumerate(assert_tracecallback, NULL);
 #endif
 }
 #else
@@ -206,16 +213,21 @@ static void up_dumpstate(void)
 
 static void _up_assert(void)
 {
+  /* Flush any buffered SYSLOG data */
+
+  syslog_flush();
+
   /* Are we in an interrupt handler or the idle task? */
 
   if (g_current_regs || (running_task())->flink == NULL)
     {
-      (void)up_irq_save();
+#if CONFIG_BOARD_RESET_ON_ASSERT >= 1
+      board_reset(CONFIG_BOARD_ASSERT_RESET_VALUE);
+#endif
+
+      up_irq_save();
       for (; ; )
         {
-#if CONFIG_BOARD_RESET_ON_ASSERT >= 1
-          board_reset(CONFIG_BOARD_ASSERT_RESET_VALUE);
-#endif
 #ifdef CONFIG_ARCH_LEDS
           board_autoled_on(LED_PANIC);
           up_mdelay(250);
@@ -244,24 +256,28 @@ static void _up_assert(void)
 
 void up_assert(const char *filename, int lineno)
 {
-#if CONFIG_TASK_NAME_SIZE > 0 && defined(CONFIG_DEBUG_ALERT)
-  struct tcb_s *rtcb = this_task();
-#endif
-
   board_autoled_on(LED_ASSERTION);
 
-#if CONFIG_TASK_NAME_SIZE > 0 && defined(CONFIG_DEBUG_ALERT)
+  /* Flush any buffered SYSLOG data (from prior to the assertion) */
+
+  syslog_flush();
+
+#if CONFIG_TASK_NAME_SIZE > 0
   _alert("Assertion failed at file:%s line: %d task: %s\n",
-        filename, lineno, rtcb->name);
+         filename, lineno, running_task()->name);
 #else
   _alert("Assertion failed at file:%s line: %d\n",
-        filename, lineno);
+         filename, lineno);
 #endif
 
   up_dumpstate();
 
+  /* Flush any buffered SYSLOG data (from the above) */
+
+  syslog_flush();
+
 #ifdef CONFIG_BOARD_CRASHDUMP
-  board_crashdump(x64_getsp(), this_task(), filename, lineno);
+  board_crashdump(up_getsp(), this_task(), filename, lineno);
 #endif
 
   _up_assert();

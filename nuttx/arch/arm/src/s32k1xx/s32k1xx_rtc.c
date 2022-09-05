@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -37,8 +38,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "hardware/s32k1xx_rtc.h"
 #include "s32k1xx_periphclocks.h"
 #include "s32k1xx_rtc.h"
@@ -233,7 +233,7 @@ time_t up_rtc_time(void)
  ****************************************************************************/
 
 #ifdef CONFIG_RTC_HIRES
-int up_rtc_gettime(FAR struct timespec *tp)
+int up_rtc_gettime(struct timespec *tp)
 {
   irqstate_t flags;
   uint32_t seconds;
@@ -279,7 +279,7 @@ int up_rtc_gettime(FAR struct timespec *tp)
  *
  ****************************************************************************/
 
-int up_rtc_settime(FAR const struct timespec *ts)
+int up_rtc_settime(const struct timespec *ts)
 {
   DEBUGASSERT(ts != NULL);
 

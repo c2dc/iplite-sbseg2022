@@ -31,10 +31,13 @@
 #include <errno.h>
 #include <debug.h>
 
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <nuttx/net/net.h>
 #include <nuttx/net/usrsock.h>
-
+#ifdef CONFIG_NETDEV_WIRELESS_IOCTL
+#  include <nuttx/wireless/wireless.h>
+#endif
 #include "socket/socket.h"
 #include "usrsock/usrsock.h"
 
@@ -43,11 +46,10 @@
  ****************************************************************************/
 
 static uint16_t ioctl_event(FAR struct net_driver_s *dev,
-                                  FAR void *pvconn,
-                                  FAR void *pvpriv, uint16_t flags)
+                            FAR void *pvpriv, uint16_t flags)
 {
   FAR struct usrsock_data_reqstate_s *pstate = pvpriv;
-  FAR struct usrsock_conn_s *conn = pvconn;
+  FAR struct usrsock_conn_s *conn = pstate->reqstate.conn;
 
   if (flags & USRSOCK_EVENT_ABORT)
     {
@@ -107,7 +109,9 @@ static int do_ioctl_request(FAR struct usrsock_conn_s *conn, int cmd,
   {
   };
 
-  struct iovec bufs[2];
+  struct iovec bufs[3] =
+  {
+  };
 
   if (arglen > UINT16_MAX)
     {
@@ -125,6 +129,15 @@ static int do_ioctl_request(FAR struct usrsock_conn_s *conn, int cmd,
   bufs[0].iov_len = sizeof(req);
   bufs[1].iov_base = (FAR void *)arg;
   bufs[1].iov_len = req.arglen;
+
+#ifdef CONFIG_NETDEV_WIRELESS_IOCTL
+  if (WL_IS80211POINTERCMD(cmd))
+    {
+      FAR struct iwreq *wlreq = arg;
+      bufs[2].iov_base = wlreq->u.data.pointer;
+      bufs[2].iov_len = wlreq->u.data.length;
+    }
+#endif
 
   return usrsockdev_do_request(conn, bufs, ARRAY_SIZE(bufs));
 }
@@ -155,8 +168,20 @@ int usrsock_ioctl(FAR struct socket *psock, int cmd, FAR void *arg,
   {
   };
 
-  struct iovec inbufs[1];
+  struct iovec inbufs[2] =
+  {
+  };
+
   int ret;
+
+  /* Bypass FIONBIO to socket level,
+   * since the usrsock server always put the socket in nonblocking mode.
+   */
+
+  if (cmd == FIONBIO)
+    {
+      return -ENOTTY;
+    }
 
   net_lock();
 
@@ -186,6 +211,16 @@ int usrsock_ioctl(FAR struct socket *psock, int cmd, FAR void *arg,
 
   inbufs[0].iov_base = arg;
   inbufs[0].iov_len = arglen;
+
+#ifdef CONFIG_NETDEV_WIRELESS_IOCTL
+  if (WL_IS80211POINTERCMD(cmd))
+    {
+      FAR struct iwreq *wlreq = arg;
+      inbufs[1].iov_base = wlreq->u.data.pointer;
+      inbufs[1].iov_len = wlreq->u.data.length;
+    }
+#endif
+
   usrsock_setup_datain(conn, inbufs, ARRAY_SIZE(inbufs));
 
   /* Request user-space daemon to handle ioctl. */

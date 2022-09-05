@@ -31,8 +31,7 @@
 #include "chip.h"
 #include "kl_gpio.h"
 #include "hardware/kl_pinmux.h"
-
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "teensy-lc.h"
 
 /****************************************************************************
@@ -122,7 +121,7 @@ void board_late_initialize(void)
    * user-space but the initialization function must run in kernel space.
    */
 
-#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_LIB_BOARDCTL)
+#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_BOARDCTL)
   board_app_initialize(0);
 #endif
 }

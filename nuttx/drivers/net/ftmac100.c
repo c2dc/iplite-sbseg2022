@@ -1,36 +1,20 @@
 /****************************************************************************
  * drivers/net/ftmac100.c
- * Faraday FTMAC100 Ethernet MAC Driver
  *
- *   Copyright (C) 2015 Anton D. Kachalov. All rights reserved.
- *   Author: Anton D. Kachalov <mouse@yandex.ru>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -49,10 +33,10 @@
 #include <errno.h>
 #include <assert.h>
 #include <debug.h>
-#include <crc32.h>
 
 #include <arpa/inet.h>
 
+#include <nuttx/crc32.h>
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
 #include <nuttx/kmalloc.h>
@@ -97,21 +81,19 @@
 # define CONFIG_FTMAC100_NINTERFACES 1
 #endif
 
-/* TX poll delay = 1 seconds. CLK_TCK is the number of clock ticks per
- * second.
- */
-
-#define FTMAC100_WDDELAY   (1*CLK_TCK)
-
 /* TX timeout = 1 minute */
 
 #define FTMAC100_TXTIMEOUT (60*CLK_TCK)
+
+/* Packet buffer size */
+
+#define PKTBUF_SIZE (MAX_NETDEV_PKTSIZE + CONFIG_NET_GUARDSIZE)
 
 /* This is a helper pointer for accessing the contents of the Ethernet
  * header.
  */
 
-#define BUF ((struct eth_hdr_s *)priv->ft_dev.d_buf)
+#define BUF ((FAR struct eth_hdr_s *)priv->ft_dev.d_buf)
 
 /* RX/TX buffer alignment */
 
@@ -177,7 +159,6 @@ struct ftmac100_driver_s
   /* NuttX net data */
 
   bool ft_bifup;               /* true:ifup false:ifdown */
-  struct wdog_s ft_txpoll;     /* TX poll timer */
   struct wdog_s ft_txtimeout;  /* TX timeout timer */
   unsigned int status;         /* Last ISR status */
   struct work_s ft_irqwork;    /* For deferring work to the work queue */
@@ -194,12 +175,13 @@ struct ftmac100_driver_s
 
 /* A single packet buffer is used */
 
-static uint8_t g_pktbuf[MAX_NETDEV_PKTSIZE + CONFIG_NET_GUARDSIZE];
+static uint16_t g_pktbuf[CONFIG_FTMAC100_NINTERFACES]
+                        [(PKTBUF_SIZE + 1) / 2];
 
 /* Driver state structure. */
 
 static struct ftmac100_driver_s g_ftmac100[CONFIG_FTMAC100_NINTERFACES]
-  __attribute__((aligned(16)));
+  aligned_data(16);
 
 /****************************************************************************
  * Private Function Prototypes
@@ -223,9 +205,6 @@ static int  ftmac100_interrupt(int irq, FAR void *context, FAR void *arg);
 
 static void ftmac100_txtimeout_work(FAR void *arg);
 static void ftmac100_txtimeout_expiry(wdparm_t arg);
-
-static void ftmac100_poll_work(FAR void *arg);
-static void ftmac100_poll_expiry(wdparm_t arg);
 
 /* NuttX callback functions */
 
@@ -783,7 +762,7 @@ static void ftmac100_receive(FAR struct ftmac100_driver_s *priv)
       else
 #endif
 #ifdef CONFIG_NET_ARP
-      if (BUF->type == htons(ETHTYPE_ARP))
+      if (BUF->type == HTONS(ETHTYPE_ARP))
         {
           arp_arpin(&priv->ft_dev);
 
@@ -1106,75 +1085,6 @@ static void ftmac100_txtimeout_expiry(wdparm_t arg)
 }
 
 /****************************************************************************
- * Name: ftmac100_poll_work
- *
- * Description:
- *   Perform periodic polling from the worker thread
- *
- * Input Parameters:
- *   arg - The argument passed when work_queue() as called.
- *
- * Returned Value:
- *   OK on success
- *
- * Assumptions:
- *   Ethernet interrupts are disabled
- *
- ****************************************************************************/
-
-static void ftmac100_poll_work(FAR void *arg)
-{
-  FAR struct ftmac100_driver_s *priv = (FAR struct ftmac100_driver_s *)arg;
-
-  /* Perform the poll */
-
-  net_lock();
-
-  /* Check if there is room in the send another TX packet.  We cannot perform
-   * the TX poll if he are unable to accept another packet for transmission.
-   */
-
-  /* If so, update TCP timing states and poll the network for new XMIT data.
-   * Hmmm.. might be bug here.  Does this mean if there is a transmit in
-   * progress, we will missing TCP time state updates?
-   */
-
-  devif_timer(&priv->ft_dev, FTMAC100_WDDELAY, ftmac100_txpoll);
-
-  /* Setup the watchdog poll timer again */
-
-  wd_start(&priv->ft_txpoll, FTMAC100_WDDELAY,
-           ftmac100_poll_expiry, (wdparm_t)priv);
-  net_unlock();
-}
-
-/****************************************************************************
- * Name: ftmac100_poll_expiry
- *
- * Description:
- *   Periodic timer handler.  Called from the timer interrupt handler.
- *
- * Input Parameters:
- *   arg  - The argument
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   Global interrupts are disabled by the watchdog logic.
- *
- ****************************************************************************/
-
-static void ftmac100_poll_expiry(wdparm_t arg)
-{
-  FAR struct ftmac100_driver_s *priv = (FAR struct ftmac100_driver_s *)arg;
-
-  /* Schedule to perform the interrupt processing on the worker thread. */
-
-  work_queue(FTMAWORK, &priv->ft_pollwork, ftmac100_poll_work, priv, 0);
-}
-
-/****************************************************************************
  * Name: ftmac100_ifup
  *
  * Description:
@@ -1226,11 +1136,6 @@ static int ftmac100_ifup(struct net_driver_s *dev)
   ftmac100_ipv6multicast(priv);
 #endif
 
-  /* Set and activate a timer process */
-
-  wd_start(&priv->ft_txpoll, FTMAC100_WDDELAY,
-           ftmac100_poll_expiry, (wdparm_t)priv);
-
   /* Enable the Ethernet interrupt */
 
   priv->ft_bifup = true;
@@ -1267,9 +1172,8 @@ static int ftmac100_ifdown(struct net_driver_s *dev)
   flags = enter_critical_section();
   up_disable_irq(CONFIG_FTMAC100_IRQ);
 
-  /* Cancel the TX poll timer and TX timeout timers */
+  /* Cancel the TX timeout timers */
 
-  wd_cancel(&priv->ft_txpoll);
   wd_cancel(&priv->ft_txtimeout);
 
   /* Put the EMAC in its reset, non-operational state.  This should be
@@ -1321,7 +1225,7 @@ static void ftmac100_txavail_work(FAR void *arg)
 
       /* If so, then poll the network for new XMIT data */
 
-      devif_timer(&priv->ft_dev, 0, ftmac100_txpoll);
+      devif_poll(&priv->ft_dev, ftmac100_txpoll);
     }
 
   net_unlock();
@@ -1589,15 +1493,15 @@ int ftmac100_initialize(int intf)
   /* Initialize the driver structure */
 
   memset(priv, 0, sizeof(struct ftmac100_driver_s));
-  priv->ft_dev.d_buf     = g_pktbuf;          /* Single packet buffer */
-  priv->ft_dev.d_ifup    = ftmac100_ifup;     /* I/F up (new IP address) callback */
-  priv->ft_dev.d_ifdown  = ftmac100_ifdown;   /* I/F down callback */
-  priv->ft_dev.d_txavail = ftmac100_txavail;  /* New TX data callback */
+  priv->ft_dev.d_buf     = (FAR uint8_t *)g_pktbuf[intf]; /* Single packet buffer */
+  priv->ft_dev.d_ifup    = ftmac100_ifup;                 /* I/F up (new IP address) callback */
+  priv->ft_dev.d_ifdown  = ftmac100_ifdown;               /* I/F down callback */
+  priv->ft_dev.d_txavail = ftmac100_txavail;              /* New TX data callback */
 #ifdef CONFIG_NET_MCASTGROUP
-  priv->ft_dev.d_addmac  = ftmac100_addmac;   /* Add multicast MAC address */
-  priv->ft_dev.d_rmmac   = ftmac100_rmmac;    /* Remove multicast MAC address */
+  priv->ft_dev.d_addmac  = ftmac100_addmac;               /* Add multicast MAC address */
+  priv->ft_dev.d_rmmac   = ftmac100_rmmac;                /* Remove multicast MAC address */
 #endif
-  priv->ft_dev.d_private = g_ftmac100;        /* Used to recover private state from dev */
+  priv->ft_dev.d_private = g_ftmac100;                    /* Used to recover private state from dev */
   priv->iobase           = CONFIG_FTMAC100_BASE;
 
   /* Put the interface in the down state.  This usually amounts to resetting

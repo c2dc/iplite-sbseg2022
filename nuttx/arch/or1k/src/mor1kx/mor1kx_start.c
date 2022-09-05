@@ -42,8 +42,7 @@
  * 0x0000:0000 - Beginning of DRAM.
  */
 
-#define IDLE_STACK ((uint32_t)&_ebss+CONFIG_IDLETHREAD_STACKSIZE-4)
-#define HEAP_BASE  ((uint32_t)&_ebss+CONFIG_IDLETHREAD_STACKSIZE)
+#define IDLE_STACK ((uint32_t)&_ebss+CONFIG_IDLETHREAD_STACKSIZE)
 
 /****************************************************************************
  * Public Data
@@ -74,7 +73,7 @@ const uint32_t g_idle_topstack = IDLE_STACK;
  ****************************************************************************/
 
 /****************************************************************************
- * Name: _start
+ * Name: __start
  *
  * Description:
  *   This is the reset entry point.

@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -34,7 +35,6 @@
 
 #include "nvic.h"
 #include "ram_vectors.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "stm32l5.h"
 
@@ -132,56 +132,56 @@ static void stm32l5_dumpnvic(const char *msg, int irq)
  *       stm32l5_dbgmonitor, stm32l5_pendsv, stm32l5_reserved
  *
  * Description:
- *   Handlers for various execptions.  None are handled and all are fatal
- *   error conditions.  The only advantage these provided over the default
+ *   Handlers for various exceptions.  None are handled and all are fatal
+ *   error conditions.  The only advantage these provide over the default
  *   unexpected interrupt handler is that they provide a diagnostic output.
  *
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG_FEATURES
-static int stm32l5_nmi(int irq, FAR void *context, FAR void *arg)
+static int stm32l5_nmi(int irq, void *context, void *arg)
 {
-  (void)up_irq_save();
+  up_irq_save();
   _err("PANIC!!! NMI received\n");
   PANIC();
   return 0;
 }
 
-static int stm32l5_busfault(int irq, FAR void *context, FAR void *arg)
+static int stm32l5_busfault(int irq, void *context, void *arg)
 {
-  (void)up_irq_save();
+  up_irq_save();
   _err("PANIC!!! Bus fault received: %08x\n", getreg32(NVIC_CFAULTS));
   PANIC();
   return 0;
 }
 
-static int stm32l5_usagefault(int irq, FAR void *context, FAR void *arg)
+static int stm32l5_usagefault(int irq, void *context, void *arg)
 {
-  (void)up_irq_save();
+  up_irq_save();
   _err("PANIC!!! Usage fault received: %08x\n", getreg32(NVIC_CFAULTS));
   PANIC();
   return 0;
 }
 
-static int stm32l5_pendsv(int irq, FAR void *context, FAR void *arg)
+static int stm32l5_pendsv(int irq, void *context, void *arg)
 {
-  (void)up_irq_save();
+  up_irq_save();
   _err("PANIC!!! PendSV received\n");
   PANIC();
   return 0;
 }
 
-static int stm32l5_dbgmonitor(int irq, FAR void *context, FAR void *arg)
+static int stm32l5_dbgmonitor(int irq, void *context, void *arg)
 {
-  (void)up_irq_save();
+  up_irq_save();
   _err("PANIC!!! Debug Monitor received\n");
   PANIC();
   return 0;
 }
 
-static int stm32l5_reserved(int irq, FAR void *context, FAR void *arg)
+static int stm32l5_reserved(int irq, void *context, void *arg)
 {
-  (void)up_irq_save();
+  up_irq_save();
   _err("PANIC!!! Reserved interrupt\n");
   PANIC();
   return 0;

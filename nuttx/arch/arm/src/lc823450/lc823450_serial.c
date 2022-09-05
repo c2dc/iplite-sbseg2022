@@ -31,6 +31,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -39,13 +40,12 @@
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/serial/serial.h>
+#include <nuttx/spinlock.h>
 
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "lc823450_dma.h"
 #include "lc823450_serial.h"
 #include "lc823450_syscontrol.h"
@@ -171,6 +171,7 @@ struct up_dev_s
   sem_t rxpkt_wait;
   sem_t txdma_wait;
 #endif /* CONFIG_HSUART */
+  spinlock_t lock;
 };
 
 /****************************************************************************
@@ -181,7 +182,7 @@ static int  up_setup(struct uart_dev_s *dev);
 static void up_shutdown(struct uart_dev_s *dev);
 static int  up_attach(struct uart_dev_s *dev);
 static void up_detach(struct uart_dev_s *dev);
-static int  up_interrupt(int irq, void *context, FAR void *arg);
+static int  up_interrupt(int irq, void *context, void *arg);
 static int  up_ioctl(struct file *filep, int cmd, unsigned long arg);
 static int  up_receive(struct uart_dev_s *dev, unsigned int *status);
 static void up_rxint(struct uart_dev_s *dev, bool enable);
@@ -654,7 +655,7 @@ static void up_detach(struct uart_dev_s *dev)
  *
  ****************************************************************************/
 
-static int up_interrupt(int irq, void *context, FAR void *arg)
+static int up_interrupt(int irq, void *context, void *arg)
 {
   struct uart_dev_s *dev;
   struct up_dev_s   *priv;
@@ -943,7 +944,7 @@ static void up_txint(struct uart_dev_s *dev, bool enable)
   struct up_dev_s *priv = (struct up_dev_s *)dev->priv;
   irqstate_t flags;
 
-  flags = enter_critical_section();
+  flags = spin_lock_irqsave(&priv->lock);
   if (enable)
     {
       /* Set to receive an interrupt when the TX fifo is half emptied */
@@ -962,7 +963,9 @@ static void up_txint(struct uart_dev_s *dev, bool enable)
        * the TX interrupt.
        */
 
+      spin_unlock_irqrestore(&priv->lock, flags);
       uart_xmitchars(dev);
+      flags = spin_lock_irqsave(&priv->lock);
 #endif
     }
   else
@@ -973,7 +976,7 @@ static void up_txint(struct uart_dev_s *dev, bool enable)
       up_serialout(priv, UART_UIEN, priv->im);
     }
 
-  leave_critical_section(flags);
+  spin_unlock_irqrestore(&priv->lock, flags);
 }
 
 /****************************************************************************

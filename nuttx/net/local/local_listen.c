@@ -37,14 +37,6 @@
 #include "local/local.h"
 
 /****************************************************************************
- * Public Data
- ****************************************************************************/
-
-/* A list of all allocated packet socket connections */
-
-dq_queue_t g_local_listeners;
-
-/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -104,7 +96,11 @@ int local_listen(FAR struct socket *psock, int backlog)
 
   /* Set the backlog value */
 
-  DEBUGASSERT((unsigned)backlog < 256);
+  if (backlog > UINT8_MAX)
+    {
+      backlog = UINT8_MAX;
+    }
+
   server->u.server.lc_backlog = backlog;
 
   /* Is this the first time since being bound to an address and that
@@ -115,14 +111,7 @@ int local_listen(FAR struct socket *psock, int backlog)
     {
       /* The connection should not reside in any other list */
 
-      DEBUGASSERT(server->lc_node.flink == NULL &&
-                  server->lc_node.flink == NULL);
-
-      /* Add the connection structure to the list of listeners */
-
-      net_lock();
-      dq_addlast(&server->lc_node, &g_local_listeners);
-      net_unlock();
+      DEBUGASSERT(server->lc_conn.node.flink == NULL);
 
       /* And change the server state to listing */
 

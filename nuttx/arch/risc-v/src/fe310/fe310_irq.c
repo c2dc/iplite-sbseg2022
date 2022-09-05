@@ -26,17 +26,22 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/arch.h>
 #include <nuttx/board.h>
-#include <arch/irq.h>
+#include <nuttx/irq.h>
 #include <arch/board/board.h>
 
 #include "riscv_internal.h"
-#include "riscv_arch.h"
-
 #include "fe310.h"
+
+/****************************************************************************
+ * Public Data
+ ****************************************************************************/
+
+volatile uintptr_t *g_current_regs[1];
 
 /****************************************************************************
  * Public Functions
@@ -61,8 +66,7 @@ void up_irqinitialize(void)
 
 #if defined(CONFIG_STACK_COLORATION) && CONFIG_ARCH_INTERRUPTSTACK > 15
   size_t intstack_size = (CONFIG_ARCH_INTERRUPTSTACK & ~15);
-  riscv_stack_color((FAR void *)((uintptr_t)&g_intstackbase - intstack_size),
-                 intstack_size);
+  riscv_stack_color((void *)&g_intstackalloc, intstack_size);
 #endif
 
   /* Set priority for all global interrupts to 1 (lowest) */
@@ -80,11 +84,11 @@ void up_irqinitialize(void)
 
   /* currents_regs is non-NULL only while processing an interrupt */
 
-  g_current_regs = NULL;
+  CURRENT_REGS = NULL;
 
-  /* Attach the ecall interrupt handler */
+  /* Attach the common interrupt handler */
 
-  irq_attach(FE310_IRQ_ECALLM, riscv_swint, NULL);
+  riscv_exception_attach();
 
 #ifndef CONFIG_SUPPRESS_INTERRUPTS
 
@@ -105,17 +109,16 @@ void up_irqinitialize(void)
 void up_disable_irq(int irq)
 {
   int extirq;
-  uint32_t oldstat;
 
-  if (irq == FE310_IRQ_MTIMER)
+  if (irq == RISCV_IRQ_MTIMER)
     {
       /* Read mstatus & clear machine timer interrupt enable in mie */
 
-      asm volatile ("csrrc %0, mie, %1": "=r" (oldstat) : "r"(MIE_MTIE));
+      CLEAR_CSR(mie, MIE_MTIE);
     }
-  else if (irq > FE310_IRQ_MEXT)
+  else if (irq > RISCV_IRQ_MEXT)
     {
-      extirq = irq - FE310_IRQ_MEXT;
+      extirq = irq - RISCV_IRQ_MEXT;
 
       /* Clear enable bit for the irq */
 
@@ -142,17 +145,16 @@ void up_disable_irq(int irq)
 void up_enable_irq(int irq)
 {
   int extirq;
-  uint32_t oldstat;
 
-  if (irq == FE310_IRQ_MTIMER)
+  if (irq == RISCV_IRQ_MTIMER)
     {
       /* Read mstatus & set machine timer interrupt enable in mie */
 
-      asm volatile ("csrrs %0, mie, %1": "=r" (oldstat) : "r"(MIE_MTIE));
+      SET_CSR(mie, MIE_MTIE);
     }
-  else if (irq > FE310_IRQ_MEXT)
+  else if (irq > RISCV_IRQ_MEXT)
     {
-      extirq = irq - FE310_IRQ_MEXT;
+      extirq = irq - RISCV_IRQ_MEXT;
 
       /* Set enable bit for the irq */
 
@@ -169,23 +171,6 @@ void up_enable_irq(int irq)
 }
 
 /****************************************************************************
- * Name: riscv_get_newintctx
- *
- * Description:
- *   Return initial mstatus when a task is created.
- *
- ****************************************************************************/
-
-uint32_t riscv_get_newintctx(void)
-{
-  /* Set machine previous privilege mode to machine mode.
-   * Also set machine previous interrupt enable
-   */
-
-  return (MSTATUS_MPPM | MSTATUS_MPIE);
-}
-
-/****************************************************************************
  * Name: riscv_ack_irq
  *
  * Description:
@@ -199,39 +184,6 @@ void riscv_ack_irq(int irq)
 }
 
 /****************************************************************************
- * Name: up_irq_save
- *
- * Description:
- *   Return the current interrupt state and disable interrupts
- *
- ****************************************************************************/
-
-irqstate_t up_irq_save(void)
-{
-  uint32_t oldstat;
-
-  /* Read mstatus & clear machine interrupt enable (MIE) in mstatus */
-
-  asm volatile ("csrrc %0, mstatus, %1": "=r" (oldstat) : "r"(MSTATUS_MIE));
-  return oldstat;
-}
-
-/****************************************************************************
- * Name: up_irq_restore
- *
- * Description:
- *   Restore previous IRQ mask state
- *
- ****************************************************************************/
-
-void up_irq_restore(irqstate_t flags)
-{
-  /* Write flags to mstatus */
-
-  asm volatile("csrw mstatus, %0" : /* no output */ : "r" (flags));
-}
-
-/****************************************************************************
  * Name: up_irq_enable
  *
  * Description:
@@ -241,18 +193,18 @@ void up_irq_restore(irqstate_t flags)
 
 irqstate_t up_irq_enable(void)
 {
-  uint32_t oldstat;
+  irqstate_t oldstat;
 
 #if 1
   /* Enable MEIE (machine external interrupt enable) */
 
   /* TODO: should move to up_enable_irq() */
 
-  asm volatile ("csrrs %0, mie, %1": "=r" (oldstat) : "r"(MIE_MEIE));
+  SET_CSR(mie, MIE_MEIE);
 #endif
 
   /* Read mstatus & set machine interrupt enable (MIE) in mstatus */
 
-  asm volatile ("csrrs %0, mstatus, %1": "=r" (oldstat) : "r"(MSTATUS_MIE));
+  oldstat = READ_AND_SET_CSR(mstatus, MSTATUS_MIE);
   return oldstat;
 }

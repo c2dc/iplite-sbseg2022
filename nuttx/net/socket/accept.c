@@ -35,6 +35,7 @@
 
 #include <nuttx/cancelpt.h>
 #include <nuttx/fs/fs.h>
+#include <nuttx/kmalloc.h>
 #include <arch/irq.h>
 
 #include "socket/socket.h"
@@ -112,6 +113,7 @@
 int psock_accept(FAR struct socket *psock, FAR struct sockaddr *addr,
                  FAR socklen_t *addrlen, FAR struct socket *newsock)
 {
+  FAR struct socket_conn_s *conn;
   int ret;
 
   DEBUGASSERT(psock != NULL && psock->s_conn != NULL && newsock != NULL);
@@ -126,7 +128,8 @@ int psock_accept(FAR struct socket *psock, FAR struct sockaddr *addr,
 
   /* Is the socket listening for a connection? */
 
-  if (!_SS_ISLISTENING(psock->s_flags))
+  conn = psock->s_conn;
+  if (!_SS_ISLISTENING(conn->s_flags))
     {
       nerr("ERROR: Socket is not listening for a connection.\n");
       return -EINVAL;
@@ -138,20 +141,19 @@ int psock_accept(FAR struct socket *psock, FAR struct sockaddr *addr,
 
   net_lock();
   ret = psock->s_sockif->si_accept(psock, addr, addrlen, newsock);
-  if (ret < 0)
+  if (ret >= 0)
+    {
+      /* Mark the new socket as connected. */
+
+      conn = newsock->s_conn;
+      conn->s_flags |= _SF_CONNECTED;
+      conn->s_flags &= ~_SF_CLOSED;
+    }
+  else
     {
       nerr("ERROR: si_accept failed: %d\n", ret);
-      goto errout_with_lock;
     }
 
-  /* Mark the new socket as connected. */
-
-  newsock->s_flags |= _SF_CONNECTED;
-  newsock->s_flags &= ~_SF_CLOSED;
-
-  ret = OK;
-
-errout_with_lock:
   net_unlock();
   return ret;
 }
@@ -230,8 +232,8 @@ int accept(int sockfd, FAR struct sockaddr *addr, FAR socklen_t *addrlen)
   FAR struct socket *psock = sockfd_socket(sockfd);
   FAR struct socket *newsock;
   FAR struct file *filep;
-  int newfd;
   int errcode;
+  int newfd;
   int ret;
 
   /* accept() is a cancellation point */
@@ -259,14 +261,10 @@ int accept(int sockfd, FAR struct sockaddr *addr, FAR socklen_t *addrlen)
       goto errout;
     }
 
-  /* Allocate a socket descriptor for the new connection now (so that it
-   * cannot fail later)
-   */
-
-  newfd = sockfd_allocate(&newsock, O_RDWR);
-  if (newfd < 0)
+  newsock = kmm_zalloc(sizeof(*newsock));
+  if (newsock == NULL)
     {
-      errcode = ENFILE;
+      errcode = ENOMEM;
       goto errout;
     }
 
@@ -274,14 +272,28 @@ int accept(int sockfd, FAR struct sockaddr *addr, FAR socklen_t *addrlen)
   if (ret < 0)
     {
       errcode = -ret;
-      goto errout_with_socket;
+      goto errout_with_alloc;
+    }
+
+  /* Allocate a socket descriptor for the new connection now (so that it
+   * cannot fail later)
+   */
+
+  newfd = sockfd_allocate(newsock, O_RDWR);
+  if (newfd < 0)
+    {
+      errcode = ENFILE;
+      goto errout_with_psock;
     }
 
   leave_cancellation_point();
   return newfd;
 
-errout_with_socket:
-  nx_close(newfd);
+errout_with_psock:
+  psock_close(newsock);
+
+errout_with_alloc:
+  kmm_free(newsock);
 
 errout:
   leave_cancellation_point();

@@ -35,11 +35,9 @@
 
 #include <arpa/inet.h>
 
-#include <nuttx/arch.h>
-#include <nuttx/irq.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/signal.h>
-#include <nuttx/wdog.h>
 #include <nuttx/wqueue.h>
 #include <nuttx/mm/iob.h>
 #include <nuttx/net/arp.h>
@@ -79,12 +77,6 @@
 #  error CONFIG_IOB_BUFSIZE to small for max Bluetooth frame
 #endif
 
-/* TX poll delay = 1 seconds.
- * CLK_TCK is the number of clock ticks per second
- */
-
-#define TXPOLL_WDDELAY   (1*CLK_TCK)
-
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -113,7 +105,6 @@ struct btnet_driver_s
 
   sem_t bd_exclsem;                  /* Exclusive access to struct */
   bool bd_bifup;                     /* true:ifup false:ifdown */
-  struct wdog_s bd_txpoll;           /* TX poll timer */
   struct work_s bd_pollwork;         /* Defer poll work to the work queue */
 
 #ifdef CONFIG_WIRELESS_BLUETOOTH_HOST
@@ -162,8 +153,6 @@ static void btnet_hci_received(FAR struct bt_buf_s *buf, FAR void *context);
 /* Common TX logic */
 
 static int  btnet_txpoll_callback(FAR struct net_driver_s *netdev);
-static void btnet_txpoll_work(FAR void *arg);
-static void btnet_txpoll_expiry(wdparm_t arg);
 
 /* NuttX callback functions */
 
@@ -407,11 +396,11 @@ static void btnet_l2cap_receive(FAR struct bt_conn_s *conn,
        * io_offset should be a valid IPHC header.
        */
 
-      if ((iob->io_data[iob->io_offset] & SIXLOWPAN_DISPATCH_NALP_MASK) ==
-          SIXLOWPAN_DISPATCH_NALP)
+      if ((frame->io_data[frame->io_offset] &
+           SIXLOWPAN_DISPATCH_NALP_MASK) == SIXLOWPAN_DISPATCH_NALP)
         {
           wlwarn("WARNING: Dropped... Not a 6LoWPAN frame: %02x\n",
-                 iob->io_data[iob->io_offset]);
+                 frame->io_data[frame->io_offset]);
           ret = -EINVAL;
         }
       else
@@ -422,7 +411,7 @@ static void btnet_l2cap_receive(FAR struct bt_conn_s *conn,
 
           /* And give the packet to 6LoWPAN */
 
-          ret = sixlowpan_input(&priv->bd_dev, iob, (FAR void *)meta);
+          ret = sixlowpan_input(&priv->bd_dev, frame, (FAR void *)&meta);
         }
     }
 #endif
@@ -433,7 +422,7 @@ drop:
 
   if (ret < 0)
     {
-      iob_free(frame, IOBUSER_WIRELESS_BLUETOOTH);
+      iob_free(frame);
 
       /* Increment statistics */
 
@@ -522,6 +511,8 @@ static void btnet_hci_received(FAR struct bt_buf_s *buf, FAR void *context)
   frame      = buf->frame;
   buf->frame = NULL;
 
+  net_lock();
+
   /* Ignore the frame if the network is not up */
 
   priv = (FAR struct btnet_driver_s *)context;
@@ -567,8 +558,6 @@ static void btnet_hci_received(FAR struct bt_buf_s *buf, FAR void *context)
 
   /* Transfer the frame to the network logic */
 
-  net_lock();
-
 #ifdef CONFIG_NET_BLUETOOTH
   /* Invoke the PF_BLUETOOTH tap first.  If the frame matches
    * with a connected PF_BLUETOOTH socket, it will take the
@@ -584,7 +573,7 @@ drop:
 
   if (ret < 0)
     {
-      iob_free(frame, IOBUSER_WIRELESS_BLUETOOTH);
+      iob_free(frame);
 
       /* Increment statistics */
 
@@ -638,78 +627,6 @@ static int btnet_txpoll_callback(FAR struct net_driver_s *netdev)
 }
 
 /****************************************************************************
- * Name: btnet_txpoll_work
- *
- * Description:
- *   Perform periodic polling from the worker thread
- *
- * Input Parameters:
- *   arg - The argument passed when work_queue() as called.
- *
- * Returned Value:
- *   OK on success
- *
- * Assumptions:
- *   The network is locked.
- *
- ****************************************************************************/
-
-static void btnet_txpoll_work(FAR void *arg)
-{
-  FAR struct btnet_driver_s *priv = (FAR struct btnet_driver_s *)arg;
-
-  /* Lock the network and serialize driver operations if necessary.
-   * NOTE: Serialization is only required in the case where the driver work
-   * is performed on an LP worker thread and where more than one LP worker
-   * thread has been configured.
-   */
-
-  net_lock();
-
-#ifdef CONFIG_NET_6LOWPAN
-  /* Make sure the our single packet buffer is attached */
-
-  priv->bd_dev.r_dev.d_buf = g_iobuffer.rb_buf;
-#endif
-
-  /* Then perform the poll */
-
-  devif_timer(&priv->bd_dev.r_dev, TXPOLL_WDDELAY, btnet_txpoll_callback);
-
-  /* Setup the watchdog poll timer again */
-
-  wd_start(&priv->bd_txpoll, TXPOLL_WDDELAY,
-           btnet_txpoll_expiry, (wdparm_t)priv);
-  net_unlock();
-}
-
-/****************************************************************************
- * Name: btnet_txpoll_expiry
- *
- * Description:
- *   Periodic timer handler.  Called from the timer interrupt handler.
- *
- * Input Parameters:
- *   arg  - The argument
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   Global interrupts are disabled by the watchdog logic.
- *
- ****************************************************************************/
-
-static void btnet_txpoll_expiry(wdparm_t arg)
-{
-  FAR struct btnet_driver_s *priv = (FAR struct btnet_driver_s *)arg;
-
-  /* Schedule to perform the interrupt processing on the worker thread. */
-
-  work_queue(LPWORK, &priv->bd_pollwork, btnet_txpoll_work, priv, 0);
-}
-
-/****************************************************************************
  * Name: btnet_ifup
  *
  * Description:
@@ -755,11 +672,6 @@ static int btnet_ifup(FAR struct net_driver_s *netdev)
              netdev->d_mac.radio.nv_addr[4], netdev->d_mac.radio.nv_addr[5]);
 #endif
 
-      /* Set and activate a timer process */
-
-      wd_start(&priv->bd_txpoll, TXPOLL_WDDELAY,
-               btnet_txpoll_expiry, (wdparm_t)priv);
-
       /* The interface is now up */
 
       priv->bd_bifup = true;
@@ -794,10 +706,6 @@ static int btnet_ifdown(FAR struct net_driver_s *netdev)
   /* Disable interruption */
 
   flags = spin_lock_irqsave(NULL);
-
-  /* Cancel the TX poll timer and TX timeout timers */
-
-  wd_cancel(&priv->bd_txpoll);
 
   /* Put the EMAC in its reset, non-operational state.  This should be
    * a known configuration that will guarantee the btnet_ifup() always
@@ -1272,7 +1180,7 @@ static int btnet_properties(FAR struct radio_driver_s *netdev,
  *
  ****************************************************************************/
 
-int bt_netdev_register(FAR const struct bt_driver_s *btdev)
+int bt_netdev_register(FAR struct bt_driver_s *btdev)
 {
   FAR struct btnet_driver_s *priv;
   FAR struct radio_driver_s *radio;
@@ -1354,6 +1262,8 @@ int bt_netdev_register(FAR const struct bt_driver_s *btdev)
   radio->r_get_mhrlen = btnet_get_mhrlen;  /* Get MAC header length */
   radio->r_req_data   = btnet_req_data;    /* Enqueue frame for transmission */
   radio->r_properties = btnet_properties;  /* Return radio properties */
+
+  btdev->receive      = bt_receive;
 
   /* Associate the driver in with the Bluetooth stack.
    *

@@ -45,7 +45,7 @@
 
 #include <kinetis_usbhshost.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "hardware/kinetis_k28pinmux.h"
 #include "hardware/kinetis_mcg.h"
 #include "hardware/kinetis_sim.h"
@@ -85,9 +85,9 @@ static int ehci_waiter(int argc, char *argv[]);
 static void ehci_hwinit(void);
 
 #  ifdef HAVE_USB_AUTOMOUNTER
-static void usb_msc_connect(FAR void *arg);
+static void usb_msc_connect(void *arg);
 static void unmount_retry_timeout(wdparm_t arg);
-static void usb_msc_disconnect(FAR void *arg);
+static void usb_msc_disconnect(void *arg);
 #  endif
 
 /****************************************************************************
@@ -118,7 +118,7 @@ static struct wdog_s g_umount_tmr[CONFIG_FRDMK28F_USB_AUTOMOUNT_NUM_BLKDEV];
 
 static int ehci_waiter(int argc, char *argv[])
 {
-  FAR struct usbhost_hubport_s *hport;
+  struct usbhost_hubport_s *hport;
 
   uinfo("ehci_waiter:  Running\n");
   for (; ; )
@@ -249,7 +249,7 @@ static void ehci_hwinit(void)
  *
  ****************************************************************************/
 
-static void usb_msc_connect(FAR void *arg)
+static void usb_msc_connect(void *arg)
 {
   int  index  = (int)arg;
   char sdchar = 'a' + index;
@@ -275,7 +275,7 @@ static void usb_msc_connect(FAR void *arg)
 
   /* Mount */
 
-  ret = nx_mount((FAR const char *)blkdev, (FAR const char *)mntpnt,
+  ret = nx_mount((const char *)blkdev, (const char *)mntpnt,
       CONFIG_FRDMK28F_USB_AUTOMOUNT_FSTYPE, 0, NULL);
   if (ret < 0)
     {
@@ -325,7 +325,7 @@ static void unmount_retry_timeout(wdparm_t arg)
  *
  ****************************************************************************/
 
-static void usb_msc_disconnect(FAR void *arg)
+static void usb_msc_disconnect(void *arg)
 {
   int  index  = (int)arg;
   char sdchar = 'a' + index;
@@ -348,7 +348,7 @@ static void usb_msc_disconnect(FAR void *arg)
 
   /* Unmount */
 
-  ret = nx_umount2((FAR const char *)mntpnt, MNT_FORCE);
+  ret = nx_umount2((const char *)mntpnt, MNT_FORCE);
   if (ret < 0)
     {
       /* We expect the error to be EBUSY meaning that the volume could
@@ -398,7 +398,6 @@ static void usb_msc_disconnect(FAR void *arg)
 
 int k28_usbhost_initialize(void)
 {
-  pid_t    pid;
   int      ret;
 #  ifdef HAVE_USB_AUTOMOUNTER
   int      index;
@@ -429,9 +428,9 @@ int k28_usbhost_initialize(void)
       char sdchar = 'a' + index;
 
       usbhost_msc_notifier_setup(usb_msc_connect,
-          WORK_USB_MSC_CONNECT, sdchar, (FAR void *)(intptr_t)index);
+          WORK_USB_MSC_CONNECT, sdchar, (void *)(intptr_t)index);
       usbhost_msc_notifier_setup(usb_msc_disconnect,
-          WORK_USB_MSC_DISCONNECT, sdchar, (FAR void *)(intptr_t)index);
+          WORK_USB_MSC_DISCONNECT, sdchar, (void *)(intptr_t)index);
     }
 #  endif
 
@@ -479,10 +478,10 @@ int k28_usbhost_initialize(void)
 
   /* Start a thread to handle device connection. */
 
-  pid = kthread_create("EHCI Monitor", CONFIG_USBHOST_DEFPRIO,
+  ret = kthread_create("EHCI Monitor", CONFIG_USBHOST_DEFPRIO,
                        CONFIG_USBHOST_STACKSIZE,
-                       (main_t)ehci_waiter, (FAR char * const *)NULL);
-  if (pid < 0)
+                       (main_t)ehci_waiter, (char * const *)NULL);
+  if (ret < 0)
     {
       uerr("ERROR: Failed to create ehci_waiter task: %d\n", ret);
       return -ENODEV;

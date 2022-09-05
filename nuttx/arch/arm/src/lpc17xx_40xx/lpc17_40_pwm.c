@@ -36,8 +36,6 @@
 #include <arch/board/board.h>
 
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "chip.h"
 #include "hardware/lpc17_40_syscon.h"
 #include "lpc17_40_pwm.h"
@@ -87,7 +85,7 @@
 /* Debug ********************************************************************/
 
 #ifdef CONFIG_DEBUG_PWM_INFO
-#  define pwm_dumpgpio(p,m) stm32_dumpgpio(p,m)
+#  define pwm_dumpgpio(p,m) lpc17_40_dumpgpio(p,m)
 #else
 #  define pwm_dumpgpio(p,m)
 #endif
@@ -98,16 +96,22 @@
 
 /* This structure represents the state of one PWM timer */
 
+struct lpc17_40_pwmchan_s
+{
+  uint8_t                     channel; /* Timer output channel */
+  uint32_t                    pincfg;  /* Output pin configuration */
+};
+
 struct lpc17_40_pwmtimer_s
 {
-  FAR const struct pwm_ops_s *ops;     /* PWM operations */
-  uint8_t                     timid;   /* Timer ID {0,...,7} */
-  uint8_t                     channel; /* Timer output channel: {1,..4} */
-  uint8_t                     timtype; /* See the TIMTYPE_* definitions */
-  uint32_t                    base;    /* The base address of the timer */
-  uint32_t                    pincfg;  /* Output pin configuration */
-  uint32_t                    pclk;    /* The frequency of the peripheral clock
-                                        * that drives the timer module. */
+  const struct pwm_ops_s    *ops;        /* PWM operations */
+  struct lpc17_40_pwmchan_s *channels;   /* Channels configuration */
+  uint8_t                   timid;       /* Timer ID {0,...,7} */
+  uint8_t                   chan_num;    /* Number of configured channels */
+  uint8_t                   timtype;     /* See the TIMTYPE_* definitions */
+  uint32_t                  base;        /* The base address of the timer */
+  uint32_t                  pclk;        /* The frequency of the peripheral clock
+                                          * that drives the timer module. */
 };
 
 /****************************************************************************
@@ -122,26 +126,26 @@ static void pwm_putreg(struct lpc17_40_pwmtimer_s *priv,
 
 #ifdef CONFIG_DEBUG_PWM_INFO
 static void pwm_dumpregs(struct lpc17_40_pwmtimer_s *priv,
-                         FAR const char *msg);
+                         const char *msg);
 #else
 #  define pwm_dumpregs(priv,msg)
 #endif
 
 /* Timer management */
 
-static int pwm_timer(FAR struct lpc17_40_pwmtimer_s *priv,
-                     FAR const struct pwm_info_s *info);
+static int pwm_timer(struct lpc17_40_pwmtimer_s *priv,
+                     const struct pwm_info_s *info);
 
 /* PWM driver methods */
 
-static int pwm_setup(FAR struct pwm_lowerhalf_s *dev);
-static int pwm_shutdown(FAR struct pwm_lowerhalf_s *dev);
+static int pwm_setup(struct pwm_lowerhalf_s *dev);
+static int pwm_shutdown(struct pwm_lowerhalf_s *dev);
 
-static int pwm_start(FAR struct pwm_lowerhalf_s *dev,
-                     FAR const struct pwm_info_s *info);
+static int pwm_start(struct pwm_lowerhalf_s *dev,
+                     const struct pwm_info_s *info);
 
-static int pwm_stop(FAR struct pwm_lowerhalf_s *dev);
-static int pwm_ioctl(FAR struct pwm_lowerhalf_s *dev,
+static int pwm_stop(struct pwm_lowerhalf_s *dev);
+static int pwm_ioctl(struct pwm_lowerhalf_s *dev,
                      int cmd, unsigned long arg);
 
 /****************************************************************************
@@ -162,16 +166,60 @@ static const struct pwm_ops_s g_pwmops =
 };
 
 #ifdef CONFIG_LPC17_40_PWM1
+
+static struct lpc17_40_pwmchan_s g_pwm1channels[] =
+{
+  /* PWM1 has 6 channels */
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL1
+  {
+    .channel = 1,
+    .pincfg  = GPIO_PWM1p1,
+  },
+#endif
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL2
+  {
+    .channel = 2,
+    .pincfg  = GPIO_PWM1p2,
+  },
+#endif
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL3
+  {
+    .channel = 3,
+    .pincfg  = GPIO_PWM1p3,
+  },
+#endif
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL4
+  {
+    .channel = 4,
+    .pincfg  = GPIO_PWM1p5,
+  },
+#endif
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL5
+  {
+    .channel = 5,
+    .pincfg  = GPIO_PWM1p5,
+  },
+#endif
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL6
+  {
+    .channel = 6,
+    .pincfg  = GPIO_PWM1p6,
+  },
+#endif
+};
+
 static struct lpc17_40_pwmtimer_s g_pwm1dev =
 {
   .ops        = &g_pwmops,
   .timid      = 1,
-  .channel    = CONFIG_LPC17_40_PWM1_PIN,
+  .chan_num   = LPC17_40_PWM1_NCHANNELS,
+  .channels   = g_pwm1channels,
   .timtype    = TIMTYPE_TIM1,
   .base       = LPC17_40_PWM1_BASE,
-  .pincfg     = GPIO_PWM1p1_1,
   .pclk       = (0x1 << 12),
 };
+
 #endif
 
 /****************************************************************************
@@ -235,30 +283,28 @@ static void pwm_putreg(struct lpc17_40_pwmtimer_s *priv,
 
 #ifdef CONFIG_DEBUG_PWM_INFO
 static void pwm_dumpregs(struct lpc17_40_pwmtimer_s *priv,
-                         FAR const char *msg)
+                         const char *msg)
 {
   pwminfo("%s:\n", msg);
-  pwminfo("  CR1: %04x CR2:  %04x SMCR:  %04x DIER:  %04x\n",
+  pwminfo("  IR: %04x TCR:  %04x TC:  %04x PR:  %04x PC:  %04x\n",
+          pwm_getreg(priv, LPC17_40_PWM_IR_OFFSET),
+          pwm_getreg(priv, LPC17_40_PWM_TCR_OFFSET),
+          pwm_getreg(priv, LPC17_40_PWM_TC_OFFSET),
+          pwm_getreg(priv, LPC17_40_PWM_PR_OFFSET),
+          pwm_getreg(priv, LPC17_40_PWM_PC_OFFSET));
+  pwminfo("  MCR: %04x\n",
+          pwm_getreg(priv, LPC17_40_PWM_MCR_OFFSET));
+#ifdef CONFIG_PWM_MULTICHAN
+  pwminfo("  0: %08x 1: %08x 2: %08x 3: %08x\n",
           pwm_getreg(priv, LPC17_40_PWM_MR0_OFFSET),
           pwm_getreg(priv, LPC17_40_PWM_MR1_OFFSET),
           pwm_getreg(priv, LPC17_40_PWM_MR2_OFFSET),
           pwm_getreg(priv, LPC17_40_PWM_MR3_OFFSET));
-#if defined(CONFIG_LPC17_40_PWM1)
-  if (priv->timtype == TIMTYPE_ADVANCED)
-    {
-      pwminfo("  RCR: %04x BDTR: %04x DCR:   %04x DMAR:  %04x\n",
-              pwm_getreg(priv, LPC17_40_PWM_MR0_OFFSET),
-              pwm_getreg(priv, LPC17_40_PWM_MR1_OFFSET),
-              pwm_getreg(priv, LPC17_40_PWM_MR2_OFFSET),
-              pwm_getreg(priv, LPC17_40_PWM_MR3_OFFSET));
-    }
-  else
+  pwminfo("  4: %08x 5: %08x 6: %08x\n",
+          pwm_getreg(priv, LPC17_40_PWM_MR4_OFFSET),
+          pwm_getreg(priv, LPC17_40_PWM_MR5_OFFSET),
+          pwm_getreg(priv, LPC17_40_PWM_MR6_OFFSET));
 #endif
-    {
-      pwminfo("  DCR: %04x DMAR: %04x\n",
-              pwm_getreg(priv, LPC17_40_PWM_MR2_OFFSET),
-              pwm_getreg(priv, LPC17_40_PWM_MR3_OFFSET));
-    }
 }
 #endif
 
@@ -277,23 +323,120 @@ static void pwm_dumpregs(struct lpc17_40_pwmtimer_s *priv,
  *
  ****************************************************************************/
 
-static int pwm_timer(FAR struct lpc17_40_pwmtimer_s *priv,
-                     FAR const struct pwm_info_s *info)
+static int pwm_timer(struct lpc17_40_pwmtimer_s *priv,
+                     const struct pwm_info_s *info)
 {
   irqstate_t flags;
+  uint32_t i;
+  int ret = OK;
+  uint32_t lerval = LER0_EN;
+  uint32_t pcrval = 0;
+  uint32_t mr0_freq;
 
   flags = enter_critical_section();
 
-  putreg32(info->frequency, LPC17_40_PWM1_MR0);         /* Set PWMMR0 = number of counts */
-  putreg32(info->duty, LPC17_40_PWM1_MR1);              /* Set PWM cycle */
+  mr0_freq = 1.f / info->frequency * LPC17_40_PWM_CLOCK / 10;
 
-  putreg32(LER0_EN | LER3_EN, LPC17_40_PWM1_LER);       /* Load Shadow register contents */
-  putreg32(PWMENA1, LPC17_40_PWM1_PCR);                 /* Enable PWM outputs */
+  putreg32(mr0_freq, LPC17_40_PWM1_MR0);         /* Set PWMMR0 = number of counts */
+
+#ifndef CONFIG_PWM_MULTICHAN
+  putreg32(info->duty, LPC17_40_PWM1_MR1);              /* Set PWM cycle */
+#else
+  for (i = 0; i < CONFIG_PWM_NCHANNELS; i++)
+    {
+     switch (priv->channels[i].channel)
+       {
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL1
+         case 1:
+             putreg32(ub16mulub16(info->channels[i].duty, mr0_freq),
+                      LPC17_40_PWM1_MR1); /* Set PWM cycle */
+             break;
+#endif
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL2
+         case 2:
+             putreg32(ub16mulub16(info->channels[i].duty, mr0_freq),
+                      LPC17_40_PWM1_MR2); /* Set PWM cycle */
+             break;
+#endif
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL3
+         case 3:
+             putreg32(ub16mulub16(info->channels[i].duty, mr0_freq),
+                      LPC17_40_PWM1_MR3); /* Set PWM cycle */
+             break;
+#endif
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL4
+         case 4:
+             putreg32(ub16mulub16(info->channels[i].duty, mr0_freq),
+                      LPC17_40_PWM1_MR4); /* Set PWM cycle */
+             break;
+#endif
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL5
+         case 5:
+             putreg32(ub16mulub16(info->channels[i].duty, mr0_freq),
+                      LPC17_40_PWM1_MR5); /* Set PWM cycle */
+             break;
+#endif
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL6
+         case 6:
+             putreg32(ub16mulub16(info->channels[i].duty, mr0_freq),
+                      LPC17_40_PWM1_MR6); /* Set PWM cycle */
+             break;
+#endif      
+
+         default:
+           {
+             pwmerr("ERROR: Channel %d does not exist\n",
+                    priv->channels[i].channel);
+             ret = -EINVAL;
+           }
+       }
+    }
+#endif
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL1
+  pcrval |= PWMENA1;
+  lerval |= LER1_EN;
+#endif
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL2
+  pcrval |= PWMENA2;
+  lerval |= LER2_EN;
+#endif
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL3
+  pcrval |= PWMENA3;
+  lerval |= LER3_EN;
+#endif
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL4
+  pcrval |= PWMENA4;
+  lerval |= LER4_EN;
+#endif
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL5
+  pcrval |= PWMENA5;
+  lerval |= LER5_EN;
+#endif
+
+#ifdef CONFIG_LPC17_40_PWM1_CHANNEL6
+  pcrval |= PWMENA6;
+  lerval |= LER6_EN;
+#endif
+
+  putreg32(lerval, LPC17_40_PWM1_LER);       /* Load Shadow register contents */
+  putreg32(pcrval, LPC17_40_PWM1_PCR);       /* Enable PWM outputs */
+
   putreg32(TCR_CNT_EN | TCR_PWM_EN, LPC17_40_PWM1_TCR); /* Enable PWM Timer */
 
   leave_critical_section(flags);
   pwm_dumpregs(priv, "After starting");
-  return OK;
+
+  return ret;
 }
 
 #ifdef XXXXX
@@ -345,7 +488,7 @@ static int pwm_interrupt(struct lpc17_40_pwmtimer_s *priv)
  *
  ****************************************************************************/
 
-static int pwm_tim1interrupt(int irq, void *context, FAR void *arg)
+static int pwm_tim1interrupt(int irq, void *context, void *arg)
 {
   return pwm_interrupt(&g_pwm1dev);
 }
@@ -362,7 +505,7 @@ static int pwm_tim1interrupt(int irq, void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static void pwm_set_apb_clock(FAR struct lpc17_40_pwmtimer_s *priv, bool on)
+static void pwm_set_apb_clock(struct lpc17_40_pwmtimer_s *priv, bool on)
 {
   uint32_t en_bit;
   uint32_t regaddr;
@@ -412,12 +555,13 @@ static void pwm_set_apb_clock(FAR struct lpc17_40_pwmtimer_s *priv, bool on)
  *
  ****************************************************************************/
 
-static int pwm_setup(FAR struct pwm_lowerhalf_s *dev)
+static int pwm_setup(struct pwm_lowerhalf_s *dev)
 {
-  FAR struct lpc17_40_pwmtimer_s *priv =
-                             (FAR struct lpc17_40_pwmtimer_s *)dev;
+  struct lpc17_40_pwmtimer_s *priv =
+                             (struct lpc17_40_pwmtimer_s *)dev;
   irqstate_t flags;
   uint32_t regval;
+  int i;
 
   flags = enter_critical_section();
 
@@ -430,14 +574,17 @@ static int pwm_setup(FAR struct pwm_lowerhalf_s *dev)
   /* Select clock for the pwm peripheral */
 
   regval  = getreg32(LPC17_40_SYSCON_PCLKSEL0);
-  regval &= ~(0x3 << 12);            /* PCLK_MC peripheral clk = CCLK = 12.5 MHz */
-  regval |= (0x1 << 12);             /* PCLK_MC peripheral clk = CCLK = 12.5 MHz */
+  regval &= ~SYSCON_PCLKSEL0_PWM1_MASK;                          /* PCLK_MC peripheral clk = CCLK = LPC17_40_CCLK */
+  regval |= (SYSCON_PCLKSEL_CCLK << SYSCON_PCLKSEL0_PWM1_SHIFT); /* PCLK_MC peripheral clk = CCLK = LPC17_40_CCLK */
   putreg32(regval, LPC17_40_SYSCON_PCLKSEL0);
   priv->pclk = (0x1 << 12);
 
   /* Configure the output pin */
 
-  lpc17_40_configgpio(GPIO_PWM1p1_1);
+  for (i = 0; i < priv->chan_num; i++)
+    {
+      lpc17_40_configgpio(priv->channels[i].pincfg);
+    }
 
   putreg32(1, LPC17_40_PWM1_PR);        /* Prescaler count frequency: Fpclk/1 */
   putreg32(1 << 1, LPC17_40_PWM1_MCR);  /* Reset on match register MR0 */
@@ -463,15 +610,29 @@ static int pwm_setup(FAR struct pwm_lowerhalf_s *dev)
  *
  ****************************************************************************/
 
-static int pwm_shutdown(FAR struct pwm_lowerhalf_s *dev)
+static int pwm_shutdown(struct pwm_lowerhalf_s *dev)
 {
-  FAR struct lpc17_40_pwmtimer_s *priv =
-                              (FAR struct lpc17_40_pwmtimer_s *)dev;
-  uint32_t pincfg;
+  struct lpc17_40_pwmtimer_s *priv =
+                              (struct lpc17_40_pwmtimer_s *)dev;
+  uint32_t regval;
+  uint32_t i;
 
-  pwminfo("TIM%d pincfg: %08x\n", priv->timid, priv->pincfg);
+  /* Configure the output pin to be output and low */
 
-  /* Make sure that the output has been stopped */
+  for (i = 0; i < priv->chan_num; i++)
+    {
+      regval = priv->channels[i].pincfg;
+      regval &= (GPIO_PORT_MASK | GPIO_PIN_MASK);
+      regval |= (GPIO_OUTPUT | GPIO_VALUE_ZERO);
+
+      lpc17_40_configgpio(regval);
+    }
+
+  /* Power off the pwm peripheral */
+
+  regval  = getreg32(LPC17_40_SYSCON_PCONP);
+  regval &= ~SYSCON_PCONP_PCPWM1;
+  putreg32(regval, LPC17_40_SYSCON_PCONP);
 
   return OK;
 }
@@ -491,11 +652,11 @@ static int pwm_shutdown(FAR struct pwm_lowerhalf_s *dev)
  *
  ****************************************************************************/
 
-static int pwm_start(FAR struct pwm_lowerhalf_s *dev,
-                     FAR const struct pwm_info_s *info)
+static int pwm_start(struct pwm_lowerhalf_s *dev,
+                     const struct pwm_info_s *info)
 {
-  FAR struct lpc17_40_pwmtimer_s *priv =
-                          (FAR struct lpc17_40_pwmtimer_s *)dev;
+  struct lpc17_40_pwmtimer_s *priv =
+                          (struct lpc17_40_pwmtimer_s *)dev;
   return pwm_timer(priv, info);
 }
 
@@ -518,13 +679,12 @@ static int pwm_start(FAR struct pwm_lowerhalf_s *dev,
  *
  ****************************************************************************/
 
-static int pwm_stop(FAR struct pwm_lowerhalf_s *dev)
+static int pwm_stop(struct pwm_lowerhalf_s *dev)
 {
-  FAR struct lpc17_40_pwmtimer_s *priv =
-                            (FAR struct lpc17_40_pwmtimer_s *)dev;
+  struct lpc17_40_pwmtimer_s *priv =
+                            (struct lpc17_40_pwmtimer_s *)dev;
   uint32_t resetbit;
   uint32_t regaddr;
-  uint32_t regval;
   irqstate_t flags;
 
   pwminfo("TIM%d\n", priv->timid);
@@ -553,7 +713,7 @@ static int pwm_stop(FAR struct pwm_lowerhalf_s *dev)
 
   leave_critical_section(flags);
 
-  pwminfo("regaddr: %08x resetbit: %08x\n", regaddr, resetbit);
+  pwminfo("regaddr: %08lx resetbit: %08lx\n", regaddr, resetbit);
   pwm_dumpregs(priv, "After stop");
   return OK;
 }
@@ -574,12 +734,12 @@ static int pwm_stop(FAR struct pwm_lowerhalf_s *dev)
  *
  ****************************************************************************/
 
-static int pwm_ioctl(FAR struct pwm_lowerhalf_s *dev,
+static int pwm_ioctl(struct pwm_lowerhalf_s *dev,
                      int cmd, unsigned long arg)
 {
 #ifdef CONFIG_DEBUG_PWM_INFO
-  FAR struct lpc17_40_pwmtimer_s *priv =
-                                 (FAR struct lpc17_40_pwmtimer_s *)dev;
+  struct lpc17_40_pwmtimer_s *priv =
+                                 (struct lpc17_40_pwmtimer_s *)dev;
 
   /* There are no platform-specific ioctl commands */
 
@@ -609,29 +769,35 @@ static int pwm_ioctl(FAR struct pwm_lowerhalf_s *dev,
  *
  ****************************************************************************/
 
-FAR struct pwm_lowerhalf_s *lpc17_40_pwminitialize(int timer)
+struct pwm_lowerhalf_s *lpc17_40_pwminitialize(int timer)
 {
-  FAR struct lpc17_40_pwmtimer_s *lower;
+  struct lpc17_40_pwmtimer_s *lower;
 
   pwminfo("TIM%d\n", timer);
 
   switch (timer)
     {
 #ifdef CONFIG_LPC17_40_PWM1
+
       case 0:
         lower = &g_pwm1dev;
 
         /* Attach but disable the TIM1 update interrupt */
 
         break;
+
 #endif
 
       default:
-        pwmerr("ERROR: No such timer configured\n");
+        pwmerr("ERROR: No such timer configured or pin defined\n");
         return NULL;
     }
 
-  return (FAR struct pwm_lowerhalf_s *)lower;
+    /* Ensure PWM has been shutdown */
+
+    pwm_shutdown((struct pwm_lowerhalf_s *)lower);
+
+  return (struct pwm_lowerhalf_s *)lower;
 }
 
 #endif /* CONFIG_LPC17_40_TIMn_PWM, n = 1,...,14 */

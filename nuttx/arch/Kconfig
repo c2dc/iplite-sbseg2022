@@ -9,6 +9,22 @@ choice
 
 config ARCH_ARM
 	bool "ARM"
+	select ARCH_HAVE_BACKTRACE
+	select ARCH_HAVE_INTERRUPTSTACK
+	select ARCH_HAVE_VFORK
+	select ARCH_HAVE_STACKCHECK
+	select ARCH_HAVE_CUSTOMOPT
+	select ARCH_HAVE_STDARG_H
+	select ARCH_HAVE_SETJMP if !ARCH_TOOLCHAIN_IAR
+	select ARCH_HAVE_SYSCALL_HOOKS
+	select ARCH_HAVE_RDWR_MEM_CPU_RUN
+	select ARCH_HAVE_THREAD_LOCAL
+	---help---
+		The ARM architectures
+
+config ARCH_ARM64
+	bool "ARM64"
+	select ARCH_HAVE_BACKTRACE
 	select ARCH_HAVE_INTERRUPTSTACK
 	select ARCH_HAVE_VFORK
 	select ARCH_HAVE_STACKCHECK
@@ -16,8 +32,9 @@ config ARCH_ARM
 	select ARCH_HAVE_STDARG_H
 	select ARCH_HAVE_SYSCALL_HOOKS
 	select ARCH_HAVE_RDWR_MEM_CPU_RUN
+	select ARCH_HAVE_THREAD_LOCAL
 	---help---
-		The ARM architectures
+		The ARM64 architectures
 
 config ARCH_AVR
 	bool "AVR"
@@ -58,25 +75,32 @@ config ARCH_RENESAS
 
 config ARCH_RISCV
 	bool "RISC-V"
+	select ARCH_HAVE_BACKTRACE
 	select ARCH_HAVE_INTERRUPTSTACK
 	select ARCH_HAVE_STACKCHECK
+	select ARCH_HAVE_VFORK
 	select ARCH_HAVE_CUSTOMOPT
+	select ARCH_HAVE_SETJMP
 	select ARCH_HAVE_STDARG_H
 	select ARCH_HAVE_SYSCALL_HOOKS
 	select ARCH_HAVE_RDWR_MEM_CPU_RUN
+	select ARCH_HAVE_THREAD_LOCAL
 	---help---
 		RISC-V 32 and 64-bit RV32 / RV64 architectures.
 
 config ARCH_SIM
 	bool "Simulation"
+	select ARCH_HAVE_BACKTRACE
 	select ARCH_HAVE_MULTICPU
 	select ARCH_HAVE_RTC_SUBSECONDS
 	select ARCH_HAVE_SERIAL_TERMIOS
+	select ARCH_HAVE_SYSCALL_HOOKS
 	select ARCH_HAVE_TICKLESS
 	select ARCH_HAVE_POWEROFF
 	select ARCH_HAVE_TESTSET
 	select ARCH_HAVE_VFORK
 	select ARCH_HAVE_SETJMP
+	select ARCH_HAVE_CUSTOMOPT
 	select ARCH_SETJMP_H
 	select ALARM_ARCH
 	select ONESHOT
@@ -98,10 +122,13 @@ config ARCH_X86_64
 
 config ARCH_XTENSA
 	bool "Xtensa"
+	select ARCH_HAVE_BACKTRACE
 	select ARCH_HAVE_INTERRUPTSTACK
 	select ARCH_HAVE_STACKCHECK
 	select ARCH_HAVE_CUSTOMOPT
-	select ARCH_HAVE_TESTSET
+	select ARCH_HAVE_STDARG_H
+	select ARCH_HAVE_SETJMP if ARCH_TOOLCHAIN_GNU
+	select ARCH_HAVE_SYSCALL_HOOKS
 	---help---
 		Cadence® Tensilica® Xtensa® actictures.
 
@@ -122,11 +149,19 @@ config ARCH_OR1K
 	---help---
 		OpenRISC architectures.
 
+config ARCH_SPARC
+	bool "SPARC"
+	select ARCH_HAVE_INTERRUPTSTACK
+	select ARCH_HAVE_CUSTOMOPT
+	---help---
+		SPARC architectures (SPARC V8)
+
 endchoice
 
 config ARCH
 	string
 	default "arm"     if ARCH_ARM
+	default "arm64"   if ARCH_ARM64
 	default "avr"     if ARCH_AVR
 	default "hc"      if ARCH_HC
 	default "mips"    if ARCH_MIPS
@@ -139,21 +174,24 @@ config ARCH
 	default "z16"     if ARCH_Z16
 	default "z80"     if ARCH_Z80
 	default "or1k"    if ARCH_OR1K
+	default "sparc"   if ARCH_SPARC
 
-source arch/arm/Kconfig
-source arch/avr/Kconfig
-source arch/hc/Kconfig
-source arch/mips/Kconfig
-source arch/misoc/Kconfig
-source arch/renesas/Kconfig
-source arch/risc-v/Kconfig
-source arch/sim/Kconfig
-source arch/x86/Kconfig
-source arch/x86_64/Kconfig
-source arch/xtensa/Kconfig
-source arch/z16/Kconfig
-source arch/z80/Kconfig
-source arch/or1k/Kconfig
+source "arch/arm/Kconfig"
+source "arch/arm64/Kconfig"
+source "arch/avr/Kconfig"
+source "arch/hc/Kconfig"
+source "arch/mips/Kconfig"
+source "arch/misoc/Kconfig"
+source "arch/renesas/Kconfig"
+source "arch/risc-v/Kconfig"
+source "arch/sim/Kconfig"
+source "arch/x86/Kconfig"
+source "arch/x86_64/Kconfig"
+source "arch/xtensa/Kconfig"
+source "arch/z16/Kconfig"
+source "arch/z80/Kconfig"
+source "arch/or1k/Kconfig"
+source "arch/sparc/Kconfig"
 
 config ARCH_CHIP_CUSTOM
 	bool
@@ -191,7 +229,7 @@ config ARCH_CHIP_CUSTOM_DIR_RELPATH
 endmenu # Custom Chip Configuration
 endif #ARCH_CHIP_CUSTOM
 
-source arch/dummy/Kconfig
+source "arch/dummy/Kconfig"
 
 config ARCH_TOOLCHAIN_IAR
 	bool
@@ -200,6 +238,49 @@ config ARCH_TOOLCHAIN_IAR
 config ARCH_TOOLCHAIN_GNU
 	bool
 	default n
+
+config ARCH_TOOLCHAIN_CLANG
+	bool
+	select ARCH_TOOLCHAIN_GNU
+	default n
+
+choice
+	prompt "Link Time Optimization (LTO)"
+	default LTO_NONE
+	---help---
+		This option enables Link Time Optimization (LTO), which allows the
+		compiler to optimize binaries globally.
+
+		If unsure, select LTO_NONE. Note that LTO is very resource-intensive
+		so it's disabled by default.
+
+config LTO_NONE
+	bool "None"
+	---help---
+		Build the kernel normally, without Link Time Optimization (LTO).
+
+config LTO_FULL
+	bool "GNU Full LTO (EXPERIMENTAL)"
+	depends on ARCH_TOOLCHAIN_GNU
+	---help---
+		Link time optimization is implemented as a GCC front end for a bytecode
+		bytecode representation of GIMPLE that is emitted in special sections
+		of .o files. Currently, LTO support is enabled in most ELF-based systems,
+		as well as darwin, cygwin and mingw systems.
+
+config LTO_THIN
+	bool "Clang ThinLTO (EXPERIMENTAL)"
+	depends on ARCH_TOOLCHAIN_CLANG
+	---help---
+		This option enables Clang's ThinLTO, which allows for parallel
+		optimization and faster incremental compiles compared to the
+		CONFIG_LTO_FULL option. More information can be found
+		from Clang's documentation:
+
+		https://clang.llvm.org/docs/ThinLTO.html
+
+		If unsure, say Y.
+endchoice
 
 config ARCH_GNU_NO_WEAKFUNCTIONS
 	bool
@@ -215,6 +296,25 @@ config ARCH_SIZET_LONG
 		size_t may be type long or type int.  This matters for some
 		C++ library routines because the NuttX size_t might not have
 		the same underlying type as your toolchain's size_t.
+
+config ARCH_COVERAGE
+	bool "Enable code coverage analysis"
+	select HAVE_CXXINITIALIZE
+	default n
+	---help---
+		Generate code coverage
+
+config ARCH_COVERAGE_ALL
+	bool "Enable code coverage for the entire image"
+	depends on ARCH_COVERAGE
+	default y
+	---help---
+		This option activates code coverage instrumentation for the
+		entire image. If you don't enable this option, you have to
+		explicitly specify "-fprofile-generate -ftest-coverage" for
+		the files/directories you want to check. Enabling this option
+		will get image size increased and performance decreased
+		significantly.
 
 comment "Architecture Options"
 
@@ -243,8 +343,18 @@ config ARCH_ICACHE
 	bool
 	default n
 
+config ARCH_ICACHE_LOCK
+	bool
+	depends on ARCH_ICACHE
+	default n
+
 config ARCH_DCACHE
 	bool
+	default n
+
+config ARCH_DCACHE_LOCK
+	bool
+	depends on ARCH_DCACHE
 	default n
 
 config ARCH_L2CACHE
@@ -259,9 +369,17 @@ config ARCH_NEED_ADDRENV_MAPPING
 	bool
 	default n
 
-config ARCH_HAVE_MODULE_TEXT
-	bool "Special memory region for dynamic code loading"
+config ARCH_HAVE_EXTRA_HEAPS
+	bool
 	default n
+	---help---
+		Special memory regions used as separate heaps
+
+config ARCH_HAVE_TEXT_HEAP
+	bool
+	default n
+	---help---
+		Special memory region for dynamic code loading
 
 config ARCH_HAVE_MULTICPU
 	bool
@@ -278,9 +396,7 @@ config ARCH_HAVE_FPU
 config ARCH_HAVE_DPFPU
 	bool
 	default n
-
-config ARCH_HAVE_LAZYFPU
-	bool
+	select ARCH_HAVE_FPU
 
 config ARCH_HAVE_MMU
 	bool
@@ -319,6 +435,10 @@ config ARCH_HAVE_TESTSET
 	bool
 	default n
 
+config ARCH_HAVE_THREAD_LOCAL
+	bool
+	default n
+
 config ARCH_HAVE_FETCHADD
 	bool
 	default n
@@ -334,6 +454,14 @@ config ARCH_HAVE_SYSCALL_HOOKS
 		Indicates that the architecture supports the system call hooks as
 		required if CONFIG_SCHED_INSTRUMENTATION_SYSCALL is enabled.  Refer
 		to sched/Kconfig for additional information.
+
+config ARCH_HAVE_BACKTRACE
+	bool
+	default n
+
+config ARCH_HAVE_BOOTLOADER
+	bool
+	default n
 
 config ARCH_FPU
 	bool "FPU support"
@@ -371,13 +499,13 @@ config ARCH_USE_MPU
 		is enabled by other, platform-specific logic.  In those cases, this
 		selection will always be forced.
 
-config ARCH_USE_MODULE_TEXT
-	bool "Enable module text allocator"
+config ARCH_USE_TEXT_HEAP
+	bool "Enable separate text allocation for dynamic code loading"
 	default n
-	depends on ARCH_HAVE_MODULE_TEXT
+	depends on ARCH_HAVE_TEXT_HEAP
 	---help---
-		This option enable architecture-sepecific memory allocator
-		for dynamic code loading. For example, ESP32 has a separate memory
+		This option enables architecture-specific memory allocator
+		for dynamic code loading. For example, ESP32 has separate memory
 		regions for instruction and data and the memory region used for
 		usual malloc doesn't work for instruction.
 
@@ -721,6 +849,18 @@ config ARCH_STACKDUMP
 	---help---
 		Enable to do stack dumps after assertions
 
+config ARCH_STACKDUMP_MAX_LENGTH
+	int "The maximum length for dump stack on assertions"
+	depends on ARCH_STACKDUMP
+	default 0
+
+config DUMP_ON_EXIT
+	bool "Dump all tasks state on exit"
+	default n
+	depends on DEBUG_SCHED_INFO
+	---help---
+		Dump all tasks state on exit()
+
 config ARCH_USBDUMP
 	bool "Dump USB trace data"
 	default n
@@ -842,7 +982,6 @@ menu "Bring-Up Options"
 config SUPPRESS_CLOCK_CONFIG
 	bool "Suppress clock configuration"
 	default n
-	depends on ARCH_XTENSA
 	---help---
 		Do not configure clocking.  Instead relies on the reset clock
 		configuration (or clock configuration provided by a bootloader).
@@ -872,13 +1011,6 @@ config SUPPRESS_UART_CONFIG
 		Do not re-configure the serial console UART from its start-up state.
 		This is useful when a boot loader has already initialized the serial
 		port.
-
-config DUMP_ON_EXIT
-	bool "Dump task state"
-	default n
-	depends on DEBUG_SCHED_INFO
-	---help---
-		Dump task state on exit()
 
 endmenu # Bring-Up Options
 

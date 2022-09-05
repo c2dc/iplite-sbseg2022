@@ -23,7 +23,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
-#include <arch/rv32im/irq.h>
+#include <arch/irq.h>
 #include <arch/esp32c3/irq.h>
 
 #include "chip.h"
@@ -51,13 +51,7 @@ _vector_table:
   .option push
   .option norvc
 
-  /* exception handler, entry 0 */
-
-  j    _exception_handler
-
-  /* 31 identical entries, all pointing to the interrupt handler */
-
-  .rept (31)
-  j    _interrupt_handler
+  .rept (32)
+  j    exception_common
   .endr
 

@@ -18,30 +18,14 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_RENESAS_SRC_RX65N_STATUS_H
-#define __ARCH_RENESAS_SRC_RX65N_STATUS_H
+#ifndef __ARCH_RENESAS_SRC_RX65N_RX65N_MACRODRIVER_H
+#define __ARCH_RENESAS_SRC_RX65N_RX65N_MACRODRIVER_H
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #include "arch/rx65n/iodefine.h"
-
-#ifndef TRUE
-#define TRUE (1)
-#else
-#if (1 != TRUE)
-#error "TRUE is not defined by 1."
-#endif
-#endif
-
-#ifndef FALSE
-#define FALSE (0)
-#else
-#if (0 != FALSE)
-#error "FALSE is not defined by 0."
-#endif
-#endif
 
 #ifndef __TYPEDEF__
 
@@ -82,4 +66,4 @@
 #define __TYPEDEF__
 #endif
 
-#endif /* __ARCH_RENESAS_SRC_RX65N_STATUS_H */
+#endif /* __ARCH_RENESAS_SRC_RX65N_RX65N_MACRODRIVER_H */

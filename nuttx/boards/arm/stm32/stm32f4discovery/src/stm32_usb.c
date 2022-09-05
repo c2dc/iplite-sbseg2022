@@ -37,7 +37,7 @@
 #include <nuttx/usb/usbhost.h>
 #include <nuttx/usb/usbdev_trace.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32.h"
 #include "stm32_otgfs.h"
 #include "stm32f4discovery.h"
@@ -156,12 +156,7 @@ void stm32_usbinitialize(void)
 #ifdef CONFIG_USBHOST
 int stm32_usbhost_initialize(void)
 {
-  int pid;
-#if defined(CONFIG_USBHOST_HUB)    || defined(CONFIG_USBHOST_MSC) || \
-    defined(CONFIG_USBHOST_HIDKBD) || defined(CONFIG_USBHOST_HIDMOUSE) || \
-    defined(CONFIG_USBHOST_XBOXCONTROLLER)
   int ret;
-#endif
 
   /* First, register all of the class drivers needed to support the drivers
    * that we care about:
@@ -239,10 +234,10 @@ int stm32_usbhost_initialize(void)
 
       uinfo("Start usbhost_waiter\n");
 
-      pid = kthread_create("usbhost", CONFIG_STM32F4DISCO_USBHOST_PRIO,
-                        CONFIG_STM32F4DISCO_USBHOST_STACKSIZE,
-                        (main_t)usbhost_waiter, (FAR char * const *)NULL);
-      return pid < 0 ? -ENOEXEC : OK;
+      ret = kthread_create("usbhost", CONFIG_STM32F4DISCO_USBHOST_PRIO,
+                           CONFIG_STM32F4DISCO_USBHOST_STACKSIZE,
+                           (main_t)usbhost_waiter, (char * const *)NULL);
+      return ret < 0 ? -ENOEXEC : OK;
     }
 
   return -ENODEV;
@@ -334,7 +329,7 @@ int stm32_setup_overcurrent(xcpt_t handler, void *arg)
  ****************************************************************************/
 
 #ifdef CONFIG_USBDEV
-void stm32_usbsuspend(FAR struct usbdev_s *dev, bool resume)
+void stm32_usbsuspend(struct usbdev_s *dev, bool resume)
 {
   uinfo("resume: %d\n", resume);
 }

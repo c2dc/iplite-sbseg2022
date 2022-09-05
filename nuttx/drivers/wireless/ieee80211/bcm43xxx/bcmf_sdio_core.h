@@ -15,8 +15,8 @@
  *
  ****************************************************************************/
 
-#ifndef __DRIVERS_WIRELESS_IEEE80211_BCMF_SDIO_CORE_H
-#define __DRIVERS_WIRELESS_IEEE80211_BCMF_SDIO_CORE_H
+#ifndef __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_SDIO_CORE_H
+#define __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_SDIO_CORE_H
 
 /****************************************************************************
  * Included Files
@@ -36,6 +36,8 @@
 
 /* SDIO device ID */
 
+#define SDIO_DEVICE_ID_BROADCOM_43012        43012
+#define SDIO_DEVICE_ID_BROADCOM_43013        43013
 #define SDIO_DEVICE_ID_BROADCOM_43143        43143
 #define SDIO_DEVICE_ID_BROADCOM_43241        0x4324
 #define SDIO_DEVICE_ID_BROADCOM_4329         0x4329
@@ -44,6 +46,8 @@
 #define SDIO_DEVICE_ID_BROADCOM_4335_4339    0x4335
 #define SDIO_DEVICE_ID_BROADCOM_43362        43362
 #define SDIO_DEVICE_ID_BROADCOM_43430        43430
+#define SDIO_DEVICE_ID_BROADCOM_43455        0x4345
+#define SDIO_DEVICE_ID_INFINEON_CYW43439     43439
 
 /* Core reg address translation.
  * Both macro's returns a 32 bits byte address on the backplane bus.
@@ -78,16 +82,6 @@
 #define SMB_INT_ACK (1 << 1)  /* Host Interrupt ACK */
 #define SMB_USE_OOB (1 << 2)  /* Use OOB Wakeup */
 #define SMB_DEV_INT (1 << 3)  /* Miscellaneous Interrupt */
-
-enum
-{
-  CHIPCOMMON_CORE_ID = 0,
-  DOT11MAC_CORE_ID,
-  SDIOD_CORE_ID,
-  WLAN_ARMCM3_CORE_ID,
-  SOCSRAM_CORE_ID,
-  MAX_CORE_ID
-};
 
 struct chip_core_info
 {
@@ -246,4 +240,4 @@ struct sdpcmd_regs
  * Public Functions Prototypes
  ****************************************************************************/
 
-#endif /* __DRIVERS_WIRELESS_IEEE80211_BCMF_SDIO_CORE_H */
+#endif /* __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_SDIO_CORE_H */

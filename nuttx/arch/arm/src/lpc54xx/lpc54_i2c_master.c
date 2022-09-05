@@ -51,6 +51,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -64,9 +65,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "hardware/lpc54_pinmux.h"
 #include "hardware/lpc54_syscon.h"
 #include "hardware/lpc54_flexcomm.h"
@@ -162,14 +161,14 @@ static void lpc54_i2c_xfrsetup(struct lpc54_i2cdev_s *priv);
 static bool lpc54_i2c_nextmsg(struct lpc54_i2cdev_s *priv);
 static bool lpc54_i2c_statemachine(struct lpc54_i2cdev_s *priv);
 #ifndef CONFIG_I2C_POLLED
-static int  lpc54_i2c_interrupt(int irq, FAR void *context, FAR void *arg);
+static int  lpc54_i2c_interrupt(int irq, void *context, void *arg);
 #else
 static int  lpc54_i2c_poll(struct lpc54_i2cdev_s *priv);
 #endif
-static int  lpc54_i2c_transfer(FAR struct i2c_master_s *dev,
-              FAR struct i2c_msg_s *msgs, int count);
+static int  lpc54_i2c_transfer(struct i2c_master_s *dev,
+              struct i2c_msg_s *msgs, int count);
 #ifdef CONFIG_I2C_RESET
-static int  lpc54_i2c_reset(FAR struct i2c_master_s * dev);
+static int  lpc54_i2c_reset(struct i2c_master_s * dev);
 #endif
 
 /****************************************************************************
@@ -713,7 +712,7 @@ static bool lpc54_i2c_statemachine(struct lpc54_i2cdev_s *priv)
  ****************************************************************************/
 
 #ifndef CONFIG_I2C_POLLED
-static int lpc54_i2c_interrupt(int irq, FAR void *context, FAR void *arg)
+static int lpc54_i2c_interrupt(int irq, void *context, void *arg)
 {
   struct lpc54_i2cdev_s *priv = (struct lpc54_i2cdev_s *)arg;
   bool done;
@@ -746,8 +745,8 @@ static int lpc54_i2c_interrupt(int irq, FAR void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static int lpc54_i2c_transfer(FAR struct i2c_master_s *dev,
-                              FAR struct i2c_msg_s *msgs, int count)
+static int lpc54_i2c_transfer(struct i2c_master_s *dev,
+                              struct i2c_msg_s *msgs, int count)
 {
   struct lpc54_i2cdev_s *priv = (struct lpc54_i2cdev_s *)dev;
   int ret;
@@ -809,7 +808,7 @@ static int lpc54_i2c_transfer(FAR struct i2c_master_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_I2C_RESET
-static int lpc54_i2c_reset(FAR struct i2c_master_s * dev)
+static int lpc54_i2c_reset(struct i2c_master_s * dev)
 {
 #warning Missing logic
   return OK;
@@ -1186,6 +1185,7 @@ struct i2c_master_s *lpc54_i2cbus_initialize(int port)
 #endif
     {
       i2cerr("ERROR: Unsupported port=%d\n", port);
+      leave_critical_section(flags);
       return NULL;
     }
 
@@ -1245,7 +1245,7 @@ struct i2c_master_s *lpc54_i2cbus_initialize(int port)
  *
  ****************************************************************************/
 
-int lpc54_i2cbus_uninitialize(FAR struct i2c_master_s * dev)
+int lpc54_i2cbus_uninitialize(struct i2c_master_s * dev)
 {
   struct lpc54_i2cdev_s *priv = (struct lpc54_i2cdev_s *) dev;
   uint32_t regval;

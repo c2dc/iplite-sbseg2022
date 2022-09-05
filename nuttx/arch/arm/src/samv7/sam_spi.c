@@ -1,36 +1,20 @@
 /****************************************************************************
  * arch/arm/src/samv7/sam_spi.c
  *
- *   Copyright (C) 2015-2017 Gregory Nutt. All rights reserved.
- *   Authors: Gregory Nutt <gnutt@nuttx.org>
- *            Diego Sanchez <dsanchez@nx-engineering.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -61,8 +45,6 @@
 #include <nuttx/spi/spi.h>
 
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "sam_gpio.h"
 #include "sam_xdmac.h"
 #include "sam_periphclks.h"
@@ -270,9 +252,9 @@ static int      spi_lock(struct spi_dev_s *dev, bool lock);
 static void     spi_select(struct spi_dev_s *dev, uint32_t devid,
                   bool selected);
 static uint32_t spi_setfrequency(struct spi_dev_s *dev, uint32_t frequency);
-#ifdef CONFIG_SPI_CS_DELAY_CONTROL
+#ifdef CONFIG_SPI_DELAY_CONTROL
 static int      spi_setdelay(struct spi_dev_s *dev, uint32_t a, uint32_t b,
-                             uint32_t c);
+                             uint32_t c, uint32_t i);
 #endif
 #ifdef CONFIG_SPI_HWFEATURES
 static int      spi_hwfeatures(struct spi_dev_s *dev, uint8_t features);
@@ -327,7 +309,7 @@ static const struct spi_ops_s g_spi0ops =
   .lock              = spi_lock,
   .select            = spi_select,
   .setfrequency      = spi_setfrequency,
-#ifdef CONFIG_SPI_CS_DELAY_CONTROL
+#ifdef CONFIG_SPI_DELAY_CONTROL
   .setdelay          = spi_setdelay,
 #endif
   .setmode           = spi_setmode,
@@ -369,7 +351,7 @@ static const struct spi_ops_s g_spi1ops =
   .lock              = spi_lock,
   .select            = spi_select,
   .setfrequency      = spi_setfrequency,
-#ifdef CONFIG_SPI_CS_DELAY_CONTROL
+#ifdef CONFIG_SPI_DELAY_CONTROL
   .setdelay          = spi_setdelay,
 #endif
   .setmode           = spi_setmode,
@@ -1121,15 +1103,17 @@ static uint32_t spi_setfrequency(struct spi_dev_s *dev, uint32_t frequency)
  *   startdelay - The delay between CS active and first CLK
  *   stopdelay  - The delay between last CLK and CS inactive
  *   csdelay    - The delay between CS inactive and CS active again
+ *   ifdelay    - The delay between frames
  *
  * Returned Value:
  *   Returns 0 if ok
  *
  ****************************************************************************/
 
-#ifdef CONFIG_SPI_CS_DELAY_CONTROL
+#ifdef CONFIG_SPI_DELAY_CONTROL
 static int spi_setdelay(struct spi_dev_s *dev, uint32_t startdelay,
-                        uint32_t stopdelay, uint32_t csdelay)
+                        uint32_t stopdelay, uint32_t csdelay,
+                        uint32_t ifdelay)
 {
   struct sam_spics_s *spics = (struct sam_spics_s *)dev;
   struct sam_spidev_s *spi = spi_device(spics);
@@ -1139,9 +1123,10 @@ static int spi_setdelay(struct spi_dev_s *dev, uint32_t startdelay,
   uint32_t regval;
   unsigned int offset;
 
-  spiinfo("cs=%d startdelay=%d\n", spics->cs, startdelay);
-  spiinfo("cs=%d stopdelay=%d\n", spics->cs, stopdelay);
-  spiinfo("cs=%d csdelay=%d\n", spics->cs, csdelay);
+  spiinfo("cs=%u startdelay=%" PRIu32 "\n", spics->cs, startdelay);
+  spiinfo("cs=%u stopdelay=%" PRIu32 "\n", spics->cs, stopdelay);
+  spiinfo("cs=%u csdelay=%" PRIu32 "\n", spics->cs, csdelay);
+  spiinfo("cs=%u ifdelay=%" PRIu32 "\n", spics->cs, ifdelay);
 
   offset = (unsigned int)g_csroffset[spics->cs];
 
@@ -1437,20 +1422,31 @@ static void spi_setbits(struct spi_dev_s *dev, int nbits)
 
 static uint32_t spi_send(struct spi_dev_s *dev, uint32_t wd)
 {
-  uint8_t txbyte;
-  uint8_t rxbyte;
+  struct sam_spics_s *spics = (struct sam_spics_s *)dev;
+  if (spics->nbits <= 8)
+    {
+      uint8_t txbyte;
+      uint8_t rxbyte;
 
-  /* spi_exchange can do this. Note: right now, this only deals with 8-bit
-   * words.  If the SPI interface were configured for words of other sizes,
-   * this would fail.
-   */
+      txbyte = (uint8_t)wd;
+      rxbyte = (uint8_t)0;
+      spi_exchange(dev, &txbyte, &rxbyte, 1);
 
-  txbyte = (uint8_t)wd;
-  rxbyte = (uint8_t)0;
-  spi_exchange(dev, &txbyte, &rxbyte, 1);
+      spiinfo("Sent %02x received %02x\n", txbyte, rxbyte);
+      return (uint32_t)rxbyte;
+    }
+  else
+    {
+      uint16_t txword;
+      uint16_t rxword;
 
-  spiinfo("Sent %02x received %02x\n", txbyte, rxbyte);
-  return (uint32_t)rxbyte;
+      txword = (uint16_t)wd;
+      rxword = (uint16_t)0;
+      spi_exchange(dev, &txword, &rxword, 1);
+
+      spiinfo("Sent %02x received %02x\n", txword, rxword);
+      return (uint32_t)rxword;
+    }
 }
 
 /****************************************************************************
@@ -1809,7 +1805,7 @@ static void spi_exchange(struct spi_dev_s *dev, const void *txbuffer,
   regaddr = spi_regaddr(spics, SAM_SPI_RDR_OFFSET);
   memaddr = (uintptr_t)rxbuffer;
 
-  ret = sam_dmarxsetup(spics->rxdma, regaddr, memaddr, nwords);
+  ret = sam_dmarxsetup(spics->rxdma, regaddr, memaddr, nbytes);
   if (ret < 0)
     {
       dmaerr("ERROR: sam_dmarxsetup failed: %d\n", ret);
@@ -1823,7 +1819,7 @@ static void spi_exchange(struct spi_dev_s *dev, const void *txbuffer,
   regaddr = spi_regaddr(spics, SAM_SPI_TDR_OFFSET);
   memaddr = (uintptr_t)txbuffer;
 
-  ret = sam_dmatxsetup(spics->txdma, regaddr, memaddr, nwords);
+  ret = sam_dmatxsetup(spics->txdma, regaddr, memaddr, nbytes);
   if (ret < 0)
     {
       dmaerr("ERROR: sam_dmatxsetup failed: %d\n", ret);
@@ -1994,10 +1990,10 @@ static void spi_recvblock(struct spi_dev_s *dev, void *buffer, size_t nwords)
  *
  ****************************************************************************/
 
-FAR struct spi_dev_s *sam_spibus_initialize(int port)
+struct spi_dev_s *sam_spibus_initialize(int port)
 {
-  FAR struct sam_spidev_s *spi;
-  FAR struct sam_spics_s *spics;
+  struct sam_spidev_s *spi;
+  struct sam_spics_s *spics;
   int csno  = (port & __SPI_CS_MASK) >> __SPI_CS_SHIFT;
   int spino = (port & __SPI_SPI_MASK) >> __SPI_SPI_SHIFT;
   irqstate_t flags;

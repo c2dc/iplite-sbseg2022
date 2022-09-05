@@ -27,7 +27,7 @@
 #include <assert.h>
 #include <errno.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "hardware/s32k1xx_gpio.h"
 #include "s32k1xx_pin.h"
 
@@ -96,7 +96,6 @@ bool s32k1xx_gpioread(uint32_t pinset)
   bool         ret = false;
 
   DEBUGASSERT((pinset & _PIN_MODE_MASK) == _PIN_MODE_GPIO);
-  DEBUGASSERT((pinset & _PIN_IO_MASK) == _PIN_INPUT);
 
   /* Get the port number and pin number */
 

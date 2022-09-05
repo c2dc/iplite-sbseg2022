@@ -25,11 +25,11 @@
 #include <nuttx/config.h>
 
 #include <sched.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/sched.h>
 #include <nuttx/fs/fs.h>
-#include <nuttx/net/net.h>
 
 #include "aio/aio.h"
 

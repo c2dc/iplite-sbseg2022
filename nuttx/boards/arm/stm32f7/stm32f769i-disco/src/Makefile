@@ -32,12 +32,8 @@ ifeq ($(CONFIG_ARCH_BUTTONS),y)
 CSRCS +=  stm32_buttons.c
 endif
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += stm32_appinitialize.c
-endif
-
-ifeq ($(CONFIG_ARCH_FPU),y)
-CSRCS += stm32_ostest.c
 endif
 
 ifeq ($(CONFIG_PWM),y)

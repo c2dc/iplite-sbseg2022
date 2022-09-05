@@ -27,6 +27,8 @@ include wraps/Make.defs
 MKSYSCALL = "$(TOPDIR)$(DELIM)tools$(DELIM)mksyscall$(HOSTEXEEXT)"
 CSVFILE = "$(TOPDIR)$(DELIM)syscall$(DELIM)syscall.csv"
 
+STUB_SRCS += syscall_names.c
+
 ifeq ($(CONFIG_SCHED_INSTRUMENTATION_SYSCALL),y)
 ifeq ($(CONFIG_LIB_SYSCALL),y)
 PROXY_SRCS += syscall_names.c
@@ -42,7 +44,7 @@ PROXY_OBJS = $(PROXY_SRCS:.c=$(OBJEXT))
 STUB_OBJS = $(STUB_SRCS:.c=$(OBJEXT))
 WRAP_OBJS = $(WRAP_SRCS:.c=$(OBJEXT))
 
-CSRCS = $(PROXY_SRCS) $(STUB_SRCS) $(WRAP_SRCS)
+CSRCS = $(sort $(PROXY_SRCS) $(STUB_SRCS) $(WRAP_SRCS))
 COBJS = $(CSRCS:.c=$(OBJEXT))
 
 SRCS = $(ASRCS) $(CSRCS)

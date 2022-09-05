@@ -43,10 +43,13 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include <netinet/ether.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
+
+#include <nuttx/net/netconfig.h>
 
 #include "wireless/wapi.h"
 #include "util.h"
@@ -111,7 +114,7 @@ errout:
       free(buf);
     }
 
-  if (fd > 0)
+  if (fd >= 0)
     {
       close(fd);
     }
@@ -187,7 +190,7 @@ static bool wapi_json_update(FAR cJSON *root,
 
 int wapi_make_socket(void)
 {
-  return socket(PF_INETX, SOCK_WAPI, 0);
+  return socket(NET_SOCK_FAMILY, NET_SOCK_TYPE, NET_SOCK_PROTOCOL);
 }
 
 /****************************************************************************
@@ -238,6 +241,9 @@ FAR const char *wapi_ioctl_command_name(int cmd)
     case SIOCGIWTXPOW:
       return "SIOCGIWTXPOW";
 
+    case SIOCGIWPTAPRIO:
+      return "SIOCGIWPTAPRIO";
+
     case SIOCSIFADDR:
       return "SIOCSIFADDR";
 
@@ -253,6 +259,9 @@ FAR const char *wapi_ioctl_command_name(int cmd)
     case SIOCSIWMODE:
       return "SIOCSIWMODE";
 
+    case SIOCGIWSENS:
+      return "SIOCGIWSENS";
+
     case SIOCSIWRATE:
       return "SIOCSIWRATE";
 
@@ -261,6 +270,9 @@ FAR const char *wapi_ioctl_command_name(int cmd)
 
     case SIOCSIWTXPOW:
       return "SIOCSIWTXPOW";
+
+    case SIOCSIWPTAPRIO:
+      return "SIOCSIWPTAPRIO";
 
     default:
       snprintf(g_ioctl_command_namebuf, WAPI_IOCTL_COMMAND_NAMEBUFSIZ,
@@ -506,7 +518,7 @@ errout:
       free(buf);
     }
 
-  if (fd > 0)
+  if (fd >= 0)
     {
       close(fd);
     }

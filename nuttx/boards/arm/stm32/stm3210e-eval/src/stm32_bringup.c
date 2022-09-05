@@ -26,7 +26,7 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#include <syslog.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/board.h>
@@ -114,7 +114,7 @@
 #ifdef HAVE_I2CTOOL
 static void stm32_i2c_register(int bus)
 {
-  FAR struct i2c_master_s *i2c;
+  struct i2c_master_s *i2c;
   int ret;
 
   i2c = stm32_i2cbus_initialize(bus);
@@ -172,7 +172,7 @@ static void stm32_i2ctool(void)
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -180,11 +180,11 @@ static void stm32_i2ctool(void)
 int stm32_bringup(void)
 {
 #ifdef CONFIG_STM32_SPI1
-  FAR struct spi_dev_s *spi;
-  FAR struct mtd_dev_s *mtd;
+  struct spi_dev_s *spi;
+  struct mtd_dev_s *mtd;
 #endif
 #ifdef NSH_HAVEMMCSD
-  FAR struct sdio_dev_s *sdio;
+  struct sdio_dev_s *sdio;
 #endif
   int ret;
 
@@ -279,7 +279,7 @@ int stm32_bringup(void)
     }
 #endif
 
-#ifdef CONFIG_CAN
+#ifdef CONFIG_STM32_CAN_CHARDRIVER
   /* Initialize CAN and register the CAN driver. */
 
   ret = stm32_can_setup();

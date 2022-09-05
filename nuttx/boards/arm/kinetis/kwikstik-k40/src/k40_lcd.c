@@ -31,7 +31,7 @@
 #include <nuttx/board.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "kwikstik-k40.h"
 
 /****************************************************************************
@@ -65,7 +65,7 @@ int board_lcd_initialize(void)
  *
  ****************************************************************************/
 
-FAR struct lcd_dev_s *board_lcd_getdev(int lcddev)
+struct lcd_dev_s *board_lcd_getdev(int lcddev)
 {
   DEBUGASSERT(lcddev == 0);
 #warning "Missing logic"

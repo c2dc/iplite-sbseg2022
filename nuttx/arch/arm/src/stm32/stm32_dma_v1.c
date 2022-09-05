@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
@@ -33,7 +34,6 @@
 #include <nuttx/arch.h>
 #include <nuttx/semaphore.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "sched/sched.h"
 #include "chip.h"
@@ -277,12 +277,12 @@ static inline void dmachan_putreg(struct stm32_dma_s *dmach,
  *
  ****************************************************************************/
 
-static int stm32_dmatake(FAR struct stm32_dma_s *dmach)
+static int stm32_dmatake(struct stm32_dma_s *dmach)
 {
   return nxsem_wait_uninterruptible(&dmach->sem);
 }
 
-static inline void stm32_dmagive(FAR struct stm32_dma_s *dmach)
+static inline void stm32_dmagive(struct stm32_dma_s *dmach)
 {
   nxsem_post(&dmach->sem);
 }
@@ -358,7 +358,7 @@ static int irq_to_channel_index(int irq)
  *
  ****************************************************************************/
 
-static int stm32_dmainterrupt(int irq, void *context, FAR void *arg)
+static int stm32_dmainterrupt(int irq, void *context, void *arg)
 {
   struct stm32_dma_s *dmach;
   uint32_t isr;

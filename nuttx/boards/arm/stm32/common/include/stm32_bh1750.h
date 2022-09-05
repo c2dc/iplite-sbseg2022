@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __STM32_BH1750_H
-#define __STM32_BH1750_H
+#ifndef __BOARDS_ARM_STM32_COMMON_INCLUDE_STM32_BH1750_H
+#define __BOARDS_ARM_STM32_COMMON_INCLUDE_STM32_BH1750_H
 
 /****************************************************************************
  * Included Files
@@ -59,7 +59,7 @@ extern "C"
  * Name: board_bh1750_initialize
  *
  * Description:
- *   Initialize and register the MPL115A Pressure Sensor driver.
+ *   Initialize and register the BH1750FVI Ambient Light driver.
  *
  * Input Parameters:
  *   devno - The device number, used to build the device path as /dev/lightN
@@ -77,4 +77,4 @@ int board_bh1750_initialize(int devno, int busno);
 }
 #endif
 
-#endif // __STM32_BH1750_H
+#endif /* __BOARDS_ARM_STM32_COMMON_INCLUDE_STM32_BH1750_H */

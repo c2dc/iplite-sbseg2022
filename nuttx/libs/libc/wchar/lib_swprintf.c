@@ -22,8 +22,6 @@
  * Included Files
  ****************************************************************************/
 
-#include <nuttx/config.h>
-
 #include <sys/types.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -31,8 +29,6 @@
 #include "libc.h"
 
 #include <nuttx/streams.h>
-
-#ifdef CONFIG_LIBC_WCHAR
 
 /****************************************************************************
  * Public Functions
@@ -51,7 +47,7 @@ int swprintf(FAR wchar_t *buf, size_t maxlen, FAR const wchar_t *fmt, ...)
   /* Initialize a memory stream to write to the buffer */
 
   lib_memoutstream((FAR struct lib_memoutstream_s *)&memoutstream,
-                   (FAR char *) buf, LIB_BUFLEN_UNKNOWN);
+                   (FAR char *)buf, maxlen);
 
   /* Then let lib_vsprintf do the real work */
 
@@ -62,5 +58,3 @@ int swprintf(FAR wchar_t *buf, size_t maxlen, FAR const wchar_t *fmt, ...)
 
   return n;
 }
-
-#endif /* CONFIG_LIBC_WCHAR */

@@ -1,36 +1,20 @@
 /****************************************************************************
  * arch/misoc/src/minerva/minerva_swint.c
  *
- *   Copyright (C) 2019 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *           Ramtin Amin <keytwo@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -57,11 +41,11 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Name: up_registerdump
+ * Name: minerva_registerdump
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG_SYSCALL_INFO
-static void up_registerdump(const uint32_t * regs)
+static void minerva_registerdump(const uint32_t * regs)
 {
 #if 0
   svcinfo("EPC:%08x\n", regs[REG_CSR_MEPC]);
@@ -89,8 +73,6 @@ static void up_registerdump(const uint32_t * regs)
 #endif
 #endif
 }
-#else
-#  define up_registerdump(regs)
 #endif
 
 /****************************************************************************
@@ -142,7 +124,7 @@ static void dispatch_syscall(void) naked_function;
  *
  ****************************************************************************/
 
-int minerva_swint(int irq, FAR void *context, FAR void *arg)
+int minerva_swint(int irq, void *context, void *arg)
 {
   uint32_t *regs = (uint32_t *) context;
 
@@ -155,7 +137,7 @@ int minerva_swint(int irq, FAR void *context, FAR void *arg)
 
 #ifdef CONFIG_DEBUG_SYSCALL_INFO
   svcinfo("Entry: regs: %p cmd: %d\n", regs, regs[REG_A0]);
-  up_registerdump(regs);
+  minerva_registerdump(regs);
 #endif
 
   /* Handle the SWInt according to the command in $a0 */
@@ -238,7 +220,7 @@ int minerva_swint(int irq, FAR void *context, FAR void *arg)
     default:
       {
 #ifdef CONFIG_BUILD_KERNEL
-        FAR struct tcb_s *rtcb = nxsched_self();
+        struct tcb_s *rtcb = nxsched_self();
         int index = rtcb->xcp.nsyscalls;
 
         /* Verify that the SYS call number is within range */
@@ -283,39 +265,11 @@ int minerva_swint(int irq, FAR void *context, FAR void *arg)
   if (regs != g_current_regs)
     {
       svcinfo("SWInt Return: Context switch!\n");
-      up_registerdump((const uint32_t *)g_current_regs);
+      minerva_registerdump((const uint32_t *)g_current_regs);
     }
   else
     {
       svcinfo("SWInt Return: %d\n", regs[REG_A0]);
-    }
-#endif
-
-#if defined(CONFIG_ARCH_FPU) || defined(CONFIG_ARCH_ADDRENV)
-  /* Check for a context switch.  If a context switch occurred, then
-   * g_current_regs will have a different value than it did on entry.  If an
-   * interrupt level context switch has occurred, then restore the floating
-   * point state and the establish the correct address environment before
-   * returning from the interrupt.
-   */
-
-  if (regs != g_current_regs)
-    {
-#ifdef CONFIG_ARCH_FPU
-      /* Restore floating point registers */
-
-      up_restorefpu((uint32_t *) g_current_regs);
-#endif
-
-#ifdef CONFIG_ARCH_ADDRENV
-      /* Make sure that the address environment for the previously running
-       * task is closed down gracefully (data caches dump, MMU flushed) and
-       * set up the address environment for the new thread at the head of
-       * the ready-to-run list.
-       */
-
-      group_addrenv(NULL);
-#endif
     }
 #endif
 

@@ -28,13 +28,14 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 #include <nuttx/semaphore.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "hardware/efm32_cmu.h"
 #include "hardware/efm32_dma.h"
 #include "efm32_dma.h"
@@ -112,10 +113,10 @@ static struct dma_channel_s g_dmach[EFM32_DMA_NCHANNELS];
 #ifdef CONFIG_EFM32_DMA_ALTDSEC
 static struct dma_descriptor_s
   g_descriptors[DESC_TABLE_SIZE + EFM32_DMA_NCHANNELS]
-  __attribute__((aligned(DESC_TABLE_ALIGN)));
+  aligned_data(DESC_TABLE_ALIGN);
 #else
 static struct dma_descriptor_s g_descriptors[EFM32_DMA_NCHANNELS]
-  __attribute__((aligned(DESC_TABLE_ALIGN)));
+  aligned_data(DESC_TABLE_ALIGN);
 #endif
 
 /****************************************************************************
@@ -194,7 +195,7 @@ efm32_get_descriptor(struct dma_channel_s *dmach, bool alt)
  *
  ****************************************************************************/
 
-static int efm32_dmac_interrupt(int irq, void *context, FAR void *arg)
+static int efm32_dmac_interrupt(int irq, void *context, void *arg)
 {
   struct dma_channel_s *dmach;
   unsigned int chndx;

@@ -37,6 +37,7 @@
 
 #include "netdev/netdev.h"
 #include "netlink/netlink.h"
+#include "arp/arp.h"
 
 /****************************************************************************
  * Public Functions
@@ -59,7 +60,7 @@
 
 int netdev_carrier_on(FAR struct net_driver_s *dev)
 {
-  if (dev)
+  if (dev && !IFF_IS_RUNNING(dev->d_flags))
     {
       dev->d_flags |= IFF_RUNNING;
       netlink_device_notify(dev);
@@ -86,14 +87,15 @@ int netdev_carrier_on(FAR struct net_driver_s *dev)
 
 int netdev_carrier_off(FAR struct net_driver_s *dev)
 {
-  if (dev)
+  if (dev && IFF_IS_RUNNING(dev->d_flags))
     {
       dev->d_flags &= ~IFF_RUNNING;
       netlink_device_notify(dev);
 
       /* Notify clients that the network has been taken down */
 
-      devif_dev_event(dev, NULL, NETDEV_DOWN);
+      devif_dev_event(dev, NETDEV_DOWN);
+      arp_cleanup(dev);
 
       return OK;
     }

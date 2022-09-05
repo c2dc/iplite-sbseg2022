@@ -1,5 +1,5 @@
 /****************************************************************************
- * graphics/lvgl/lv_fs_interface.h
+ * apps/graphics/lvgl/lv_fs_interface.h
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __LV_FS_INTERFACE_H__
-#define __LV_FS_INTERFACE_H__
+#ifndef __APPS_GRAPHICS_LVGL_LV_FS_INTERFACE_H
+#define __APPS_GRAPHICS_LVGL_LV_FS_INTERFACE_H
 
 /****************************************************************************
  * Included Files
@@ -63,4 +63,4 @@ void lv_fs_interface_init(void);
 
 #endif /* LV_USE_FILESYSTEM */
 
-#endif /* __LV_FS_INTERFACE_H__ */
+#endif /* __APPS_GRAPHICS_LVGL_LV_FS_INTERFACE_H */

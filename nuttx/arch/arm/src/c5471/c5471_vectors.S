@@ -85,18 +85,18 @@ arm_vectorirq:
 	mrs	lr, spsr
 	str	lr, [r13, #4]		/* Save spsr_IRQ */
 
-	/* Then switch back to SVC mode */
+	/* Then switch back to SYS mode */
 
 	bic	lr, lr, #PSR_MODE_MASK	/* Keep F and T bits */
-	orr	lr, lr, #(PSR_MODE_SVC | PSR_I_BIT)
-	msr	cpsr_c, lr		/* Switch to SVC mode */
+	orr	lr, lr, #(PSR_MODE_SYS | PSR_I_BIT)
+	msr	cpsr_c, lr		/* Switch to SYS mode */
 
 	/* Create a context structure.  First set aside a stack frame
 	 * and store r0-r12 into the frame.
 	 */
 
 	sub	sp, sp, #XCPTCONTEXT_SIZE
-	stmia	sp, {r0-r12}		/* Save the SVC mode regs */
+	stmia	sp, {r0-r12}		/* Save the SYS mode regs */
 
 	/* Get the correct values of r13(sp) and r14(lr) in r1 and r2 */
 
@@ -145,25 +145,39 @@ arm_vectorirq:
 	mov	r1, sp			/* Get r1=xcp */
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
-	ldr	sp, .Lirqstackbase	/* SP = interrupt stack base */
+	ldr	sp, .Lirqstacktop	/* SP = interrupt stack top */
 	str	r1, [sp, #-4]!		/* Save the xcp address at SP-4 then update SP */
 	bl	arm_doirq		/* Call the handler */
 	ldr	sp, [sp]		/* Restore the user stack pointer */
 #else
-	bl	arm_doirq		/* Call the handler */
+	/* If the interrupt stack is disabled, reserve xcpcontext to ensure
+	 * that signal processing can have a separate xcpcontext to handle
+	 * signal context (reference: arm_schedulesigaction.c):
+	 *      ----------------------
+	 *     |    IRQ XCP context   |
+	 *      -------------------
+	 *     |  Signal XCP context  |
+	 *      ----------------------   <- SP
+	 */
+
+	sub	sp, sp, #XCPTCONTEXT_SIZE	/* Reserve signal context */
+
+	bl	arm_doirq			/* Call the handler */
+
+	add	sp, sp, #XCPTCONTEXT_SIZE	/* Restore signal context */
 #endif
 
-	/* Restore the CPSR, SVC modr registers and return */
+	/* Restore the CPSR, SYS mode registers and return */
 .Lnoirqset:
-	ldr	r0, [sp, #(4*REG_CPSR)]	/* Setup the SVC mode SPSR */
-	msr	spsr, r0
+	ldr	r0, [sp, #(4*REG_CPSR)]	/* Setup the SYS mode SPSR */
+	msr	spsr_cxsf, r0
 	ldmia	sp, {r0-r15}^		/* Return */
 
 .Lirqtmp:
 	.word	g_irqtmp
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
-.Lirqstackbase:
-	.word	g_intstackbase
+.Lirqstacktop:
+	.word	g_intstacktop
 #endif
 	.align	5
 
@@ -171,7 +185,7 @@ arm_vectorirq:
  * Function: arm_vectorsvc
  *
  * Description:
- *   SWI interrupt. We enter the SWI in SVC mode
+ *   SWI interrupt. We enter the SWI in SYS mode
  ****************************************************************************/
 
 	.globl	arm_vectorsvc
@@ -191,7 +205,7 @@ arm_vectorsvc:
 	 */
 
 	sub	sp, sp, #XCPTCONTEXT_SIZE
-	stmia	sp, {r0-r12}		/* Save the SVC mode regs */
+	stmia	sp, {r0-r12}		/* Save the SYS mode regs */
 
 	/* Get the correct values of r13(sp), r14(lr), r15(pc)
 	 * and CPSR in r1-r4 */
@@ -212,10 +226,10 @@ arm_vectorsvc:
 	mov	r0, sp			/* Get r0=xcp */
 	bl	arm_syscall		/* Call the handler */
 
-	/* Restore the CPSR, SVC modr registers and return */
+	/* Restore the CPSR, SYS mode registers and return */
 
-	ldr	r0, [sp, #(4*REG_CPSR)]	/* Setup the SVC mode SPSR */
-	msr	spsr, r0
+	ldr	r0, [sp, #(4*REG_CPSR)]	/* Setup the SYS mode SPSR */
+	msr	spsr_cxsf, r0
 	ldmia	sp, {r0-r15}^		/* Return */
 
 	.align	5
@@ -243,18 +257,18 @@ arm_vectordata:
 	mrs	lr, spsr		/* Get SPSR */
 	str	lr, [r13, #4]		/* Save in temp storage */
 
-	/* Then switch back to SVC mode */
+	/* Then switch back to SYS mode */
 
 	bic	lr, lr, #PSR_MODE_MASK	/* Keep F and T bits */
-	orr	lr, lr, #(PSR_MODE_SVC | PSR_I_BIT)
-	msr	cpsr_c, lr		/* Switch to SVC mode */
+	orr	lr, lr, #(PSR_MODE_SYS | PSR_I_BIT)
+	msr	cpsr_c, lr		/* Switch to SYS mode */
 
 	/* Create a context structure.  First set aside a stack frame
 	 * and store r0-r12 into the frame.
 	 */
 
 	sub	sp, sp, #XCPTCONTEXT_SIZE
-	stmia	sp, {r0-r12}		/* Save the SVC mode regs */
+	stmia	sp, {r0-r12}		/* Save the SYS mode regs */
 
 	/* Get the correct values of r13(sp) and r14(lr) in r1 and r2 */
 
@@ -269,7 +283,7 @@ arm_vectordata:
 	add	r0, sp, #(4*REG_SP)	/* Offset to pc, cpsr storage */
 	stmia	r0, {r1-r4}
 
-	/* Then call the data abort handler with interrupt disabled.
+	/* Then call the data abort handler with interrupts disabled.
 	 * void arm_dataabort(struct xcptcontext *xcp)
 	 */
 
@@ -277,10 +291,10 @@ arm_vectordata:
 	mov	r0, sp			/* Get r0=xcp */
 	bl	arm_dataabort		/* Call the handler */
 
-	/* Restore the CPSR, SVC modr registers and return */
+	/* Restore the CPSR, SYS mode registers and return */
 
-	ldr	r0, [sp, #(4*REG_CPSR)]	/* Setup the SVC mode SPSR */
-	msr	spsr, r0
+	ldr	r0, [sp, #(4*REG_CPSR)]	/* Setup the SYS mode SPSR */
+	msr	spsr_cxsf, r0
 	ldmia	sp, {r0-r15}^		/* Return */
 
 .Ldaborttmp:
@@ -309,18 +323,18 @@ arm_vectorprefetch:
 	mrs	lr, spsr		/* Get SPSR */
 	str	lr, [r13, #4]		/* Save in temp storage */
 
-	/* Then switch back to SVC mode */
+	/* Then switch back to SYS mode */
 
 	bic	lr, lr, #PSR_MODE_MASK	/* Keep F and T bits */
-	orr	lr, lr, #(PSR_MODE_SVC | PSR_I_BIT)
-	msr	cpsr_c, lr		/* Switch to SVC mode */
+	orr	lr, lr, #(PSR_MODE_SYS | PSR_I_BIT)
+	msr	cpsr_c, lr		/* Switch to SYS mode */
 
 	/* Create a context structure.  First set aside a stack frame
 	 * and store r0-r12 into the frame.
 	 */
 
 	sub	sp, sp, #XCPTCONTEXT_SIZE
-	stmia	sp, {r0-r12}		/* Save the SVC mode regs */
+	stmia	sp, {r0-r12}		/* Save the SYS mode regs */
 
 	/* Get the correct values of r13(sp) and r14(lr) in r1 and r2 */
 
@@ -335,7 +349,7 @@ arm_vectorprefetch:
 	add	r0, sp, #(4*REG_SP)	/* Offset to pc, cpsr storage */
 	stmia	r0, {r1-r4}
 
-	/* Then call the prefetch abort handler with interrupt disabled.
+	/* Then call the prefetch abort handler with interrupts disabled.
 	 * void arm_prefetchabort(struct xcptcontext *xcp)
 	 */
 
@@ -343,10 +357,10 @@ arm_vectorprefetch:
 	mov	r0, sp			/* Get r0=xcp */
 	bl	arm_prefetchabort	/* Call the handler */
 
-	/* Restore the CPSR, SVC modr registers and return */
+	/* Restore the CPSR, SYS mode registers and return */
 
-	ldr	r0, [sp, #(4*REG_CPSR)]	/* Setup the SVC mode SPSR */
-	msr	spsr, r0
+	ldr	r0, [sp, #(4*REG_CPSR)]	/* Setup the SYS mode SPSR */
+	msr	spsr_cxsf, r0
 	ldmia	sp, {r0-r15}^		/* Return */
 
 .Lpaborttmp:
@@ -375,18 +389,18 @@ arm_vectorundefinsn:
 	mrs	lr, spsr		/* Get SPSR */
 	str	lr, [r13, #4]		/* Save in temp storage */
 
-	/* Then switch back to SVC mode */
+	/* Then switch back to SYS mode */
 
 	bic	lr, lr, #PSR_MODE_MASK	/* Keep F and T bits */
-	orr	lr, lr, #(PSR_MODE_SVC | PSR_I_BIT)
-	msr	cpsr_c, lr		/* Switch to SVC mode */
+	orr	lr, lr, #(PSR_MODE_SYS | PSR_I_BIT)
+	msr	cpsr_c, lr		/* Switch to SYS mode */
 
 	/* Create a context structure.  First set aside a stack frame
 	 * and store r0-r12 into the frame.
 	 */
 
 	sub	sp, sp, #XCPTCONTEXT_SIZE
-	stmia	sp, {r0-r12}		/* Save the SVC mode regs */
+	stmia	sp, {r0-r12}		/* Save the SYS mode regs */
 
 	/* Get the correct values of r13(sp) and r14(lr) in r1 and r2 */
 
@@ -401,7 +415,7 @@ arm_vectorundefinsn:
 	add	r0, sp, #(4*REG_SP)	/* Offset to pc, cpsr storage */
 	stmia	r0, {r1-r4}
 
-	/* Then call the undef insn handler with interrupt disabled.
+	/* Then call the undef insn handler with interrupts disabled.
 	 * void arm_undefinedinsn(struct xcptcontext *xcp)
 	 */
 
@@ -409,10 +423,10 @@ arm_vectorundefinsn:
 	mov	r0, sp			/* Get r0=xcp */
 	bl	arm_undefinedinsn	/* Call the handler */
 
-	/* Restore the CPSR, SVC modr registers and return */
+	/* Restore the CPSR, SYS mode registers and return */
 
-	ldr	r0, [sp, #(4*REG_CPSR)]	/* Setup the SVC mode SPSR */
-	msr	spsr, r0
+	ldr	r0, [sp, #(4*REG_CPSR)]	/* Setup the SYS mode SPSR */
+	msr	spsr_cxsf, r0
 	ldmia	sp, {r0-r15}^		/* Return */
 
 .Lundeftmp:
@@ -425,10 +439,12 @@ arm_vectorundefinsn:
  *
  * Description:
  *   Shouldn't happen
+ *
  ****************************************************************************/
 
 	.globl	arm_vectorfiq
 	.type	arm_vectorfiq, %function
+
 arm_vectorfiq:
 	subs	pc, lr, #4
 
@@ -446,7 +462,7 @@ arm_vectoraddrexcptn:
 	b	arm_vectoraddrexcptn
 
 /****************************************************************************
- *  Name: g_intstackalloc/g_intstackbase
+ *  Name: g_intstackalloc/g_intstacktop
  *
  * Description:
  *   Shouldn't happen
@@ -457,14 +473,15 @@ arm_vectoraddrexcptn:
 	.bss
 	.balign	4
 	.global	g_intstackalloc
-	.global	g_intstackbase
+	.global	g_intstacktop
 	.type	g_intstackalloc, object
-	.type	g_intstackbase, object
+	.type	g_intstacktop, object
+
 g_intstackalloc:
 	.skip	(CONFIG_ARCH_INTERRUPTSTACK & ~3)
-g_intstackbase:
-	.skip	4
-	.size	g_intstackbase, 4
+g_intstacktop:
+	.size	g_intstacktop, 0
 	.size	g_intstackalloc, (CONFIG_ARCH_INTERRUPTSTACK & ~3)
+
 #endif
 	.end

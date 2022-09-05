@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_STM32L5_HARDWARE_STM32L562xx_RCC_H
-#define __ARCH_ARM_SRC_STM32L5_HARDWARE_STM32L562xx_RCC_H
+#ifndef __ARCH_ARM_SRC_STM32L5_HARDWARE_STM32L562XX_RCC_H
+#define __ARCH_ARM_SRC_STM32L5_HARDWARE_STM32L562XX_RCC_H
 
 /****************************************************************************
  * Included Files
@@ -291,7 +291,7 @@
 
 /* PLLSAI1 Configuration register */
 
-#define RCC_PLLSAI1CFG_PLLSRC_SHIFT      (0) /* Bit 0-1: Main PLSAI1 entry clock soure */
+#define RCC_PLLSAI1CFG_PLLSRC_SHIFT      (0) /* Bit 0-1: Main PLSAI1 entry clock source */
 #define RCC_PLLSAI1CFG_PLLSRC_MASK       (3 << RCC_PLLSAI1CFG_PLLSRC_SHIFT)
 #  define RCC_PLLSAI1CFG_PLLSRC_NONE     (0 << RCC_PLLSAI1CFG_PLLSRC_SHIFT) /* 000: No clock sent to PLLs */
 #  define RCC_PLLSAI1CFG_PLLSRC_MSI      (1 << RCC_PLLSAI1CFG_PLLSRC_SHIFT) /* 001: MSI selected as PLL source */
@@ -339,7 +339,7 @@
 
 /* PLLSAI2 Configuration register */
 
-#define RCC_PLLSAI2CFG_PLLSRC_SHIFT      (0) /* Bit 0-1: Main PLSAI2 entry clock soure */
+#define RCC_PLLSAI2CFG_PLLSRC_SHIFT      (0) /* Bit 0-1: Main PLSAI2 entry clock source */
 #define RCC_PLLSAI2CFG_PLLSRC_MASK       (3 << RCC_PLLSAI2CFG_PLLSRC_SHIFT)
 #  define RCC_PLLSAI2CFG_PLLSRC_NONE     (0 << RCC_PLLSAI2CFG_PLLSRC_SHIFT) /* 000: No clock sent to PLLs */
 #  define RCC_PLLSAI2CFG_PLLSRC_MSI      (1 << RCC_PLLSAI2CFG_PLLSRC_SHIFT) /* 001: MSI selected as PLL source */

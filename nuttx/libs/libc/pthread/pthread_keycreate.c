@@ -26,7 +26,9 @@
 
 #include <pthread.h>
 #include <assert.h>
+#include <errno.h>
 
+#include <nuttx/semaphore.h>
 #include <nuttx/tls.h>
 
 #if CONFIG_TLS_NELEM > 0
@@ -53,8 +55,6 @@
  *   key        - A pointer to the key to create.
  *   destructor - An optional destructor() function that may be associated
  *                with each key that is invoked when a thread exits.
- *                However, this argument is ignored in the current
- *                implementation.
  *
  * Returned Value:
  *   If successful, the pthread_key_create() function will store the newly
@@ -67,33 +67,51 @@
  *                has been exceeded
  *      ENOMEM  - Insufficient memory exist to create the key.
  *
- * POSIX Compatibility:
- *   - The present implementation ignores the destructor argument.
- *
  ****************************************************************************/
 
 int pthread_key_create(FAR pthread_key_t *key,
                        CODE void (*destructor)(FAR void *))
 {
-  int tlsindex;
+  FAR struct task_info_s *info = task_get_info();
+  int candidate;
+  int ret;
 
   DEBUGASSERT(key != NULL);
+  DEBUGASSERT(info != NULL);
 
-  /* Allocate a TLS index */
+  /* Search for an unused index.  This is done in a critical section here to
+   * avoid concurrent modification of the group TLS index set.
+   */
 
-  tlsindex = tls_alloc();
+  ret = _SEM_WAIT(&info->ta_sem);
 
-  /* Check if found a TLS index. */
-
-  if (tlsindex >= 0)
+  if (ret < 0)
     {
-      /* Yes.. Return the key value and success */
-
-      *key = (pthread_key_t)tlsindex;
-      return OK;
+      ret = _SEM_ERRNO(ret);
+      return ret;
     }
 
-  return -tlsindex;
+  ret = EAGAIN;
+
+  for (candidate = 0; candidate < CONFIG_TLS_NELEM; candidate++)
+    {
+      /* Is this candidate index available? */
+
+      tls_ndxset_t mask = (tls_ndxset_t)1 << candidate;
+      if ((info->ta_tlsset & mask) == 0)
+        {
+          /* Yes.. allocate the index and break out of the loop */
+
+          info->ta_tlsset |= mask;
+          info->ta_tlsdtor[candidate] = destructor;
+          *key = candidate;
+          ret = OK;
+          break;
+        }
+    }
+
+  _SEM_POST(&info->ta_sem);
+  return ret;
 }
 
 #endif /* CONFIG_TLS_NELEM */

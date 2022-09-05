@@ -89,6 +89,9 @@ static const struct file_operations g_qeops =
   NULL,     /* seek */
   qe_ioctl, /* ioctl */
   NULL      /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL    /* unlink */
+#endif
 };
 
 /****************************************************************************
@@ -307,6 +310,42 @@ static int qe_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
         {
           DEBUGASSERT(lower->ops->reset != NULL);
           ret = lower->ops->reset(lower);
+        }
+        break;
+
+      /* QEIOC_SETPOSMAX - Set the maximum encoder position.
+       *   Argument: uint32
+       */
+
+      case QEIOC_SETPOSMAX:
+        {
+          uint32_t maxpos = (uint32_t)arg;
+          if (lower->ops->setposmax != NULL)
+            {
+              ret = lower->ops->setposmax(lower, maxpos);
+            }
+          else
+            {
+              ret = -ENOTTY;
+            }
+        }
+        break;
+
+      /* QEIOC_SETINDEX - Set the index pin position
+       *   Argument: uint32
+       */
+
+      case QEIOC_SETINDEX:
+        {
+          uint32_t indexpos = (uint32_t)arg;
+          if (lower->ops->setindex != NULL)
+            {
+              ret = lower->ops->setindex(lower, indexpos);
+            }
+          else
+            {
+              ret = -ENOTTY;
+            }
         }
         break;
 

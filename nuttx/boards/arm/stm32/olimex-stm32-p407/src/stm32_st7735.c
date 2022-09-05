@@ -35,9 +35,7 @@
 #include <nuttx/lcd/lcd.h>
 #include <nuttx/lcd/st7735.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "stm32_gpio.h"
 #include "stm32_spi.h"
 #include "olimex-stm32-p407.h"
@@ -100,7 +98,7 @@ int board_lcd_initialize(void)
  *
  ****************************************************************************/
 
-FAR struct lcd_dev_s *board_lcd_getdev(int devno)
+struct lcd_dev_s *board_lcd_getdev(int devno)
 {
   return g_lcd;
 }

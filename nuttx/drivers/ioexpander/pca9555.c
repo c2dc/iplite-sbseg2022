@@ -201,7 +201,7 @@ static inline int pca9555_writeread(FAR struct pca9555_dev_s *pca,
  ****************************************************************************/
 
 static int pca9555_setbit(FAR struct pca9555_dev_s *pca, uint8_t addr,
-                          uint8_t pin, int bitval)
+                          uint8_t pin, bool bitval)
 {
   uint8_t buf[2];
   int ret;
@@ -363,15 +363,13 @@ static int pca9555_direction(FAR struct ioexpander_dev_s *dev, uint8_t pin,
  ****************************************************************************/
 
 static int pca9555_option(FAR struct ioexpander_dev_s *dev, uint8_t pin,
-                          int opt, FAR void *val)
+                          int opt, FAR void *value)
 {
   FAR struct pca9555_dev_s *pca = (FAR struct pca9555_dev_s *)dev;
   int ret = -EINVAL;
 
   if (opt == IOEXPANDER_OPTION_INVERT)
     {
-      int ival = (int)((intptr_t)val);
-
       /* Get exclusive access to the PCA555 */
 
       ret = pca9555_lock(pca);
@@ -380,7 +378,8 @@ static int pca9555_option(FAR struct ioexpander_dev_s *dev, uint8_t pin,
           return ret;
         }
 
-      ret = pca9555_setbit(pca, PCA9555_REG_POLINV, pin, ival);
+      ret = pca9555_setbit(pca, PCA9555_REG_POLINV, pin,
+                           ((uintptr_t)value == IOEXPANDER_VAL_INVERT));
       pca9555_unlock(pca);
     }
 
@@ -814,7 +813,7 @@ static int pca9555_detach(FAR struct ioexpander_dev_s *dev, FAR void *handle)
   DEBUGASSERT(pca != NULL && cb != NULL);
   DEBUGASSERT((uintptr_t)cb >= (uintptr_t)&pca->cb[0] &&
               (uintptr_t)cb <=
-              (uintptr_t)&pca->cb[CONFIG_TCA64XX_INT_NCALLBACKS - 1]);
+              (uintptr_t)&pca->cb[CONFIG_PCA9555_INT_NCALLBACKS - 1]);
   UNUSED(pca);
 
   cb->pinset = 0;

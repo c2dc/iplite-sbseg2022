@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -60,14 +61,13 @@ struct mcp9844_dev_s
 /* I2C helper functions */
 
 static int     mcp9844_read_u16(FAR struct mcp9844_dev_s *priv,
-                  uint8_t const regaddr, FAR uint16_t *value);
+                                uint8_t const regaddr, FAR uint16_t *value);
 static int     mcp9844_write_u16(FAR struct mcp9844_dev_s *priv,
-                  uint8_t const regaddr, uint16_t const regval);
+                                 uint8_t const regaddr,
+                                 uint16_t const regval);
 
 /* Character driver methods */
 
-static int     mcp9844_open(FAR struct file *filep);
-static int     mcp9844_close(FAR struct file *filep);
 static ssize_t mcp9844_read(FAR struct file *filep, FAR char *buffer,
                   size_t buflen);
 static ssize_t mcp9844_write(FAR struct file *filep, FAR const char *buffer,
@@ -81,13 +81,16 @@ static int     mcp9844_ioctl(FAR struct file *filep, int cmd,
 
 static const struct file_operations g_mcp9844_fops =
 {
-  mcp9844_open,
-  mcp9844_close,
-  mcp9844_read,
-  mcp9844_write,
-  NULL,
-  mcp9844_ioctl,
-  NULL
+  NULL,            /* open */
+  NULL,            /* close */
+  mcp9844_read,    /* read */
+  mcp9844_write,   /* write */
+  NULL,            /* seek */
+  mcp9844_ioctl,   /* ioctl */
+  NULL             /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL           /* unlink */
+#endif
 };
 
 /****************************************************************************
@@ -177,32 +180,6 @@ static int mcp9844_write_u16(FAR struct mcp9844_dev_s *priv,
 }
 
 /****************************************************************************
- * Name: mcp9844_open
- *
- * Description:
- *   This function is called whenever the MCP9844 device is opened.
- *
- ****************************************************************************/
-
-static int mcp9844_open(FAR struct file *filep)
-{
-  return OK;
-}
-
-/****************************************************************************
- * Name: mcp9844_close
- *
- * Description:
- *   This routine is called when the MCP9844 device is closed.
- *
- ****************************************************************************/
-
-static int mcp9844_close(FAR struct file *filep)
-{
-  return OK;
-}
-
-/****************************************************************************
  * Name: mcp9844_read
  ****************************************************************************/
 
@@ -229,7 +206,7 @@ static ssize_t mcp9844_write(FAR struct file *filep, FAR const char *buffer,
 static int mcp9844_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 {
   FAR struct inode *inode = filep->f_inode;
-  FAR struct mcp9844_dev_s *priv  = inode->i_private;
+  FAR struct mcp9844_dev_s *priv = inode->i_private;
   int ret = OK;
 
   switch (cmd)

@@ -40,7 +40,7 @@
 #include <nuttx/i2c/i2c_master.h>
 #include <nuttx/lcd/st7032.h>
 
-#ifndef CONFIG_LIB_SLCDCODEC
+#ifndef CONFIG_LIBC_SLCDCODEC
 # error please also select Library Routines, Segment LCD CODEC
 #endif
 
@@ -94,8 +94,6 @@ static void lcd_scroll_up(FAR struct st7032_dev_s *priv);
 
 /* Character driver methods */
 
-static int     st7032_open(FAR struct file *filep);
-static int     st7032_close(FAR struct file *filep);
 static ssize_t st7032_read(FAR struct file *filep, FAR char *buffer,
                             size_t buflen);
 static ssize_t st7032_write(FAR struct file *filep, FAR const char *buffer,
@@ -110,15 +108,15 @@ static int     st7032_ioctl(FAR struct file *filep, int cmd,
 
 static const struct file_operations g_st7032fops =
 {
-  st7032_open,   /* open */
-  st7032_close,  /* close */
+  NULL,          /* open */
+  NULL,          /* close */
   st7032_read,   /* read */
   st7032_write,  /* write */
   st7032_seek,   /* seek */
   st7032_ioctl,  /* ioctl */
-  NULL,          /* poll */
+  NULL           /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  NULL           /* unlink */
+  , NULL         /* unlink */
 #endif
 };
 
@@ -701,32 +699,6 @@ static void lcd_curpos_to_fpos(FAR struct st7032_dev_s *priv,
   /* the logical file position is the linear position plus any synthetic LF */
 
   *fpos = (row * ST7032_MAX_COL) + col + row;
-}
-
-/****************************************************************************
- * Name: st7032_open
- *
- * Description:
- *   This function is called whenever the ST7032 device is opened.
- *
- ****************************************************************************/
-
-static int st7032_open(FAR struct file *filep)
-{
-  return OK;
-}
-
-/****************************************************************************
- * Name: st7032_close
- *
- * Description:
- *   This routine is called when the LM-75 device is closed.
- *
- ****************************************************************************/
-
-static int st7032_close(FAR struct file *filep)
-{
-  return OK;
 }
 
 /****************************************************************************

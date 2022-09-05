@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <string.h>
@@ -91,7 +92,6 @@ static ssize_t lis3dsh_read(FAR struct file *, FAR char *buffer,
                             size_t buflen);
 static ssize_t lis3dsh_write(FAR struct file *filep, FAR const char *buffer,
                              size_t buflen);
-static int lis3dsh_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
 
 /****************************************************************************
  * Private Data
@@ -99,15 +99,15 @@ static int lis3dsh_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
 
 static const struct file_operations g_lis3dsh_fops =
 {
-  lis3dsh_open,
-  lis3dsh_close,
-  lis3dsh_read,
-  lis3dsh_write,
-  NULL,
-  lis3dsh_ioctl,
-  NULL
+  lis3dsh_open,    /* open */
+  lis3dsh_close,   /* close */
+  lis3dsh_read,    /* read */
+  lis3dsh_write,   /* write */
+  NULL,            /* seek */
+  NULL,            /* ioctl */
+  NULL             /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  , NULL
+  , NULL           /* unlink */
 #endif
 };
 
@@ -492,27 +492,6 @@ static ssize_t lis3dsh_write(FAR struct file *filep, FAR const char *buffer,
                              size_t buflen)
 {
   return -ENOSYS;
-}
-
-/****************************************************************************
- * Name: lis3dsh_ioctl
- ****************************************************************************/
-
-static int lis3dsh_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
-{
-  int ret = OK;
-
-  switch (cmd)
-    {
-      /* Command was not recognized */
-
-    default:
-      snerr("ERROR: Unrecognized cmd: %d\n", cmd);
-      ret = -ENOTTY;
-      break;
-    }
-
-  return ret;
 }
 
 /****************************************************************************

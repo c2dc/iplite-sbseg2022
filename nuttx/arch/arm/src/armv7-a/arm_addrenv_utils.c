@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -54,13 +55,13 @@
  *
  ****************************************************************************/
 
-int arm_addrenv_create_region(FAR uintptr_t **list, unsigned int listlen,
+int arm_addrenv_create_region(uintptr_t **list, unsigned int listlen,
                               uintptr_t vaddr, size_t regionsize,
                               uint32_t mmuflags)
 {
   irqstate_t flags;
   uintptr_t paddr;
-  FAR uint32_t *l2table;
+  uint32_t *l2table;
 #ifndef CONFIG_ARCH_PGPOOL_MAPPING
   uint32_t l1save;
 #endif
@@ -98,27 +99,28 @@ int arm_addrenv_create_region(FAR uintptr_t **list, unsigned int listlen,
       /* Allocate one physical page for the L2 page table */
 
       paddr = mm_pgalloc(1);
+      binfo("a new l2 page table (paddr=%x)\n", paddr);
       if (!paddr)
         {
           return -ENOMEM;
         }
 
       DEBUGASSERT(MM_ISALIGNED(paddr));
-      list[i] = (FAR uintptr_t *)paddr;
+      list[i] = (uintptr_t *)paddr;
 
       flags = enter_critical_section();
 
 #ifdef CONFIG_ARCH_PGPOOL_MAPPING
       /* Get the virtual address corresponding to the physical page address */
 
-      l2table = (FAR uint32_t *)arm_pgvaddr(paddr);
+      l2table = (uint32_t *)arm_pgvaddr(paddr);
 #else
       /* Temporarily map the page into the virtual address space */
 
       l1save = mmu_l1_getentry(ARCH_SCRATCH_VBASE);
       mmu_l1_setentry(paddr & ~SECTION_MASK, ARCH_SCRATCH_VBASE,
                       MMU_MEMFLAGS);
-      l2table = (FAR uint32_t *)(ARCH_SCRATCH_VBASE |
+      l2table = (uint32_t *)(ARCH_SCRATCH_VBASE |
                                  (paddr & SECTION_MASK));
 #endif
 
@@ -133,6 +135,7 @@ int arm_addrenv_create_region(FAR uintptr_t **list, unsigned int listlen,
           /* Allocate one physical page for region data */
 
           paddr = mm_pgalloc(1);
+          binfo("a new page (paddr=%x)\n", paddr);
           if (!paddr)
             {
 #ifndef CONFIG_ARCH_PGPOOL_MAPPING
@@ -176,12 +179,12 @@ int arm_addrenv_create_region(FAR uintptr_t **list, unsigned int listlen,
  *
  ****************************************************************************/
 
-void arm_addrenv_destroy_region(FAR uintptr_t **list, unsigned int listlen,
+void arm_addrenv_destroy_region(uintptr_t **list, unsigned int listlen,
                                 uintptr_t vaddr, bool keep)
 {
   irqstate_t flags;
   uintptr_t paddr;
-  FAR uint32_t *l2table;
+  uint32_t *l2table;
 #ifndef CONFIG_ARCH_PGPOOL_MAPPING
   uint32_t l1save;
 #endif
@@ -208,14 +211,14 @@ void arm_addrenv_destroy_region(FAR uintptr_t **list, unsigned int listlen,
            * address
            */
 
-          l2table = (FAR uint32_t *)arm_pgvaddr(paddr);
+          l2table = (uint32_t *)arm_pgvaddr(paddr);
 #else
           /* Temporarily map the page into the virtual address space */
 
           l1save = mmu_l1_getentry(ARCH_SCRATCH_VBASE);
           mmu_l1_setentry(paddr & ~SECTION_MASK, ARCH_SCRATCH_VBASE,
                           MMU_MEMFLAGS);
-          l2table = (FAR uint32_t *)(ARCH_SCRATCH_VBASE |
+          l2table = (uint32_t *)(ARCH_SCRATCH_VBASE |
                                      (paddr & SECTION_MASK));
 #endif
 

@@ -45,6 +45,7 @@
 #include <nuttx/config.h>
 #if defined(CONFIG_NET) && defined(CONFIG_NET_TCP)
 
+#include <assert.h>
 #include <stdint.h>
 #include <string.h>
 #include <debug.h>
@@ -55,6 +56,7 @@
 #include <nuttx/net/ip.h>
 #include <nuttx/net/tcp.h>
 
+#include "netdev/netdev.h"
 #include "devif/devif.h"
 #include "inet/inet.h"
 #include "tcp/tcp.h"
@@ -64,11 +66,11 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define IPv4BUF    ((struct ipv4_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
-#define IPv6BUF    ((struct ipv6_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
+#define IPv4BUF    ((FAR struct ipv4_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
+#define IPv6BUF    ((FAR struct ipv6_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
 
-#define TCPIPv4BUF ((struct tcp_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev) + IPv4_HDRLEN])
-#define TCPIPv6BUF ((struct tcp_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev) + IPv6_HDRLEN])
+#define TCPIPv4BUF ((FAR struct tcp_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev) + IPv4_HDRLEN])
+#define TCPIPv6BUF ((FAR struct tcp_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev) + IPv6_HDRLEN])
 
 /****************************************************************************
  * Private Functions
@@ -137,7 +139,7 @@ static inline void tcp_ipv4_sendcomplete(FAR struct net_driver_s *dev,
    */
 
   ipv4->proto       = IP_PROTO_TCP;
-  ipv4->ttl         = IP_TTL;
+  ipv4->ttl         = IP_TTL_DEFAULT;
   ipv4->vhl         = 0x45;
 
   /* At this point the TCP header holds the size of the payload, the
@@ -208,7 +210,7 @@ static inline void tcp_ipv6_sendcomplete(FAR struct net_driver_s *dev,
    */
 
   ipv6->proto     = IP_PROTO_TCP;
-  ipv6->ttl       = IP_TTL;
+  ipv6->ttl       = IP_TTL_DEFAULT;
 
   /* At this point the TCP header holds the size of the payload, the
    * TCP header, and the IP header.  For IPv6, the IP length field does
@@ -360,21 +362,45 @@ static void tcp_sendcommon(FAR struct net_driver_s *dev,
     {
       /* Update the TCP received window based on I/O buffer availability */
 
-      uint16_t recvwndo = tcp_get_recvwindow(dev, conn);
+      uint32_t rcvseq = tcp_getsequence(conn->rcvseq);
+      uint32_t recvwndo = tcp_get_recvwindow(dev, conn);
+
+      /* Update the Receiver Window */
+
+      conn->rcv_adv = rcvseq + recvwndo;
+
+#ifdef CONFIG_NET_TCP_WINDOW_SCALE
+      recvwndo >>= conn->rcv_scale;
+#endif
 
       /* Set the TCP Window */
 
       tcp->wnd[0] = recvwndo >> 8;
       tcp->wnd[1] = recvwndo & 0xff;
-
-      /* Update the Receiver Window */
-
-      conn->rcv_wnd = recvwndo;
     }
 
   /* Finish the IP portion of the message and calculate checksums */
 
   tcp_sendcomplete(dev, tcp);
+
+#if !defined(CONFIG_NET_TCP_WRITE_BUFFERS)
+  if ((tcp->flags & (TCP_SYN | TCP_FIN)) != 0)
+    {
+      /* Remember sndseq that will be used in case of a possible
+       * SYN or FIN retransmission
+       */
+
+      conn->rexmit_seq = tcp_getsequence(conn->sndseq);
+
+      /* Advance sndseq by +1 because SYN and FIN occupy
+       * one sequence number (RFC 793)
+       */
+
+      net_incr32(conn->sndseq, 1);
+    }
+#else
+  /* REVISIT for the buffered mode */
+#endif
 }
 
 /****************************************************************************
@@ -507,6 +533,14 @@ void tcp_reset(FAR struct net_driver_s *dev)
   tcp->srcport  = tcp->destport;
   tcp->destport = tmp16;
 
+  /* Initialize the rest of the tcp header to sane values.
+   *
+   * Note: urgp is set by tcp_ipv4_sendcomplete/tcp_ipv6_sendcomplete.
+   */
+
+  tcp->wnd[0] = 0;
+  tcp->wnd[1] = 0;
+
   /* Set the packet length and swap IP addresses. */
 
 #ifdef CONFIG_NET_IPv6
@@ -551,6 +585,45 @@ void tcp_reset(FAR struct net_driver_s *dev)
 }
 
 /****************************************************************************
+ * Name: tcp_rx_mss
+ *
+ * Description:
+ *   Return the MSS to advertize to the peer.
+ *
+ * Input Parameters:
+ *   dev  - The device driver structure
+ *
+ * Returned Value:
+ *   The MSS value.
+ *
+ ****************************************************************************/
+
+uint16_t tcp_rx_mss(FAR struct net_driver_s *dev)
+{
+  uint16_t tcp_mss;
+
+#ifdef CONFIG_NET_IPv6
+#ifdef CONFIG_NET_IPv4
+  if (IFF_IS_IPv6(dev->d_flags))
+#endif
+    {
+      tcp_mss = TCP_IPv6_MSS(dev);
+    }
+#endif /* CONFIG_NET_IPv6 */
+
+#ifdef CONFIG_NET_IPv4
+#ifdef CONFIG_NET_IPv6
+  else
+#endif
+    {
+      tcp_mss = TCP_IPv4_MSS(dev);
+    }
+#endif /* CONFIG_NET_IPv4 */
+
+  return tcp_mss;
+}
+
+/****************************************************************************
  * Name: tcp_synack
  *
  * Description:
@@ -576,8 +649,9 @@ void tcp_reset(FAR struct net_driver_s *dev)
 void tcp_synack(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn,
                 uint8_t ack)
 {
-  struct tcp_hdr_s *tcp;
+  FAR struct tcp_hdr_s *tcp;
   uint16_t tcp_mss;
+  int16_t optlen = 0;
 
   /* Get values that vary with the underlying IP domain */
 
@@ -586,14 +660,13 @@ void tcp_synack(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn,
   if (IFF_IS_IPv6(dev->d_flags))
 #endif
     {
-      /* Get the MSS value and offset TCP header address for this packet */
+      /* Get the offset TCP header address for this packet */
 
       tcp     = TCPIPv6BUF;
-      tcp_mss = TCP_IPv6_MSS(dev);
 
       /* Set the packet length for the TCP Maximum Segment Size */
 
-      dev->d_len  = IPv6TCP_HDRLEN + TCP_OPT_MSS_LEN;
+      dev->d_len  = IPv6TCP_HDRLEN;
     }
 #endif /* CONFIG_NET_IPv6 */
 
@@ -602,16 +675,17 @@ void tcp_synack(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn,
   else
 #endif
     {
-      /* Get the MSS value and offset TCP header address for this packet */
+      /* Get the offset TCP header address for this packet */
 
       tcp     = TCPIPv4BUF;
-      tcp_mss = TCP_IPv4_MSS(dev);
 
       /* Set the packet length for the TCP Maximum Segment Size */
 
-      dev->d_len  = IPv4TCP_HDRLEN + TCP_OPT_MSS_LEN;
+      dev->d_len  = IPv4TCP_HDRLEN;
     }
 #endif /* CONFIG_NET_IPv4 */
+
+  tcp_mss = tcp_rx_mss(dev);
 
   /* Save the ACK bits */
 
@@ -619,15 +693,75 @@ void tcp_synack(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn,
 
   /* We send out the TCP Maximum Segment Size option with our ACK. */
 
-  tcp->optdata[0] = TCP_OPT_MSS;
-  tcp->optdata[1] = TCP_OPT_MSS_LEN;
-  tcp->optdata[2] = tcp_mss >> 8;
-  tcp->optdata[3] = tcp_mss & 0xff;
-  tcp->tcpoffset  = ((TCP_HDRLEN + TCP_OPT_MSS_LEN) / 4) << 4;
+  tcp->optdata[optlen++] = TCP_OPT_MSS;
+  tcp->optdata[optlen++] = TCP_OPT_MSS_LEN;
+  tcp->optdata[optlen++] = tcp_mss >> 8;
+  tcp->optdata[optlen++] = tcp_mss & 0xff;
+
+#ifdef CONFIG_NET_TCP_WINDOW_SCALE
+  if (tcp->flags == TCP_SYN ||
+      ((tcp->flags == (TCP_ACK | TCP_SYN)) && (conn->flags & TCP_WSCALE)))
+    {
+      tcp->optdata[optlen++] = TCP_OPT_NOOP;
+      tcp->optdata[optlen++] = TCP_OPT_WS;
+      tcp->optdata[optlen++] = TCP_OPT_WS_LEN;
+      tcp->optdata[optlen++] = CONFIG_NET_TCP_WINDOW_SCALE_FACTOR;
+    }
+#endif
+
+  tcp->tcpoffset         = ((TCP_HDRLEN + optlen) / 4) << 4;
+  dev->d_len            += optlen;
 
   /* Complete the common portions of the TCP message */
 
   tcp_sendcommon(dev, conn, tcp);
+}
+
+/****************************************************************************
+ * Name: tcp_send_txnotify
+ *
+ * Description:
+ *   Notify the appropriate device driver that we are have data ready to
+ *   be send (TCP)
+ *
+ * Input Parameters:
+ *   psock - Socket state structure
+ *   conn  - The TCP connection structure
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+void tcp_send_txnotify(FAR struct socket *psock,
+                       FAR struct tcp_conn_s *conn)
+{
+#ifdef CONFIG_NET_IPv4
+#ifdef CONFIG_NET_IPv6
+  /* If both IPv4 and IPv6 support are enabled, then we will need to select
+   * the device driver using the appropriate IP domain.
+   */
+
+  if (psock->s_domain == PF_INET)
+#endif
+    {
+      /* Notify the device driver that send data is available */
+
+      netdev_ipv4_txnotify(conn->u.ipv4.laddr, conn->u.ipv4.raddr);
+    }
+#endif /* CONFIG_NET_IPv4 */
+
+#ifdef CONFIG_NET_IPv6
+#ifdef CONFIG_NET_IPv4
+  else /* if (psock->s_domain == PF_INET6) */
+#endif /* CONFIG_NET_IPv4 */
+    {
+      /* Notify the device driver that send data is available */
+
+      DEBUGASSERT(psock->s_domain == PF_INET6);
+      netdev_ipv6_txnotify(conn->u.ipv6.laddr, conn->u.ipv6.raddr);
+    }
+#endif /* CONFIG_NET_IPv6 */
 }
 
 #endif /* CONFIG_NET && CONFIG_NET_TCP */

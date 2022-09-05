@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include <time.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/arch.h>
@@ -36,8 +37,6 @@
 #include "nvic.h"
 #include "clock/clock.h"
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "chip.h"
 #include "hardware/imxrt_ccm.h"
 

@@ -34,6 +34,7 @@
 #include <netpacket/netlink.h>
 #include <nuttx/net/netlink.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/wqueue.h>
 
 #include "devif/devif.h"
 #include "socket/socket.h"
@@ -58,7 +59,7 @@ struct netlink_conn_s
 {
   /* Common prologue of all connection structures. */
 
-  dq_entry_t node;                   /* Supports a doubly linked list */
+  struct socket_conn_s sconn;
 
   /* NetLink-specific content follows */
 
@@ -177,13 +178,9 @@ int netlink_notifier_setup(worker_t worker, FAR struct netlink_conn_s *conn,
  * Input Parameters:
  *   conn - Teardown the notification for this Netlink connection.
  *
- * Returned Value:
- *   Zero (OK) is returned on success; a negated errno value is returned on
- *   any failure.
- *
  ****************************************************************************/
 
-int netlink_notifier_teardown(FAR struct netlink_conn_s *conn);
+void netlink_notifier_teardown(FAR struct netlink_conn_s *conn);
 
 /****************************************************************************
  * Name: netlink_notifier_signal

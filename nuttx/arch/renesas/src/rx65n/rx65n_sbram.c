@@ -35,12 +35,12 @@
 #include <stdbool.h>
 #include <string.h>
 #include <poll.h>
+#include <assert.h>
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
 #include <nuttx/fs/fs.h>
-
-#include <crc32.h>
+#include <nuttx/crc32.h>
 
 #include "rx65n_sbram.h"
 #include "chip.h"
@@ -134,7 +134,7 @@ static const struct file_operations rx65n_sbram_fops =
   .ioctl  = rx65n_sbram_ioctl,
   .poll   = rx65n_sbram_poll,
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  .unlink = rx65n_sbram_unlink,
+  .unlink = rx65n_sbram_unlink
 #endif
 };
 
@@ -277,7 +277,7 @@ static int rx65n_sbram_open(FAR struct file *filep)
 static int rx65n_sbram_internal_close(FAR struct sbramfh_s *bbf)
 {
   bbf->dirty = 0;
-  (void)clock_gettime(CLOCK_REALTIME, &bbf->lastwrite);
+  clock_gettime(CLOCK_REALTIME, &bbf->lastwrite);
   bbf->crc = rx65n_sbram_crc(bbf);
 
   SBRAM_DUMP(bbf, "close done");
@@ -670,7 +670,6 @@ int rx65n_sbraminitialize(char *devpath, int *sizes)
 {
   int i;
   int fcnt;
-  char path[32];
   char devname[32];
 
   int ret = OK;
@@ -681,7 +680,7 @@ int rx65n_sbraminitialize(char *devpath, int *sizes)
     }
 
   i = strlen(devpath);
-  if (i == 0 || i > sizeof(path) + 3)
+  if (i == 0 || i > sizeof(devname) - 3)
     {
       return -EINVAL;
     }
@@ -702,12 +701,9 @@ int rx65n_sbraminitialize(char *devpath, int *sizes)
 
   fcnt = rx65n_sbram_probe(sizes, g_sbram);
 
-  strncpy(path, devpath, sizeof(path));
-  strcat(path, "%d");
-
   for (i = 0; i < fcnt && ret >= OK; i++)
     {
-      snprintf(devname, sizeof(devname), path, i);
+      snprintf(devname, sizeof(devname), "%s%d", devpath, i);
       ret = register_driver(devname, &rx65n_sbram_fops, 0666, &g_sbram[i]);
     }
 

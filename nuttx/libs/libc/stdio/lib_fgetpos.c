@@ -45,13 +45,13 @@
  *   reposition a stream.
  *
  * Returned Value:
- *   Zero on succes; -1 on failure with errno set appropriately.
+ *   Zero on success; -1 on failure with errno set appropriately.
  *
  ****************************************************************************/
 
 int fgetpos(FAR FILE *stream, FAR fpos_t *pos)
 {
-  long position;
+  off_t position;
 
 #ifdef CONFIG_DEBUG_FEATURES
   if (!stream || !pos)
@@ -61,12 +61,12 @@ int fgetpos(FAR FILE *stream, FAR fpos_t *pos)
     }
 #endif
 
-  position = ftell(stream);
-  if (position == -1)
+  position = ftello(stream);
+  if (position == (off_t)-1)
     {
       return ERROR;
     }
 
-  *pos = (fpos_t)position;
+  *pos = position;
   return OK;
 }

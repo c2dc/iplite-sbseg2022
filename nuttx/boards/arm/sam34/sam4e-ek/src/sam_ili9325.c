@@ -1,53 +1,30 @@
 /****************************************************************************
  * boards/arm/sam34/sam4e-ek/src/sam_ili9325.c
  *
- *   Copyright (C) 2014 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * References:
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ *
+ ****************************************************************************/
+
+/* References:
  * - This driver is a modification of the Shenzhou ILI9325 LCD driver.
  * - ILI9325 Datasheet, Version: V0.43, ILI9325DS_V0.43.pdf,
  *                  ILI TECHNOLOGY CORP.,
  * - SAM4Ex Datasheet, Atmel
  * - Atmel ILI9325 Sample code for the SAM4S
- *
- * Some the LCD and SMC initialization logic comes from Atmel sample code
- * for the SAM4S.
- * The Atmel sample code has a BSD-like license with an additional
- * requirement that restricts the code from being used on anything but Atmel
- * microprocessors.  I do not believe that this file "derives" from the Atmel
- * sample code nor do I believe that it contains anything but generally
- * available ILI9325 and SAM4x logic.
- * Credit, however, needs to go where it is due.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- ****************************************************************************/
+ */
 
 /****************************************************************************
  *
@@ -127,6 +104,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -139,7 +117,7 @@
 #include <arch/irq.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam_gpio.h"
 #include "sam_periphclks.h"
 #include "hardware/sam_pmc.h"
@@ -313,24 +291,26 @@ static void sam_set_cursor(uint16_t col, uint16_t row);
 
 static void sam_disable_backlight(void);
 static void sam_set_backlight(unsigned int power);
-static int sam_poweroff(FAR struct sam_dev_s *priv);
+static int sam_poweroff(struct sam_dev_s *priv);
 
 /* LCD Data Transfer Methods */
 
-static int sam_putrun(fb_coord_t row, fb_coord_t col,
-                      FAR const uint8_t *buffer,
+static int sam_putrun(struct lcd_dev_s *dev,
+                      fb_coord_t row, fb_coord_t col,
+                      const uint8_t *buffer,
                       size_t npixels);
-static int sam_getrun(fb_coord_t row, fb_coord_t col,
-                      FAR uint8_t *buffer,
+static int sam_getrun(struct lcd_dev_s *dev,
+                      fb_coord_t row, fb_coord_t col,
+                      uint8_t *buffer,
                       size_t npixels);
 
 /* LCD Configuration */
 
-static int sam_getvideoinfo(FAR struct lcd_dev_s *dev,
-             FAR struct fb_videoinfo_s *vinfo);
-static int sam_getplaneinfo(FAR struct lcd_dev_s *dev,
+static int sam_getvideoinfo(struct lcd_dev_s *dev,
+             struct fb_videoinfo_s *vinfo);
+static int sam_getplaneinfo(struct lcd_dev_s *dev,
              unsigned int planeno,
-             FAR struct lcd_planeinfo_s *pinfo);
+             struct lcd_planeinfo_s *pinfo);
 
 /* LCD RGB Mapping */
 
@@ -567,7 +547,7 @@ static void sam_set_cursor(uint16_t col, uint16_t row)
  ****************************************************************************/
 
 #if 0 /* Sometimes useful */
-static void sam_dumprun(FAR const char *msg, FAR uint16_t *run,
+static void sam_dumprun(const char *msg, uint16_t *run,
                         size_t npixels)
 {
   int i;
@@ -658,7 +638,7 @@ static void sam_set_backlight(unsigned int power)
  *
  ****************************************************************************/
 
-static int sam_poweroff(FAR struct sam_dev_s *priv)
+static int sam_poweroff(struct sam_dev_s *priv)
 {
   /* Turn the display off */
 
@@ -688,16 +668,17 @@ static int sam_poweroff(FAR struct sam_dev_s *priv)
  *
  ****************************************************************************/
 
-static int sam_putrun(fb_coord_t row, fb_coord_t col,
-                      FAR const uint8_t *buffer,
+static int sam_putrun(struct lcd_dev_s *dev,
+                      fb_coord_t row, fb_coord_t col,
+                      const uint8_t *buffer,
                       size_t npixels)
 {
 #if defined(CONFIG_SAM4EEK_LCD_RGB565)
-  FAR const uint16_t *src = (FAR const uint16_t *)buffer;
+  const uint16_t *src = (const uint16_t *)buffer;
 #elif defined(CONFIG_SAM4EEK_LCD_RGB24)
-  FAR const uint8_t  *src = (FAR const uint8_t *)buffer;
+  const uint8_t  *src = (const uint8_t *)buffer;
 #elif defined(CONFIG_SAM4EEK_LCD_RGB32)
-  FAR const uint32_t *src = (FAR const uint32_t *)buffer;
+  const uint32_t *src = (const uint32_t *)buffer;
 #endif
 
   /* Buffer must be provided and aligned to a 16-bit address boundary */
@@ -751,12 +732,14 @@ static int sam_putrun(fb_coord_t row, fb_coord_t col,
  *
  ****************************************************************************/
 
-static int sam_getrun(fb_coord_t row, fb_coord_t col, FAR uint8_t *buffer,
+static int sam_getrun(struct lcd_dev_s *dev,
+                      fb_coord_t row, fb_coord_t col,
+                      uint8_t *buffer,
                       size_t npixels)
 {
   uint8_t value[2];
 #if defined(CONFIG_SAM4EEK_LCD_RGB24)
-  FAR uint8_t *ptr = (FAR uint8_t *)buffer;
+  uint8_t *ptr = (uint8_t *)buffer;
 #endif
   /* Set the cursor position */
 
@@ -792,7 +775,7 @@ static int sam_getrun(fb_coord_t row, fb_coord_t col, FAR uint8_t *buffer,
       /* RRRR RGGG GGGB BBBB -> RRRR R000, GGGG GG00, BBBB B000 */
 
       *ptr++ = (value[0] & 0xf8);
-      *ptr++ = (value[0] & 0x07) << 5) | ((value[1] & 0xe0) >> 3);
+      *ptr++ = ((value[0] & 0x07) << 5) | ((value[1] & 0xe0) >> 3);
       *ptr++ = (value[1] & 0x1f) << 3;
 
 #else /* if defined(CONFIG_SAM4EEK_LCD_RGB32) */
@@ -816,8 +799,8 @@ static int sam_getrun(fb_coord_t row, fb_coord_t col, FAR uint8_t *buffer,
  *
  ****************************************************************************/
 
-static int sam_getvideoinfo(FAR struct lcd_dev_s *dev,
-                            FAR struct fb_videoinfo_s *vinfo)
+static int sam_getvideoinfo(struct lcd_dev_s *dev,
+                            struct fb_videoinfo_s *vinfo)
 {
   DEBUGASSERT(dev && vinfo);
   lcdinfo("fmt: %d xres: %d yres: %d nplanes: %d\n",
@@ -835,12 +818,13 @@ static int sam_getvideoinfo(FAR struct lcd_dev_s *dev,
  *
  ****************************************************************************/
 
-static int sam_getplaneinfo(FAR struct lcd_dev_s *dev, unsigned int planeno,
-                              FAR struct lcd_planeinfo_s *pinfo)
+static int sam_getplaneinfo(struct lcd_dev_s *dev, unsigned int planeno,
+                              struct lcd_planeinfo_s *pinfo)
 {
   DEBUGASSERT(dev && pinfo && planeno == 0);
   lcdinfo("planeno: %d bpp: %d\n", planeno, g_planeinfo.bpp);
   memcpy(pinfo, &g_planeinfo, sizeof(struct lcd_planeinfo_s));
+  pinfo->dev = dev;
   return OK;
 }
 
@@ -856,7 +840,7 @@ static int sam_getplaneinfo(FAR struct lcd_dev_s *dev, unsigned int planeno,
 
 static int sam_getpower(struct lcd_dev_s *dev)
 {
-  FAR struct sam_dev_s *priv = (FAR struct sam_dev_s *)dev;
+  struct sam_dev_s *priv = (struct sam_dev_s *)dev;
 
   lcdinfo("power: %d\n", 0);
   return priv->power;
@@ -874,7 +858,7 @@ static int sam_getpower(struct lcd_dev_s *dev)
 
 static int sam_setpower(struct lcd_dev_s *dev, int power)
 {
-  FAR struct sam_dev_s *priv = (FAR struct sam_dev_s *)dev;
+  struct sam_dev_s *priv = (struct sam_dev_s *)dev;
 
   lcdinfo("power: %d\n", power);
   DEBUGASSERT((unsigned)power <= CONFIG_LCD_MAXPOWER);
@@ -1334,7 +1318,7 @@ static inline int sam_lcd_initialize(void)
 
 int board_lcd_initialize(void)
 {
-  FAR struct sam_dev_s *priv = &g_lcddev;
+  struct sam_dev_s *priv = &g_lcddev;
   int ret;
 
   lcdinfo("Initializing\n");
@@ -1378,7 +1362,7 @@ int board_lcd_initialize(void)
  *
  ****************************************************************************/
 
-FAR struct lcd_dev_s *board_lcd_getdev(int lcddev)
+struct lcd_dev_s *board_lcd_getdev(int lcddev)
 {
   DEBUGASSERT(lcddev == 0);
   return &g_lcddev.dev;
@@ -1394,7 +1378,7 @@ FAR struct lcd_dev_s *board_lcd_getdev(int lcddev)
 
 void board_lcd_uninitialize(void)
 {
-  FAR struct sam_dev_s *priv = &g_lcddev;
+  struct sam_dev_s *priv = &g_lcddev;
 
   /* Put the LCD in the lowest possible power state */
 

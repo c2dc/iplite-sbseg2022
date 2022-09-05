@@ -47,7 +47,7 @@
  *      TASK A                 TASK B
  *      nxsem_init(sem, 0, 0);
  *      nxsem_wait(sem);
- *                             snxem_post(sem);
+ *                             nxsem_post(sem);
  *      Awakens as holder
  *
  *    In this case priority inheritance can interfere with the operation of
@@ -67,8 +67,9 @@
  *
  * Returned Value:
  *   This function is exposed as a non-standard application interface.  It
- *   returns zero (OK) if successful.  Otherwise, -1 (ERROR) is returned and
- *   the errno value is set appropriately.
+ *   returns zero (OK) if successful.  Otherwise, -EINVAL is returned if the
+ *   value specified by protocol is invalid or -ENOTSUP if the value
+ *   specified by protocol is an unsupported value.
  *
  ****************************************************************************/
 
@@ -83,8 +84,7 @@ int nxsem_set_protocol(FAR sem_t *sem, int protocol)
 
       case SEM_PRIO_INHERIT:
       case SEM_PRIO_PROTECT:
-        return -ENOSYS;
-        break;
+        return -ENOTSUP;
 
       default:
         break;

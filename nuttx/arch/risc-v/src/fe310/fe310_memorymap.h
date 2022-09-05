@@ -18,13 +18,14 @@
  *
  ****************************************************************************/
 
-#ifndef _ARCH_RISCV_SRC_FE310_FE310_MEMORYMAP_H
-#define _ARCH_RISCV_SRC_FE310_FE310_MEMORYMAP_H
+#ifndef __ARCH_RISCV_SRC_FE310_FE310_MEMORYMAP_H
+#define __ARCH_RISCV_SRC_FE310_FE310_MEMORYMAP_H
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
+#include "riscv_common_memorymap.h"
 #include "hardware/fe310_memorymap.h"
 #include "hardware/fe310_uart.h"
 #include "hardware/fe310_clint.h"
@@ -39,12 +40,11 @@
 /* Idle thread stack starts from _ebss */
 
 #ifndef __ASSEMBLY__
-#define FE310_IDLESTACK_BASE  (uint32_t)&_ebss
+#define FE310_IDLESTACK_BASE  (uintptr_t)&_ebss
 #else
 #define FE310_IDLESTACK_BASE  _ebss
 #endif
 
-#define FE310_IDLESTACK_SIZE (CONFIG_IDLETHREAD_STACKSIZE & ~3)
-#define FE310_IDLESTACK_TOP  (FE310_IDLESTACK_BASE + FE310_IDLESTACK_SIZE)
+#define FE310_IDLESTACK_TOP  (FE310_IDLESTACK_BASE + CONFIG_IDLETHREAD_STACKSIZE)
 
-#endif /* _ARCH_RISCV_SRC_FE310_FE310_MEMORYMAP_H */
+#endif /* __ARCH_RISCV_SRC_FE310_FE310_MEMORYMAP_H */

@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -38,9 +39,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "xmc4_config.h"
 #include "hardware/xmc4_usic.h"
@@ -246,7 +245,7 @@ static int  xmc4_setup(struct uart_dev_s *dev);
 static void xmc4_shutdown(struct uart_dev_s *dev);
 static int  xmc4_attach(struct uart_dev_s *dev);
 static void xmc4_detach(struct uart_dev_s *dev);
-static int  xmc4_interrupt(int irq, void *context, FAR void *arg);
+static int  xmc4_interrupt(int irq, void *context, void *arg);
 static int  xmc4_ioctl(struct file *filep, int cmd, unsigned long arg);
 static int  xmc4_receive(struct uart_dev_s *dev, unsigned int *status);
 static void xmc4_rxint(struct uart_dev_s *dev, bool enable);
@@ -732,7 +731,7 @@ static void xmc4_detach(struct uart_dev_s *dev)
  *
  ****************************************************************************/
 
-static int xmc4_interrupt(int irq, void *context, FAR void *arg)
+static int xmc4_interrupt(int irq, void *context, void *arg)
 {
   struct uart_dev_s *dev = (struct uart_dev_s *)arg;
   struct xmc4_dev_s *priv;

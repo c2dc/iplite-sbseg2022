@@ -33,12 +33,14 @@
  ****************************************************************************/
 
 #ifndef CONFIG_ARCH_STRNCASECMP
-int strncasecmp(const char *cs, const char *ct, size_t nb)
+#undef strncasecmp /* See mm/README.txt */
+int strncasecmp(FAR const char *cs, FAR const char *ct, size_t nb)
 {
-  int result = 0;
+  register int result = 0;
   for (; nb > 0; nb--)
     {
-      if ((result = (int)toupper(*cs) - (int)toupper(*ct)) != 0 || !*cs)
+      if ((result = toupper(*cs) - toupper(*ct)) != 0 ||
+          *cs == '\0')
         {
           break;
         }

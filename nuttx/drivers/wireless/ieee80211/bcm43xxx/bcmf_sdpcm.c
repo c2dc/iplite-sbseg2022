@@ -1,35 +1,20 @@
 /****************************************************************************
  * drivers/wireless/ieee80211/bcm43xxx/bcmf_sdpcm.c
  *
- *   Copyright (C) 2017 Gregory Nutt. All rights reserved.
- *   Author: Simon Piriou <spiriou31@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -48,13 +33,12 @@
 
 #include <stddef.h>
 #include <string.h>
-#include <queue.h>
 
-#include "bcmf_sdio.h"
 #include "bcmf_core.h"
 #include "bcmf_sdpcm.h"
 #include "bcmf_cdc.h"
 #include "bcmf_bdc.h"
+#include "bcmf_interface.h"
 #include "bcmf_utils.h"
 
  #include "bcmf_netdev.h"
@@ -73,7 +57,7 @@
  * Private Types
  ****************************************************************************/
 
-struct __attribute__((packed)) bcmf_sdpcm_header
+begin_packed_struct struct bcmf_sdpcm_header
 {
   uint16_t size;
   uint16_t checksum;
@@ -84,15 +68,15 @@ struct __attribute__((packed)) bcmf_sdpcm_header
   uint8_t  flow_control;
   uint8_t  credit;
   uint16_t padding;
-};
+} end_packed_struct;
 
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
 
-static int bcmf_sdpcm_rxfail(FAR struct bcmf_sdio_dev_s *sbus, bool retry);
+static int bcmf_sdpcm_rxfail(FAR bcmf_interface_dev_t *ibus, bool retry);
 
-static int bcmf_sdpcm_process_header(FAR struct bcmf_sdio_dev_s *sbus,
+static int bcmf_sdpcm_process_header(FAR bcmf_interface_dev_t *ibus,
                               struct bcmf_sdpcm_header *header);
 
 /****************************************************************************
@@ -103,13 +87,13 @@ static int bcmf_sdpcm_process_header(FAR struct bcmf_sdio_dev_s *sbus,
  * Private Functions
  ****************************************************************************/
 
-int bcmf_sdpcm_rxfail(FAR struct bcmf_sdio_dev_s *sbus, bool retry)
+int bcmf_sdpcm_rxfail(FAR bcmf_interface_dev_t *ibus, bool retry)
 {
   /* issue abort command for F2 through F0 */
 
-  bcmf_write_reg(sbus, 0, SDIO_CCCR_IOABORT, 2);
+  bcmf_bus_io_abort(ibus);
 
-  bcmf_write_reg(sbus, 1, SBSDIO_FUNC1_FRAMECTRL, SFC_RF_TERM);
+  bcmf_write_reg(ibus, 1, SBSDIO_FUNC1_FRAMECTRL, SFC_RF_TERM);
 
   /* TODO Wait until the packet has been flushed (device/FIFO stable) */
 
@@ -117,28 +101,28 @@ int bcmf_sdpcm_rxfail(FAR struct bcmf_sdio_dev_s *sbus, bool retry)
     {
       /* Send NAK to retry to read frame */
 
-      bcmf_write_sbregb(sbus,
-                  CORE_BUS_REG(sbus->chip->core_base[SDIOD_CORE_ID],
+      bcmf_write_sbregb(ibus,
+                  CORE_BUS_REG(ibus->chip->core_base[SDIOD_CORE_ID],
                   tosbmailbox), SMB_NAK);
     }
 
   return 0;
 }
 
-int bcmf_sdpcm_process_header(FAR struct bcmf_sdio_dev_s *sbus,
+int bcmf_sdpcm_process_header(FAR bcmf_interface_dev_t *ibus,
                               struct bcmf_sdpcm_header *header)
 {
   if (header->data_offset < sizeof(struct bcmf_sdpcm_header) ||
       header->data_offset > header->size)
     {
       wlerr("Invalid data offset\n");
-      bcmf_sdpcm_rxfail(sbus, false);
+      bcmf_sdpcm_rxfail(ibus, false);
       return -ENXIO;
     }
 
   /* Update tx credits */
 
-  sbus->max_seq = header->credit;
+  ibus->max_seq = header->credit;
 
   return OK;
 }
@@ -153,75 +137,154 @@ int bcmf_sdpcm_readframe(FAR struct bcmf_dev_s *priv)
   uint16_t len;
   uint16_t checksum;
   struct bcmf_sdpcm_header *header;
-  struct bcmf_sdio_frame *sframe;
-  FAR struct bcmf_sdio_dev_s *sbus = (FAR struct bcmf_sdio_dev_s *)priv->bus;
+  struct bcmf_sdpcm_header tmp_hdr;
+  bcmf_interface_frame_t *iframe;
+  FAR bcmf_interface_dev_t *ibus = (FAR bcmf_interface_dev_t *)priv->bus;
+
+  /* Read the first 4 bytes of sdpcm header
+   * to get the length of the following data to be read
+   */
+
+  ret = bcmf_transfer_bytes(ibus, false, 2, 0,
+                            (uint8_t *)&tmp_hdr,
+                            FIRST_WORD_SIZE);
+  if (ret != OK)
+    {
+      wlinfo("Failed to read size\n");
+      bcmf_sdpcm_rxfail(ibus, false);
+      return -EIO;
+    }
+
+  len = tmp_hdr.size;
+  checksum = tmp_hdr.checksum;
+
+  /* All zero means no more to read */
+
+  if (len == 0)
+    {
+      wlinfo("No data\n");
+
+      return -ENODATA;
+    }
+
+  wlinfo("len: %d Header checksum: 0x%04x\n", len, checksum);
+
+  if (((~len & 0xffff) ^ checksum) || len < sizeof(struct bcmf_sdpcm_header))
+    {
+      wlerr("Invalid header checksum or len %d 0x%04x\n", len, checksum);
+      bcmf_sdpcm_rxfail(ibus, false);
+      return -EINVAL;
+    }
+
+  if (len == FC_UPDATE_PKT_LENGTH)
+    {
+      /* Flow control update packet with no data */
+
+      wlinfo("Flow control\n");
+
+      ret = bcmf_transfer_bytes(ibus, false, 2, 0,
+                                (uint8_t *)&tmp_hdr + FIRST_WORD_SIZE,
+                                FC_UPDATE_PKT_LENGTH - FIRST_WORD_SIZE);
+      if (ret != OK)
+        {
+          wlinfo("Failed to read the rest 8 bytes\n");
+          bcmf_sdpcm_rxfail(ibus, false);
+          return -EIO;
+        }
+
+      ret = bcmf_sdpcm_process_header(ibus, &tmp_hdr);
+
+      if (ret != OK)
+        {
+          wlerr("Error while processing header %d\n", ret);
+          return -EINVAL;
+        }
+
+      return OK;
+    }
 
   /* Request free frame buffer */
 
-  sframe = bcmf_sdio_allocate_frame(priv, false, false);
+  iframe = bcmf_interface_allocate_frame(priv, false, false);
 
-  if (sframe == NULL)
+  if (iframe == NULL)
     {
       wlinfo("fail alloc\n");
+
+      /* Read out the rest of the header to get the bus credit information */
+
+      ret = bcmf_transfer_bytes(ibus, false, 2, 0,
+                                (uint8_t *)&tmp_hdr + FIRST_WORD_SIZE,
+                                FC_UPDATE_PKT_LENGTH - FIRST_WORD_SIZE);
+      if (ret != OK)
+        {
+          wlinfo("Failed to read the rest 8 bytes\n");
+          bcmf_sdpcm_rxfail(ibus, false);
+          return -EIO;
+        }
+
+      bcmf_sdpcm_rxfail(ibus, false);
+
+      ret = bcmf_sdpcm_process_header(ibus, &tmp_hdr);
+
+      if (ret != OK)
+        {
+          wlerr("Error while processing header %d\n", ret);
+          return -EINVAL;
+        }
+
       return -EAGAIN;
     }
 
-  header = (struct bcmf_sdpcm_header *)sframe->data;
+  header = (struct bcmf_sdpcm_header *)iframe->data;
 
-  /* Read header */
+  /* Read the remaining frame data (the buffer is DMA aligned here) */
 
-  ret = bcmf_transfer_bytes(sbus, false, 2, 0, (uint8_t *)header, 4);
+  if (len <= FIRST_WORD_SIZE)
+    {
+      ret = OK;
+      goto exit_free_frame;
+    }
+
+  ret = bcmf_transfer_bytes(ibus, false, 2, 0,
+                            (uint8_t *)header + FIRST_WORD_SIZE,
+                            len - FIRST_WORD_SIZE);
   if (ret != OK)
     {
-      wlinfo("failread size\n");
+      wlinfo("Failed to read remaining frame data\n");
       ret = -EIO;
       goto exit_abort;
     }
 
-  len = header->size;
-  checksum = header->checksum;
+  memcpy(header, &tmp_hdr, FIRST_WORD_SIZE);
 
-  /* All zero means no more to read */
-
-  if (!(len | checksum))
+  if (len > iframe->header.len)
     {
-      ret = -ENODATA;
-      goto exit_free_frame;
-    }
-
-  if (((~len & 0xffff) ^ checksum) || len < sizeof(struct bcmf_sdpcm_header))
-    {
-      wlerr("Invalid header checksum or len %x %x\n", len, checksum);
-      ret = -EINVAL;
-      goto exit_abort;
-    }
-
-  if (len > sframe->header.len)
-    {
-      wlerr("Frame is too large, cancel %d %d\n", len, sframe->header.len);
+      wlerr("Frame is too large, cancel %d %d\n", len, iframe->header.len);
       ret = -ENOMEM;
       goto exit_abort;
     }
 
-  /* Read remaining frame data */
+#if 1
+  wlinfo("Receive frame %p %d\n", iframe, len);
 
-  ret = bcmf_transfer_bytes(sbus, false, 2, 0,
-                           (uint8_t *)header + 4, len - 4);
-  if (ret != OK)
-    {
-      ret = -EIO;
-      goto exit_abort;
-    }
+  wlinfo("size:%d  seq: %d, channel: %d  next len: %d\n",
+         header->size,
+         header->sequence,
+         header->channel,
+         header->next_length);
 
-#if 0
-  wlinfo("Receive frame %p %d\n", sframe, len);
+  wlinfo("data offset:0x%02X  flow: %d, credit: %d\n",
+          header->data_offset,
+          header->flow_control,
+          header->credit);
 
   bcmf_hexdump((uint8_t *)header, header->size, (unsigned int)header);
 #endif
 
   /* Process and validate header */
 
-  ret = bcmf_sdpcm_process_header(sbus, header);
+  ret = bcmf_sdpcm_process_header(ibus, header);
   if (ret != OK)
     {
       wlerr("Error while processing header %d\n", ret);
@@ -231,15 +294,15 @@ int bcmf_sdpcm_readframe(FAR struct bcmf_dev_s *priv)
 
   /* Update frame structure */
 
-  sframe->header.len = header->size;
-  sframe->header.data += header->data_offset;
+  iframe->header.len = header->size;
+  iframe->header.data += header->data_offset;
 
   /* Process received frame content */
 
   switch (header->channel & 0x0f)
     {
       case SDPCM_CONTROL_CHANNEL:
-        ret = bcmf_cdc_process_control_frame(priv, &sframe->header);
+        ret = bcmf_cdc_process_control_frame(priv, &iframe->header);
         goto exit_free_frame;
 
       case SDPCM_EVENT_CHANNEL:
@@ -251,7 +314,7 @@ int bcmf_sdpcm_readframe(FAR struct bcmf_dev_s *priv)
           }
         else
           {
-            ret = bcmf_bdc_process_event_frame(priv, &sframe->header);
+            ret = bcmf_bdc_process_event_frame(priv, &iframe->header);
           }
 
         goto exit_free_frame;
@@ -260,13 +323,13 @@ int bcmf_sdpcm_readframe(FAR struct bcmf_dev_s *priv)
 
         /* Queue frame and notify network layer frame is available */
 
-        if (nxsem_wait(&sbus->queue_mutex) < 0)
+        if (nxsem_wait_uninterruptible(&ibus->queue_mutex) < 0)
           {
             DEBUGPANIC();
           }
 
-        bcmf_dqueue_push(&sbus->rx_queue, &sframe->list_entry);
-        nxsem_post(&sbus->queue_mutex);
+        list_add_tail(&ibus->rx_queue, &iframe->list_entry);
+        nxsem_post(&ibus->queue_mutex);
 
         bcmf_netdev_notify_rx(priv);
 
@@ -284,9 +347,9 @@ int bcmf_sdpcm_readframe(FAR struct bcmf_dev_s *priv)
   return ret;
 
 exit_abort:
-  bcmf_sdpcm_rxfail(sbus, false);
+  bcmf_sdpcm_rxfail(ibus, false);
 exit_free_frame:
-  bcmf_sdio_free_frame(priv, sframe);
+  bcmf_interface_free_frame(priv, iframe);
   return ret;
 }
 
@@ -294,19 +357,18 @@ int bcmf_sdpcm_sendframe(FAR struct bcmf_dev_s *priv)
 {
   int ret;
   bool is_txframe;
-  dq_entry_t *entry;
-  struct bcmf_sdio_frame *sframe;
+  bcmf_interface_frame_t *iframe;
   struct bcmf_sdpcm_header *header;
-  FAR struct bcmf_sdio_dev_s *sbus = (FAR struct bcmf_sdio_dev_s *)priv->bus;
+  FAR bcmf_interface_dev_t *ibus = (FAR bcmf_interface_dev_t *)priv->bus;
 
-  if (sbus->tx_queue.tail == NULL)
+  if (list_is_empty(&ibus->tx_queue))
     {
       /* No more frames to send */
 
       return -ENODATA;
     }
 
-  if (sbus->tx_seq == sbus->max_seq)
+  if (ibus->tx_seq == ibus->max_seq)
     {
       /* TODO handle this case */
 
@@ -314,72 +376,59 @@ int bcmf_sdpcm_sendframe(FAR struct bcmf_dev_s *priv)
       return -EAGAIN;
     }
 
-  if (nxsem_wait(&sbus->queue_mutex) < 0)
+  if (nxsem_wait_uninterruptible(&ibus->queue_mutex) < 0)
     {
       DEBUGPANIC();
     }
 
-  entry = sbus->tx_queue.tail;
-  sframe = container_of(entry, struct bcmf_sdio_frame, list_entry);
-  header = (struct bcmf_sdpcm_header *)sframe->header.base;
+  iframe = list_remove_head_type(&ibus->tx_queue, bcmf_interface_frame_t,
+                                 list_entry);
+  nxsem_post(&ibus->queue_mutex);
+
+  header = (struct bcmf_sdpcm_header *)iframe->header.base;
 
   /* Set frame sequence id */
 
-  header->sequence = sbus->tx_seq++;
+  header->sequence = ibus->tx_seq++;
 
-#if 0
-  wlinfo("Send frame %p\n", sframe);
+#if 1
+  wlinfo("Send frame %p\n", iframe);
 
-  bcmf_hexdump(sframe->header.base, sframe->header.len,
-               (unsigned long)sframe->header.base);
+  bcmf_hexdump(iframe->header.base, iframe->header.len,
+               (unsigned long)iframe->header.base);
 #endif
 
-  ret = bcmf_transfer_bytes(sbus, true, 2, 0, sframe->header.base,
-                            sframe->header.len);
-  if (ret != OK)
-    {
-      /* TODO handle retry count and remove frame from queue + abort TX */
+  /* Write the frame data (the buffer is DMA aligned here) */
 
-      wlinfo("fail send frame %d\n", ret);
-      ret = -EIO;
-      goto exit_abort;
-    }
-
-  /* Frame sent, remove it from queue */
-
-  bcmf_dqueue_pop_tail(&sbus->tx_queue);
-  nxsem_post(&sbus->queue_mutex);
-  is_txframe = sframe->tx;
+  ret = bcmf_transfer_bytes(ibus, true, 2, 0,
+                            iframe->header.base,
+                            iframe->header.len);
+  is_txframe = iframe->tx;
 
   /* Free frame buffer */
 
-  bcmf_sdio_free_frame(priv, sframe);
+  bcmf_interface_free_frame(priv, iframe);
 
-  if (is_txframe)
+  if (ret == OK && is_txframe)
     {
       /* Notify upper layer at least one TX buffer is available */
 
-      bcmf_netdev_notify_tx_done(priv);
+      bcmf_netdev_notify_tx(priv);
     }
 
-  return OK;
+  wlinfo("return %d\n", ret);
 
-exit_abort:
-#if 0
-  bcmf_sdpcm_txfail(sbus, false);
-#endif
-
-  nxsem_post(&sbus->queue_mutex);
   return ret;
 }
 
 int bcmf_sdpcm_queue_frame(FAR struct bcmf_dev_s *priv,
                            struct bcmf_frame_s *frame, bool control)
 {
-  FAR struct bcmf_sdio_dev_s *sbus = (FAR struct bcmf_sdio_dev_s *)priv->bus;
-  struct bcmf_sdio_frame *sframe = (struct bcmf_sdio_frame *)frame;
+  FAR bcmf_interface_dev_t *ibus = (FAR bcmf_interface_dev_t *)priv->bus;
+  bcmf_interface_frame_t *iframe = (bcmf_interface_frame_t *)frame;
   struct bcmf_sdpcm_header *header =
-                           (struct bcmf_sdpcm_header *)sframe->data;
+    (struct bcmf_sdpcm_header *)iframe->data;
+  int semcount;
 
   /* Prepare sw header */
 
@@ -399,18 +448,22 @@ int bcmf_sdpcm_queue_frame(FAR struct bcmf_dev_s *priv,
 
   /* Add frame in tx queue */
 
-  if (nxsem_wait(&sbus->queue_mutex) < 0)
+  if (nxsem_wait_uninterruptible(&ibus->queue_mutex) < 0)
     {
       DEBUGPANIC();
     }
 
-  bcmf_dqueue_push(&sbus->tx_queue, &sframe->list_entry);
+  list_add_tail(&ibus->tx_queue, &iframe->list_entry);
 
-  nxsem_post(&sbus->queue_mutex);
+  nxsem_post(&ibus->queue_mutex);
 
   /* Notify bcmf thread tx frame is ready */
 
-  nxsem_post(&sbus->thread_signal);
+  nxsem_get_value(&ibus->thread_signal, &semcount);
+  if (semcount < 1)
+    {
+      nxsem_post(&ibus->thread_signal);
+    }
 
   return OK;
 }
@@ -419,7 +472,7 @@ struct bcmf_frame_s *bcmf_sdpcm_alloc_frame(FAR struct bcmf_dev_s *priv,
                                             unsigned int len, bool block,
                                             bool control)
 {
-  struct bcmf_sdio_frame *sframe;
+  bcmf_interface_frame_t *iframe;
   unsigned int header_len = sizeof(struct bcmf_sdpcm_header);
 
   if (!control)
@@ -435,44 +488,44 @@ struct bcmf_frame_s *bcmf_sdpcm_alloc_frame(FAR struct bcmf_dev_s *priv,
 
   /* Allocate a frame for RX in case of control frame */
 
-  sframe = bcmf_sdio_allocate_frame(priv, block, !control);
+  iframe = bcmf_interface_allocate_frame(priv, block, !control);
 
-  if (sframe == NULL)
+  if (iframe == NULL)
     {
       return NULL;
     }
 
-  sframe->header.len   = header_len + len;
-  sframe->header.data += header_len;
-  return &sframe->header;
+  iframe->header.len   = header_len + len;
+  iframe->header.data += header_len;
+  return &iframe->header;
 }
 
 void bcmf_sdpcm_free_frame(FAR struct bcmf_dev_s *priv,
-                     struct bcmf_frame_s *frame)
+                           struct bcmf_frame_s *frame)
 {
-  return bcmf_sdio_free_frame(priv, (struct bcmf_sdio_frame *)frame);
+  bcmf_interface_free_frame(priv, (bcmf_interface_frame_t *)frame);
 }
 
 struct bcmf_frame_s *bcmf_sdpcm_get_rx_frame(FAR struct bcmf_dev_s *priv)
 {
-  dq_entry_t *entry;
-  struct bcmf_sdio_frame *sframe;
-  FAR struct bcmf_sdio_dev_s *sbus = (FAR struct bcmf_sdio_dev_s *)priv->bus;
+  bcmf_interface_frame_t *iframe;
+  FAR bcmf_interface_dev_t *ibus = (FAR bcmf_interface_dev_t *)priv->bus;
 
-  if (nxsem_wait(&sbus->queue_mutex) < 0)
+  if (nxsem_wait_uninterruptible(&ibus->queue_mutex) < 0)
     {
       DEBUGPANIC();
     }
 
-  entry = bcmf_dqueue_pop_tail(&sbus->rx_queue);
+  iframe = list_remove_head_type(&ibus->rx_queue,
+                                 bcmf_interface_frame_t,
+                                 list_entry);
 
-  nxsem_post(&sbus->queue_mutex);
+  nxsem_post(&ibus->queue_mutex);
 
-  if (entry == NULL)
+  if (iframe == NULL)
     {
       return NULL;
     }
 
-  sframe = container_of(entry, struct bcmf_sdio_frame, list_entry);
-  return &sframe->header;
+  return &iframe->header;
 }

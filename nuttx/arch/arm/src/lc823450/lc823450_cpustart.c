@@ -36,12 +36,10 @@
 #include <nuttx/spinlock.h>
 #include <nuttx/sched_note.h>
 
-#include "arm_arch.h"
 #include "nvic.h"
 #include "sched/sched.h"
 #include "init/init.h"
 #include "arm_internal.h"
-
 #include "lc823450_syscontrol.h"
 
 #if defined(CONFIG_BUILD_FLAT) && defined(CONFIG_ARM_MPU)
@@ -71,7 +69,7 @@ extern volatile spinlock_t g_cpu_wait[CONFIG_SMP_NCPUS];
  * Private Functions
  ****************************************************************************/
 
-extern int lc823450_pause_handler(int irq, void *c, FAR void *arg);
+extern int lc823450_pause_handler(int irq, void *c, void *arg);
 
 /****************************************************************************
  * Name: cpu1_boot
@@ -127,14 +125,14 @@ static void cpu1_boot(void)
  * Name: up_cpu_start
  *
  * Description:
- *   In an SMP configution, only one CPU is initially active (CPU 0). System
- *   initialization occurs on that single thread. At the completion of the
- *   initialization of the OS, just before beginning normal multitasking,
+ *   In an SMP configuration, only one CPU is initially active (CPU 0).
+ *   System initialization occurs on that single thread. At the completion of
+ *   the initialization of the OS, just before beginning normal multitasking,
  *   the additional CPUs would be started by calling this function.
  *
- *   Each CPU is provided the entry point to is IDLE task when started.  A
+ *   Each CPU is provided the entry point to its IDLE task when started.  A
  *   TCB for each CPU's IDLE task has been initialized and placed in the
- *   CPU's g_assignedtasks[cpu] list.  Not stack has been allocated or
+ *   CPU's g_assignedtasks[cpu] list.  No stack has been allocated or
  *   initialized.
  *
  *   The OS initialization logic calls this function repeatedly until each
@@ -142,8 +140,8 @@ static void cpu1_boot(void)
  *
  * Input Parameters:
  *   cpu - The index of the CPU being started.  This will be a numeric
- *         value in the range of from one to (CONFIG_SMP_NCPUS-1).  (CPU
- *         0 is already active)
+ *         value in the range of one to (CONFIG_SMP_NCPUS-1).
+ *         (CPU 0 is already active)
  *
  * Returned Value:
  *   Zero on success; a negated errno value on failure.
@@ -167,7 +165,8 @@ int up_cpu_start(int cpu)
   putreg32(0x1, REMAP); /* remap enable */
   backup[0] = getreg32(CPU1_VECTOR_ISTACK);
   backup[1] = getreg32(CPU1_VECTOR_RESETV);
-  putreg32((uint32_t)tcb->adj_stack_ptr, CPU1_VECTOR_ISTACK);
+  putreg32((uint32_t)tcb->stack_base_ptr +
+           tcb->adj_stack_size, CPU1_VECTOR_ISTACK);
   putreg32((uint32_t)cpu1_boot, CPU1_VECTOR_RESETV);
 
   spin_lock(&g_cpu_wait[0]);

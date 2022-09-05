@@ -51,6 +51,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -60,8 +61,6 @@
 #include <nuttx/spi/spi.h>
 
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "chip.h"
 #include "hardware/max326_pinmux.h"
 #include "max326_clockconfig.h"
@@ -1515,7 +1514,6 @@ struct spi_dev_s *max326_spibus_initialize(int bus)
 #endif
     {
       spierr("ERROR: Unsupported SPI bus: %d\n", bus);
-      return NULL;
     }
 
   leave_critical_section(flags);

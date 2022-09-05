@@ -34,12 +34,20 @@
 #include <arch/irq.h>
 #include <arch/esp32c3/chip.h>
 
-#include "riscv_arch.h"
+#include "riscv_internal.h"
 #include "esp32c3_irq.h"
 #include "hardware/esp32c3_iomux.h"
 #include "hardware/esp32c3_gpio.h"
+#include "hardware/esp32c3_usb_serial_jtag.h"
 
 #include "esp32c3_gpio.h"
+
+/****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#define USB_JTAG_DM    18
+#define USB_JTAG_DP    19
 
 /****************************************************************************
  * Private Data
@@ -87,7 +95,7 @@ static void gpio_dispatch(int irq, uint32_t status, uint32_t *regs)
  ****************************************************************************/
 
 #ifdef CONFIG_ESP32C3_GPIO_IRQ
-static int gpio_interrupt(int irq, FAR void *context, FAR void *arg)
+static int gpio_interrupt(int irq, void *context, void *arg)
 {
   uint32_t status;
 
@@ -127,6 +135,18 @@ int esp32c3_configgpio(int pin, gpio_pinattr_t attr)
 
   func  = 0;
   cntrl = 0;
+
+  /* If pin 18 or 19 then disable the USB/JTAG function and pull-up */
+
+  if ((pin == USB_JTAG_DM) || (pin == USB_JTAG_DP))
+    {
+      uint32_t regval;
+
+      regval = getreg32(USB_SERIAL_JTAG_CONF0_REG);
+      regval &= ~(USB_SERIAL_JTAG_USB_PAD_ENABLE |
+                  USB_SERIAL_JTAG_DP_PULLUP);
+      putreg32(regval, USB_SERIAL_JTAG_CONF0_REG);
+    }
 
   /* Handle input pins */
 

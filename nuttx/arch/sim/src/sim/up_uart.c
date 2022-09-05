@@ -36,7 +36,9 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define BUFSIZE 256
+#ifndef CONFIG_SIM_UART_BUFFER_SIZE
+  #define CONFIG_SIM_UART_BUFFER_SIZE 256
+#endif
 
 /****************************************************************************
  * Private Types
@@ -46,7 +48,7 @@ struct tty_priv_s
 {
   /* tty-port path name */
 
-  FAR const char *path;
+  const char *path;
 
   /* The file descriptor. It is returned by open */
 
@@ -57,21 +59,21 @@ struct tty_priv_s
  * Private Function Prototypes
  ****************************************************************************/
 
-static int  tty_setup(FAR struct uart_dev_s *dev);
-static void tty_shutdown(FAR struct uart_dev_s *dev);
-static int  tty_attach(FAR struct uart_dev_s *dev);
-static void tty_detach(FAR struct uart_dev_s *dev);
-static int  tty_ioctl(FAR struct file *filep, int cmd,
+static int  tty_setup(struct uart_dev_s *dev);
+static void tty_shutdown(struct uart_dev_s *dev);
+static int  tty_attach(struct uart_dev_s *dev);
+static void tty_detach(struct uart_dev_s *dev);
+static int  tty_ioctl(struct file *filep, int cmd,
                       unsigned long arg);
-static int  tty_receive(FAR struct uart_dev_s *dev, uint32_t *status);
-static void tty_rxint(FAR struct uart_dev_s *dev, bool enable);
-static bool tty_rxavailable(FAR struct uart_dev_s *dev);
-static bool tty_rxflowcontrol(FAR struct uart_dev_s *dev,
+static int  tty_receive(struct uart_dev_s *dev, uint32_t *status);
+static void tty_rxint(struct uart_dev_s *dev, bool enable);
+static bool tty_rxavailable(struct uart_dev_s *dev);
+static bool tty_rxflowcontrol(struct uart_dev_s *dev,
                               unsigned int nbuffered, bool upper);
-static void tty_send(FAR struct uart_dev_s *dev, int ch);
-static void tty_txint(FAR struct uart_dev_s *dev, bool enable);
-static bool tty_txready(FAR struct uart_dev_s *dev);
-static bool tty_txempty(FAR struct uart_dev_s *dev);
+static void tty_send(struct uart_dev_s *dev, int ch);
+static void tty_txint(struct uart_dev_s *dev, bool enable);
+static bool tty_txready(struct uart_dev_s *dev);
+static bool tty_txempty(struct uart_dev_s *dev);
 
 /****************************************************************************
  * Private Data
@@ -96,28 +98,28 @@ static const struct uart_ops_s g_tty_ops =
 #endif
 
 #ifdef USE_DEVCONSOLE
-static char g_console_rxbuf[BUFSIZE];
-static char g_console_txbuf[BUFSIZE];
+static char g_console_rxbuf[CONFIG_SIM_UART_BUFFER_SIZE];
+static char g_console_txbuf[CONFIG_SIM_UART_BUFFER_SIZE];
 #endif
 
 #ifdef CONFIG_SIM_UART0_NAME
-static char g_tty0_rxbuf[BUFSIZE];
-static char g_tty0_txbuf[BUFSIZE];
+static char g_tty0_rxbuf[CONFIG_SIM_UART_BUFFER_SIZE];
+static char g_tty0_txbuf[CONFIG_SIM_UART_BUFFER_SIZE];
 #endif
 
 #ifdef CONFIG_SIM_UART1_NAME
-static char g_tty1_rxbuf[BUFSIZE];
-static char g_tty1_txbuf[BUFSIZE];
+static char g_tty1_rxbuf[CONFIG_SIM_UART_BUFFER_SIZE];
+static char g_tty1_txbuf[CONFIG_SIM_UART_BUFFER_SIZE];
 #endif
 
 #ifdef CONFIG_SIM_UART2_NAME
-static char g_tty2_rxbuf[BUFSIZE];
-static char g_tty2_txbuf[BUFSIZE];
+static char g_tty2_rxbuf[CONFIG_SIM_UART_BUFFER_SIZE];
+static char g_tty2_txbuf[CONFIG_SIM_UART_BUFFER_SIZE];
 #endif
 
 #ifdef CONFIG_SIM_UART3_NAME
-static char g_tty3_rxbuf[BUFSIZE];
-static char g_tty3_txbuf[BUFSIZE];
+static char g_tty3_rxbuf[CONFIG_SIM_UART_BUFFER_SIZE];
+static char g_tty3_txbuf[CONFIG_SIM_UART_BUFFER_SIZE];
 #endif
 
 #ifdef USE_DEVCONSOLE
@@ -127,12 +129,12 @@ static struct uart_dev_s g_console_dev =
   .ops            = &g_tty_ops,
   .xmit =
   {
-    .size         = BUFSIZE,
+    .size         = CONFIG_SIM_UART_BUFFER_SIZE,
     .buffer       = g_console_txbuf,
   },
   .recv =
   {
-    .size         = BUFSIZE,
+    .size         = CONFIG_SIM_UART_BUFFER_SIZE,
     .buffer       = g_console_rxbuf,
   },
 };
@@ -151,12 +153,12 @@ static struct uart_dev_s g_tty0_dev =
   .priv           = &g_tty0_priv,
   .xmit =
   {
-    .size         = BUFSIZE,
+    .size         = CONFIG_SIM_UART_BUFFER_SIZE,
     .buffer       = g_tty0_txbuf,
   },
   .recv =
   {
-    .size         = BUFSIZE,
+    .size         = CONFIG_SIM_UART_BUFFER_SIZE,
     .buffer       = g_tty0_rxbuf,
   },
 };
@@ -175,12 +177,12 @@ static struct uart_dev_s g_tty1_dev =
   .priv           = &g_tty1_priv,
   .xmit =
   {
-    .size         = BUFSIZE,
+    .size         = CONFIG_SIM_UART_BUFFER_SIZE,
     .buffer       = g_tty1_txbuf,
   },
   .recv =
   {
-    .size         = BUFSIZE,
+    .size         = CONFIG_SIM_UART_BUFFER_SIZE,
     .buffer       = g_tty1_rxbuf,
   },
 };
@@ -199,12 +201,12 @@ static struct uart_dev_s g_tty2_dev =
   .priv           = &g_tty2_priv,
   .xmit =
   {
-    .size         = BUFSIZE,
+    .size         = CONFIG_SIM_UART_BUFFER_SIZE,
     .buffer       = g_tty2_txbuf,
   },
   .recv =
   {
-    .size         = BUFSIZE,
+    .size         = CONFIG_SIM_UART_BUFFER_SIZE,
     .buffer       = g_tty2_rxbuf,
   },
 };
@@ -223,12 +225,12 @@ static struct uart_dev_s g_tty3_dev =
   .priv           = &g_tty3_priv,
   .xmit =
   {
-    .size         = BUFSIZE,
+    .size         = CONFIG_SIM_UART_BUFFER_SIZE,
     .buffer       = g_tty3_txbuf,
   },
   .recv =
   {
-    .size         = BUFSIZE,
+    .size         = CONFIG_SIM_UART_BUFFER_SIZE,
     .buffer       = g_tty3_rxbuf,
   },
 };
@@ -249,9 +251,9 @@ static struct uart_dev_s g_tty3_dev =
  *
  ****************************************************************************/
 
-static int tty_setup(FAR struct uart_dev_s *dev)
+static int tty_setup(struct uart_dev_s *dev)
 {
-  FAR struct tty_priv_s *priv = dev->priv;
+  struct tty_priv_s *priv = dev->priv;
 
   if (!dev->isconsole && priv->fd < 0)
     {
@@ -276,7 +278,7 @@ static int tty_setup(FAR struct uart_dev_s *dev)
 
 static void tty_shutdown(struct uart_dev_s *dev)
 {
-  FAR struct tty_priv_s *priv = dev->priv;
+  struct tty_priv_s *priv = dev->priv;
 
   if (!dev->isconsole && priv->fd >= 0)
     {
@@ -318,7 +320,7 @@ static int tty_attach(struct uart_dev_s *dev)
  *
  ****************************************************************************/
 
-static void tty_detach(FAR struct uart_dev_s *dev)
+static void tty_detach(struct uart_dev_s *dev)
 {
 }
 
@@ -333,10 +335,10 @@ static void tty_detach(FAR struct uart_dev_s *dev)
 static int tty_ioctl(struct file *filep, int cmd, unsigned long arg)
 {
 #ifdef CONFIG_SERIAL_TERMIOS
-  FAR struct inode *inode = filep->f_inode;
-  FAR struct uart_dev_s *dev = inode->i_private;
-  FAR struct tty_priv_s *priv = dev->priv;
-  FAR struct termios *termiosp = (FAR struct termios *)(uintptr_t)arg;
+  struct inode *inode = filep->f_inode;
+  struct uart_dev_s *dev = inode->i_private;
+  struct tty_priv_s *priv = dev->priv;
+  struct termios *termiosp = (struct termios *)(uintptr_t)arg;
 
   if (!termiosp)
     {
@@ -370,7 +372,7 @@ static int tty_ioctl(struct file *filep, int cmd, unsigned long arg)
 
 static int tty_receive(struct uart_dev_s *dev, uint32_t *status)
 {
-  FAR struct tty_priv_s *priv = dev->priv;
+  struct tty_priv_s *priv = dev->priv;
 
   *status = 0;
   return simuart_getc(dev->isconsole ? 0 : priv->fd);
@@ -398,7 +400,7 @@ static void tty_rxint(struct uart_dev_s *dev, bool enable)
 
 static bool tty_rxavailable(struct uart_dev_s *dev)
 {
-  FAR struct tty_priv_s *priv = dev->priv;
+  struct tty_priv_s *priv = dev->priv;
 
   return simuart_checkc(dev->isconsole ? 0 : priv->fd);
 }
@@ -412,10 +414,10 @@ static bool tty_rxavailable(struct uart_dev_s *dev)
  *
  ****************************************************************************/
 
-static bool tty_rxflowcontrol(FAR struct uart_dev_s *dev,
+static bool tty_rxflowcontrol(struct uart_dev_s *dev,
                               unsigned int nbuffered, bool upper)
 {
-  FAR struct uart_buffer_s *rxbuf = &dev->recv;
+  struct uart_buffer_s *rxbuf = &dev->recv;
 
   if (nbuffered == rxbuf->size)
     {
@@ -435,7 +437,7 @@ static bool tty_rxflowcontrol(FAR struct uart_dev_s *dev,
 
 static void tty_send(struct uart_dev_s *dev, int ch)
 {
-  FAR struct tty_priv_s *priv = dev->priv;
+  struct tty_priv_s *priv = dev->priv;
 
   /* For console device */
 
@@ -573,10 +575,10 @@ void up_uartloop(void)
  * Name: up_putc
  ****************************************************************************/
 
-#ifdef USE_DEVCONSOLE
 int up_putc(int ch)
 {
+#ifdef USE_DEVCONSOLE
   tty_send(&g_console_dev, ch);
+#endif
   return 0;
 }
-#endif

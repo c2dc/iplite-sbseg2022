@@ -26,7 +26,7 @@ CONFIGFILE = $(TOPDIR)$(DELIM)include$(DELIM)nuttx$(DELIM)config.h
 
 CSRCS = esp32c3_boot.c esp32c3_bringup.c
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += esp32c3_appinit.c
 ifeq ($(CONFIG_BOARDCTL_RESET),y)
 CSRCS += esp32c3_reset.c
@@ -38,12 +38,32 @@ ifeq ($(CONFIG_ESP32C3_SPIFLASH),y)
 CSRCS += esp32c3_spiflash.c
 endif
 
+ifeq ($(CONFIG_ESP32C3_WIRELESS),y)
+CSRCS += esp32c3_board_wlan.c
+endif
+
 ifeq ($(CONFIG_DEV_GPIO),y)
 CSRCS += esp32c3_gpio.c
 endif
 
+ifeq ($(CONFIG_ESP32C3_SPI),y)
+CSRCS += esp32c3_board_spi.c
+endif
+
+ifeq ($(CONFIG_SPI_DRIVER),y)
+CSRCS += esp32c3_board_spidev.c
+endif
+
+ifeq ($(CONFIG_SPI_SLAVE_DRIVER),y)
+CSRCS += esp32c3_board_spislavedev.c
+endif
+
 ifeq ($(CONFIG_I2C_DRIVER),y)
 CSRCS += esp32c3_i2c.c
+endif
+
+ifeq ($(CONFIG_CAN),y)
+CSRCS += esp32c3_twai.c
 endif
 
 ifeq ($(CONFIG_SENSORS_BMP180),y)
@@ -54,17 +74,56 @@ ifeq ($(CONFIG_WATCHDOG),y)
 CSRCS += esp32c3_wdt.c
 endif
 
-ifeq ($(CONFIG_TIMER),y)
-CSRCS += esp32c3_timer.c
+ifeq ($(CONFIG_ONESHOT),y)
+CSRCS += esp32c3_oneshot.c
 endif
 
-SCRIPTIN = $(SCRIPTDIR)$(DELIM)esp32c3.template.ld
+ifeq ($(CONFIG_PWM),y)
+CSRCS += esp32c3_ledc.c
+endif
+
+ifeq ($(CONFIG_ADC),y)
+CSRCS += esp32c3_adc.c
+endif
+
+ifeq ($(CONFIG_LCD_ST7735),y)
+CSRCS += esp32c3_st7735.c
+endif
+
+ifeq ($(CONFIG_LCD_ST7789),y)
+CSRCS += esp32c3_st7789.c
+endif
+
+ifeq ($(CONFIG_LCD_GC9A01),y)
+CSRCS += esp32c3_gc9a01.c
+endif
+
+ifeq ($(CONFIG_BOARDCTL_IOCTL),y)
+CSRCS += esp32c3_ioctl.c
+endif
+
+ifeq ($(CONFIG_BOARDCTL_UNIQUEID),y)
+CSRCS += esp32c3_uid.c
+endif
+
+ifeq ($(CONFIG_NSH_ROMFSETC),y)
+ifneq ($(CONFIG_NSH_CUSTOMROMFS),y)
+  RCSRCS = etc/init.d/rc.sysinit etc/init.d/rcS
+  RCRAWS = etc/group etc/passwd
+endif
+endif
+
+ifeq ($(CONFIG_BUILD_PROTECTED),y)
+SCRIPTIN = $(SCRIPTDIR)$(DELIM)protected.template.ld
+else
+SCRIPTIN = $(SCRIPTDIR)$(DELIM)flat.template.ld
+endif
 SCRIPTOUT = $(SCRIPTDIR)$(DELIM)esp32c3_out.ld
 
 .PHONY = context distclean
 
 $(SCRIPTOUT): $(SCRIPTIN) $(CONFIGFILE)
-	$(Q) $(CC) -isystem $(TOPDIR)/include -C -P -x c -E $(SCRIPTIN) -o $@
+	$(Q) $(CC) -isystem $(TOPDIR)/include -I $(BOARD_DIR)/scripts -C -P -x c -E $(SCRIPTIN) -o $@
 
 context:: $(SCRIPTOUT)
 

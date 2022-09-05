@@ -29,18 +29,18 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/wireless/bluetooth/bt_uart.h>
 #include <nuttx/power/pm.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "tiva_hciuart.h"
 #include "tiva_enablepwr.h"
@@ -65,10 +65,6 @@
 
 #if defined(CONFIG_PM) && !defined(CONFIG_TIVA_PM_SERIAL_ACTIVITY)
 #  define CONFIG_TIVA_PM_SERIAL_ACTIVITY 10
-#endif
-
-#if defined(CONFIG_PM)
-#  define PM_IDLE_DOMAIN 0 /* Revisit */
 #endif
 
 /****************************************************************************

@@ -22,6 +22,10 @@
  * Included Files
  ****************************************************************************/
 
+#include <nuttx/config.h>
+
+#include "riscv_internal.h"
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -38,7 +42,7 @@
  * Name: esp32c3_board_initialize
  *
  * Description:
- *   All ESP32C3 architectures must provide the following entry point.
+ *   All ESP32-C3 architectures must provide the following entry point.
  *   This entry point is called early in the initialization -- after all
  *   memory has been configured and mapped but before any devices have been
  *   initialized.
@@ -47,6 +51,10 @@
 
 void esp32c3_board_initialize(void)
 {
+#ifdef CONFIG_SCHED_CRITMONITOR
+  up_perf_init(NULL);
+#endif
+
   /* Configure on-board LEDs if LED support has been selected. */
 
 #ifdef CONFIG_ARCH_LEDS

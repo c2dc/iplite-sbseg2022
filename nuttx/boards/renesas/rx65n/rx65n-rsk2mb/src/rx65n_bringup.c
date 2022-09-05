@@ -27,7 +27,7 @@
 #include <nuttx/config.h>
 
 #include <sys/types.h>
-#include <syslog.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -39,7 +39,7 @@
 #include "rx65n_usbhost.h"
 #include "rx65n_rsk2mb.h"
 #include <rx65n_definitions.h>
-#ifdef CONFIG_LIB_BOARDCTL
+#ifdef CONFIG_BOARDCTL
 
 #ifdef HAVE_RTC_DRIVER
 #  include <nuttx/timers/rtc.h>
@@ -146,7 +146,6 @@ static int nsh_waiter(int argc, char *argv[])
 #ifdef NSH_HAVE_USBHOST
 static int nsh_usbhostinitialize(void)
 {
-  int pid;
   int ret;
 
   /* First, register all of the class drivers needed to support the drivers
@@ -170,7 +169,7 @@ static int nsh_usbhostinitialize(void)
 #ifdef CONFIG_USBHOST_CDCACM
   /* Register the CDC/ACM serial class */
 
-  printf ("USB Host CDCACM \n");
+  printf ("USB Host CDCACM\n");
   ret = usbhost_kbdinit();
   if (ret != OK)
     {
@@ -209,11 +208,11 @@ static int nsh_usbhostinitialize(void)
 
       syslog(LOG_INFO, "Start nsh_waiter\n");
 
-      pid = kthread_create("usbhost", CONFIG_USBHOST_DEFPRIO,
+      ret = kthread_create("usbhost", CONFIG_USBHOST_DEFPRIO,
                            CONFIG_USBHOST_STACKSIZE,
                            (main_t)nsh_waiter, (FAR char * const *)NULL);
-      syslog(LOG_INFO, "USBHost: Created pid = %d\n", pid);
-      return pid < 0 ? -ENOEXEC : OK;
+      syslog(LOG_INFO, "USBHost: Created pid = %d\n", ret);
+      return ret < 0 ? -ENOEXEC : OK;
     }
 
   return -ENODEV;
@@ -344,7 +343,7 @@ static int rtc_driver_initialize(void)
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -378,17 +377,17 @@ int rx65n_bringup(void)
 #ifdef CONFIG_RX65N_SBRAM
   /* Initialize standby RAM */
 
-  (void)rx65n_sbram_int();
+  rx65n_sbram_int();
 #endif
 
 #ifdef HAVE_DTC_DRIVER
   /* Initialize DTC */
 
-  (void)rx65n_dtc_initialize();
+  rx65n_dtc_initialize();
 #endif
 
 #ifdef CONFIG_RX65N_RSPI
-  (void)rx65n_rspi_initialize();
+  rx65n_rspi_initialize();
 #endif
 
 #if defined(CONFIG_USBHOST)

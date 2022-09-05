@@ -78,11 +78,16 @@
  *    really intended only for crash error reporting.
  */
 
-#ifdef CONFIG_HAVE_FUNCTIONNAME
+#if !defined(EXTRA_FMT) && !defined(EXTRA_ARG) && defined(CONFIG_HAVE_FUNCTIONNAME)
 #  define EXTRA_FMT "%s: "
 #  define EXTRA_ARG ,__FUNCTION__
-#else
+#endif
+
+#ifndef EXTRA_FMT
 #  define EXTRA_FMT
+#endif
+
+#ifndef EXTRA_ARG
 #  define EXTRA_ARG
 #endif
 
@@ -243,6 +248,24 @@
 #  define pwrinfo      _info
 #else
 #  define pwrinfo      _none
+#endif
+
+#ifdef CONFIG_DEBUG_BATTERY_ERROR
+#  define baterr       _err
+#else
+#  define baterr       _none
+#endif
+
+#ifdef CONFIG_DEBUG_BATTERY_WARN
+#  define batwarn      _warn
+#else
+#  define batwarn      _none
+#endif
+
+#ifdef CONFIG_DEBUG_BATTERY_INFO
+#  define batinfo      _info
+#else
+#  define batinfo      _none
 #endif
 
 #ifdef CONFIG_DEBUG_WIRELESS_ERROR
@@ -749,6 +772,24 @@
 #  define mtrinfo     _none
 #endif
 
+#ifdef CONFIG_DEBUG_VIDEO_ERROR
+#  define verr        _err
+#else
+#  define verr        _none
+#endif
+
+#ifdef CONFIG_DEBUG_VIDEO_WARN
+#  define vwarn       _warn
+#else
+#  define vwarn       _none
+#endif
+
+#ifdef CONFIG_DEBUG_VIDEO_INFO
+#  define vinfo       _info
+#else
+#  define vinfo       _none
+#endif
+
 /* Buffer dumping macros do not depend on varargs */
 
 #ifdef CONFIG_DEBUG_ERROR
@@ -1030,6 +1071,26 @@ extern "C"
 {
 #endif
 
+/* Type of the call out function pointer provided to
+ * lib_dumphandler() or lib_dumpvhandler()
+ */
+
+typedef CODE void (*lib_dump_handler_t)(FAR void *arg,
+                                        FAR const char *fmt, ...)
+                  printflike(2, 3);
+
+/* Dump a buffer of data with handler */
+
+void lib_dumphandler(FAR const char *msg, FAR const uint8_t *buffer,
+                     unsigned int buflen, lib_dump_handler_t handler,
+                     FAR void *arg);
+
+/* Do a pretty buffer dump from multiple buffers with handler. */
+
+void lib_dumpvhandler(FAR const char *msg, FAR const struct iovec *iov,
+                      int iovcnt, lib_dump_handler_t handler,
+                      FAR void *arg);
+
 /* Dump a buffer of data */
 
 void lib_dumpbuffer(FAR const char *msg, FAR const uint8_t *buffer,
@@ -1039,6 +1100,16 @@ void lib_dumpbuffer(FAR const char *msg, FAR const uint8_t *buffer,
 
 void lib_dumpvbuffer(FAR const char *msg, FAR const struct iovec *iov,
                      int iovcnt);
+
+/* Dump a buffer of data with fd */
+
+void lib_dumpfile(int fd, FAR const char *msg, FAR const uint8_t *buffer,
+                  unsigned int buflen);
+
+/* Do a pretty buffer dump from multiple buffers with fd. */
+
+void lib_dumpvfile(int fd, FAR const char *msg, FAR const struct iovec *iov,
+                   int iovcnt);
 
 /* The system logging interfaces are normally accessed via the macros
  * provided above.  If the cross-compiler's C pre-processor supports a
@@ -1051,19 +1122,19 @@ void lib_dumpvbuffer(FAR const char *msg, FAR const struct iovec *iov,
 
 #ifndef CONFIG_CPP_HAVE_VARARGS
 #ifdef CONFIG_DEBUG_ALERT
-void _alert(const char *format, ...);
+void _alert(const char *format, ...) sysloglike(1, 2);
 #endif
 
 #ifdef CONFIG_DEBUG_ERROR
-void _err(const char *format, ...);
+void _err(const char *format, ...) sysloglike(1, 2);
 #endif
 
 #ifdef CONFIG_DEBUG_WARN
-void _warn(const char *format, ...);
+void _warn(const char *format, ...) sysloglike(1, 2);
 #endif
 
 #ifdef CONFIG_DEBUG_INFO
-void _info(const char *format, ...);
+void _info(const char *format, ...) sysloglike(1, 2);
 #endif
 #endif /* CONFIG_CPP_HAVE_VARARGS */
 

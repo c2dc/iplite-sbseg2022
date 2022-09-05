@@ -106,8 +106,7 @@ config USBHOST_MSC
 	default n
 	depends on !BULK_DISABLE
 	---help---
-		Enable support for the mass storage class driver.  This also depends on
-		SCHED_WORKQUEUE=y
+		Enable support for the mass storage class driver.
 
 config USBHOST_MSC_NOTIFIER
 	bool "Support USB Mass Storage notifications"
@@ -282,13 +281,19 @@ config USBHOST_CDCMBIM
 		Select this option to build in host support for CDC/MBIM network
 		devices.
 
+menuconfig USBHOST_HID
+	bool "USB Host HID Driver Support"
+	default n
+	depends on ALLOW_BSD_COMPONENTS
+	---help---
+		USB host HID drivers.  See also include/nuttx/usb/usbhost.h
+
 config USBHOST_HIDKBD
 	bool "HID Keyboard Class Support"
 	default n
 	depends on !INT_DISABLE
 	---help---
-		Enable support for the keyboard class driver.  This also depends on
-		SCHED_WORKQUEUE
+		Enable support for the keyboard class driver.
 
 if  USBHOST_HIDKBD
 
@@ -333,7 +338,7 @@ config HIDKBD_RAWSCANCODES
 config HIDKBD_ENCODED
 	bool "Encode Special Keys"
 	default n
-	depends on !HIDKBD_RAWSCANCODES && LIB_KBDCODEC
+	depends on !HIDKBD_RAWSCANCODES && LIBC_KBDCODEC
 	---help---
 		Encode special key press events in the user buffer.  In this case,
 		the user end must decode the encoded special key values using the
@@ -363,10 +368,9 @@ config USBHOST_HIDMOUSE
 	default n
 	depends on !INT_DISABLE
 	select INPUT
-	select MOUSE
+	select INPUT_MOUSE
 	---help---
-		Enable support for the mouse class driver.  This also depends on
-		SCHED_WORKQUEUE
+		Enable support for the mouse class driver.
 
 		NOTE:  This driver checks out on a Labtec and an AOpen mouse, but
 		does not work correctly on a Microsoft mouse.  A little more work
@@ -710,6 +714,5 @@ config USBHOST_FT232R_LATENCY
 		occurs or the buffer is full. Measured in ms.
 
 endif # USBHOST_FT232R
-
 
 endif # USBHOST

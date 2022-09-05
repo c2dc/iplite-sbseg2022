@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <sched.h>
 #include <syscall.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -57,13 +58,6 @@ void minerva_sigdeliver(void)
   struct tcb_s *rtcb = this_task();
   uint32_t regs[XCPTCONTEXT_REGS];
   sig_deliver_t sigdeliver;
-
-  /* Save the errno.  This must be preserved throughout the signal handling
-   * so that the user code final gets the correct errno value (probably
-   * EINTR).
-   */
-
-  int saved_errno = get_errno();
 
   board_autoled_on(LED_SIGNAL);
 
@@ -106,7 +100,6 @@ void minerva_sigdeliver(void)
         regs[REG_CSR_MSTATUS]);
 
   up_irq_save();
-  set_errno(saved_errno);
 
   /* Then restore the correct state for this thread of execution. */
 

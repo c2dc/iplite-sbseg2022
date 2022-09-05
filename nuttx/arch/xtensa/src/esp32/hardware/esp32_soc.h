@@ -183,6 +183,14 @@
 
 #define GET_PERI_REG_BITS2(reg, mask,shift)      ((READ_PERI_REG(reg)>>(shift))&(mask))
 
+/* Extract the field from the register and shift it to avoid wrong reading */
+
+#define REG_MASK(_reg, _field) (((_reg) & (_field##_M)) >> (_field##_S))
+
+/* Helper to place a value in a field */
+
+#define VALUE_TO_FIELD(_value, _field) (((_value) << (_field##_S)) & (_field##_M))
+
 /* Periheral Clock */
 
 #define APB_CLK_FREQ_ROM                        26 * 1000000
@@ -237,12 +245,23 @@
 #define DR_REG_I2C1_EXT_BASE                    0x3ff67000
 #define DR_REG_SDMMC_BASE                       0x3ff68000
 #define DR_REG_EMAC_BASE                        0x3ff69000
+#define DR_REG_TWAI_BASE                        0x3ff6b000
+#define DR_REG_CAN_BASE                         DR_REG_TWAI_BASE
 #define DR_REG_PWM1_BASE                        0x3ff6c000
 #define DR_REG_I2S1_BASE                        0x3ff6d000
 #define DR_REG_UART2_BASE                       0x3ff6e000
 #define DR_REG_PWM2_BASE                        0x3ff6f000
 #define DR_REG_PWM3_BASE                        0x3ff70000
 #define PERIPHS_SPI_ENCRYPT_BASEADDR            DR_REG_SPI_ENCRYPT_BASE
+
+/* Some AHB addresses can be used instead of DPORT addresses
+ * as a workaround for some HW bugs.
+ * This workaround is detailed at
+ * https://www.espressif.com/sites/default/files/documentation/
+ * eco_and_workarounds_for_bugs_in_esp32_en.pdf
+ */
+
+#define AHB_REG_UART_BASE   0x60000000
 
 /* Overall memory map */
 
@@ -264,8 +283,8 @@
 #define SOC_RTC_IRAM_HIGH       0x400c2000
 #define SOC_RTC_DRAM_LOW        0x3ff80000
 #define SOC_RTC_DRAM_HIGH       0x3ff82000
-#define SOC_RTC_DATA_LOW        0x50000000
-#define SOC_RTC_DATA_HIGH       0x50002000
+#define SOC_RTC_SLOW_LOW        0x50000000
+#define SOC_RTC_SLOW_HIGH       0x50002000
 #define SOC_EXTRAM_DATA_LOW     0x3f800000
 #define SOC_EXTRAM_DATA_HIGH    0x3fc00000
 
@@ -278,9 +297,9 @@
  * This table is decided by hardware, don't touch this.
  */
 
-#define ETS_WIFI_MAC_INTR_SOURCE                0  /* Interrupt of WiFi MAC, level */
-#define ETS_WIFI_MAC_NMI_SOURCE                 1  /* Interrupt of WiFi MAC, NMI, use if MAC have bug to fix in NMI */
-#define ETS_WIFI_BB_INTR_SOURCE                 2  /* Interrupt of WiFi BB, level, we can do some calibartion */
+#define ETS_WIFI_MAC_INTR_SOURCE                0  /* Interrupt of Wi-Fi MAC, level */
+#define ETS_WIFI_MAC_NMI_SOURCE                 1  /* Interrupt of Wi-Fi MAC, NMI, use if MAC have bug to fix in NMI */
+#define ETS_WIFI_BB_INTR_SOURCE                 2  /* Interrupt of Wi-Fi BB, level, we can do some calibartion */
 #define ETS_BT_MAC_INTR_SOURCE                  3  /* will be cancelled */
 #define ETS_BT_BB_INTR_SOURCE                   4  /* Interrupt of BT BB, level */
 #define ETS_BT_BB_NMI_SOURCE                    5  /* Interrupt of BT BB, NMI, use if BB have bug to fix in NMI */
@@ -603,7 +622,7 @@ extern int rom_i2c_writereg(int block, int block_id, int reg_add,
                                     (REG_GET_FIELD(EFUSE_BLK0_RDATA5_REG, \
                                      EFUSE_RD_VOL_LEVEL_HP_INV)))
 
-#ifdef CONFIG_ESPTOOLPY_FLASHFREQ_80M
+#ifdef CONFIG_ESP32_FLASH_FREQ_80M
 #define DIG_DBIAS_80M_160M          RTC_CNTL_DBIAS_HP_VOLT
 #else
 #define DIG_DBIAS_80M_160M          RTC_CNTL_DBIAS_1V10
@@ -721,7 +740,7 @@ extern int rom_i2c_writereg(int block, int block_id, int reg_add,
 #define BB_DC_EST_FORCE_PD_V        1
 #define BB_DC_EST_FORCE_PD_S        0
 
-/* Some of the WiFi RX control registers.
+/* Some of the Wi-Fi RX control registers.
  * PU/PD fields defined here are used in sleep related functions.
  */
 
@@ -787,6 +806,10 @@ extern int rom_i2c_writereg(int block, int block_id, int reg_add,
 
 #define INVALID_MMU_VAL             0x100
 
+/*  phy registers and memory size */
+
+#define SOC_PHY_DIG_REGS_MEM_SIZE   (21*4)
+
 /****************************************************************************
  * Inline Functions
  ****************************************************************************/
@@ -836,6 +859,23 @@ static inline bool IRAM_ATTR esp32_ptr_exec(const void *p)
       || (ip >= SOC_CACHE_APP_LOW && ip < SOC_CACHE_APP_HIGH)
 #endif
       || (ip >= SOC_RTC_IRAM_LOW && ip < SOC_RTC_IRAM_HIGH);
+}
+
+/****************************************************************************
+ * Name: esp32_ptr_rtcslow
+ *
+ * Description:
+ *   Check if the buffer comes from the RTC Slow RAM.
+ *
+ * Parameters:
+ *   p          - Pointer to the buffer.
+ *
+ ****************************************************************************/
+
+static inline bool IRAM_ATTR esp32_ptr_rtcslow(const void *p)
+{
+  return ((intptr_t)p >= SOC_RTC_SLOW_LOW &&
+          (intptr_t)p < SOC_RTC_SLOW_HIGH);
 }
 
 #endif /* __ARCH_XTENSA_SRC_ESP32_HARDWARE_ESP32_SOC_H */

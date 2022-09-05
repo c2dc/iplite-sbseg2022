@@ -24,15 +24,15 @@
 
 #include <nuttx/config.h>
 #include <nuttx/arch.h>
-#include <debug.h>
 
+#include <assert.h>
+#include <debug.h>
 #include <stdio.h>
 #include <stdint.h>
 
 #include <arch/chip/pm.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "chip.h"
 #include "hardware/cxd56_crg.h"
 #include "hardware/cxd5602_backupmem.h"
@@ -44,14 +44,22 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#ifdef CONFIG_DEBUG_PM
-#  define pmerr(fmt, ...)  logerr(fmt, ## __VA_ARGS__)
-#  define pminfo(fmt, ...) loginfo(fmt, ## __VA_ARGS__)
-#  define pmdbg(fmt, ...)  logdebug(fmt, ## __VA_ARGS__)
+/* Debug */
+
+#ifdef CONFIG_CXD56_PM_DEBUG_ERROR
+#  define pmerr(format, ...)   _err(format, ##__VA_ARGS__)
 #else
-#  define pmerr(fmt, ...)
-#  define pminfo(fmt, ...)
-#  define pmdbg(fmt, ...)
+#  define pmerr(x, ...)
+#endif
+#ifdef CONFIG_CXD56_PM_DEBUG_WARN
+#  define pmwarn(format, ...)  _warn(format, ##__VA_ARGS__)
+#else
+#  define pmwarn(x, ...)
+#endif
+#ifdef CONFIG_CXD56_PM_DEBUG_INFO
+#  define pminfo(format, ...)  _info(format, ##__VA_ARGS__)
+#else
+#  define pminfo(x, ...)
 #endif
 
 /* For enable_pwd, disable_pwd (digital domain) */
@@ -67,10 +75,6 @@
 #define APDID_XOSC       1
 #define APDID_HPADC     12
 #define APDID_LPADC     13
-
-/* Compiler hint shortcut */
-
-#define __unused __attribute__((unused))
 
 #define ALIGNUP(v, a) (((v) + ((a) - 1)) & ~((a) - 1))
 #define TILESIZESHIT 17
@@ -123,12 +127,12 @@ struct power_domain
 static void cxd56_img_clock_enable(void);
 static void cxd56_img_clock_disable(void);
 static void cxd56_scu_clock_ctrl(uint32_t block, uint32_t intr, int on);
-static void cxd56_scu_peri_clock_enable(FAR const struct scu_peripheral *p)
-  __unused;
-static void cxd56_scu_peri_clock_disable(FAR const struct scu_peripheral *p)
-  __unused;
-static void cxd56_scu_peri_clock_gating(FAR const struct scu_peripheral *p,
-                                        int enable) __unused;
+static void cxd56_scu_peri_clock_enable(const struct scu_peripheral *p)
+  unused_code;
+static void cxd56_scu_peri_clock_disable(const struct scu_peripheral *p)
+  unused_code;
+static void cxd56_scu_peri_clock_gating(const struct scu_peripheral *p,
+                                        int enable) unused_code;
 
 /****************************************************************************
  * Public Data
@@ -1961,7 +1965,7 @@ void cxd56_scuseq_clock_disable(void)
   disable_pwd(PDID_SCU);
 }
 
-static void cxd56_scu_peri_clock_enable(FAR const struct scu_peripheral *p)
+static void cxd56_scu_peri_clock_enable(const struct scu_peripheral *p)
 {
   uint32_t val;
   uint32_t rst;
@@ -1990,7 +1994,7 @@ static void cxd56_scu_peri_clock_enable(FAR const struct scu_peripheral *p)
   cxd56_scu_clock_ctrl(cken, crgintmask, 1);
 }
 
-static void cxd56_scu_peri_clock_disable(FAR const struct scu_peripheral *p)
+static void cxd56_scu_peri_clock_disable(const struct scu_peripheral *p)
 {
   uint32_t val;
   uint32_t rst;
@@ -2015,7 +2019,7 @@ static void cxd56_scu_peri_clock_disable(FAR const struct scu_peripheral *p)
 }
 
 static void cxd56_scu_peri_clock_gating(
-  FAR const struct scu_peripheral *p, int enable)
+  const struct scu_peripheral *p, int enable)
 {
   uint32_t cken = 1u << p->cken;
 
@@ -2291,6 +2295,182 @@ uint32_t cxd56_get_img_vsync_baseclock(void)
     }
 }
 
+static int cxd56_hostif_clock_ctrl(uint32_t block, uint32_t intr, int on)
+{
+  uint32_t val;
+  uint32_t stat;
+  int      retry = 10000;
+
+  putreg32(0xffffffff, CXD56_TOPREG_CRG_INT_CLR0);
+
+  val = getreg32(CXD56_TOPREG_SYSIOP_CKEN);
+  if (on)
+    {
+      if ((val & block) == block)
+        {
+          /* Already clock on */
+
+          return OK;
+        }
+
+      putreg32(val | block, CXD56_TOPREG_SYSIOP_CKEN);
+    }
+  else
+    {
+      if ((val & block) == 0)
+        {
+          /* Already clock off */
+
+          return OK;
+        }
+
+      putreg32(val & ~block, CXD56_TOPREG_SYSIOP_CKEN);
+    }
+
+  do
+    {
+      stat = getreg32(CXD56_TOPREG_CRG_INT_STAT_RAW0);
+      busy_wait(1000);
+    }
+  while (retry-- && !(stat & intr));
+
+  putreg32(0xffffffff, CXD56_TOPREG_CRG_INT_CLR0);
+
+  return (retry) ? OK : -ETIMEDOUT;
+}
+
+int cxd56_hostif_clock_enable(void)
+{
+  int      ret = OK;
+  uint32_t mask;
+  uint32_t intr;
+
+  /* Enable HOSTIF IRAM/DRAM & general RAM memory power. */
+
+  putreg32((0x3 << 24) | 0xf, CXD56_TOPREG_HOSTIFC_RAMMODE_SEL);
+
+  do_power_control();
+
+  mask = CKEN_HOSSPI | CKEN_HOSI2C | CKEN_HOSTIFC_SEQ | CKEN_BRG_HOST |
+    CKEN_I2CS | CKEN_PCLK_HOSTIFC | CKEN_PCLK_UART0 | CKEN_UART0;
+
+  if (getreg32(CXD56_TOPREG_SYSIOP_CKEN) & mask)
+    {
+      /* Already enabled */
+
+      return ret;
+    }
+
+  putreg32(0, CXD56_TOPREG_CKDIV_HOSTIFC);
+  putreg32(0, CXD56_TOPREG_CKSEL_SYSIOP);
+
+  mask = CKEN_HOSSPI | CKEN_HOSI2C | CKEN_BRG_HOST |
+    CKEN_I2CS | CKEN_PCLK_HOSTIFC;
+
+  intr = CRG_CK_BRG_HOST | CRG_CK_I2CS | CRG_CK_PCLK_HOSTIFC;
+
+  ret = cxd56_hostif_clock_ctrl(mask, intr, 1);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  ret = cxd56_hostif_clock_ctrl(mask, intr, 0);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  modifyreg32(CXD56_TOPREG_SWRESET_BUS, 0, XRST_HOSTIFC);
+  ret = cxd56_hostif_clock_ctrl(mask, intr, 1);
+
+  return ret;
+}
+
+int cxd56_hostif_clock_disable(void)
+{
+  int      ret = OK;
+  uint32_t mask;
+  uint32_t intr;
+
+  mask = CKEN_HOSSPI | CKEN_HOSI2C | CKEN_HOSTIFC_SEQ | CKEN_BRG_HOST |
+    CKEN_I2CS |  CKEN_PCLK_HOSTIFC |  CKEN_PCLK_UART0 |  CKEN_UART0;
+
+  if (0 == (getreg32(CXD56_TOPREG_SYSIOP_CKEN) & mask))
+    {
+      /* Already disabled */
+
+      return ret;
+    }
+
+  mask = CKEN_HOSSPI | CKEN_HOSI2C | CKEN_BRG_HOST |
+    CKEN_I2CS |  CKEN_PCLK_HOSTIFC;
+
+  intr = CRG_CK_BRG_HOST | CRG_CK_I2CS | CRG_CK_PCLK_HOSTIFC;
+
+  ret = cxd56_hostif_clock_ctrl(mask, intr, 0);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  modifyreg32(CXD56_TOPREG_SWRESET_BUS, XRST_HOSTIFC, 0);
+
+  /* Disable HOSTIF IRAM/DRAM & general RAM memory power. */
+
+  putreg32(0x3, CXD56_TOPREG_HOSTIFC_RAMMODE_SEL);
+
+  do_power_control();
+
+  return ret;
+}
+
+int cxd56_hostseq_clock_enable(void)
+{
+  int ret = OK;
+
+  if (getreg32(CXD56_TOPREG_SYSIOP_CKEN) & CKEN_HOSTIFC_SEQ)
+    {
+      /* Already enabled */
+
+      return ret;
+    }
+
+  ret = cxd56_hostif_clock_ctrl(CKEN_HOSTIFC_SEQ, CRG_CK_HOSTIFC_SEQ, 1);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  ret = cxd56_hostif_clock_ctrl(CKEN_HOSTIFC_SEQ, CRG_CK_HOSTIFC_SEQ, 0);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  modifyreg32(CXD56_TOPREG_SWRESET_BUS, 0, XRST_HOSTIFC_ISOP);
+  ret = cxd56_hostif_clock_ctrl(CKEN_HOSTIFC_SEQ, CRG_CK_HOSTIFC_SEQ, 1);
+
+  return ret;
+}
+
+int cxd56_hostseq_clock_disable(void)
+{
+  int ret = OK;
+
+  if (0 == (getreg32(CXD56_TOPREG_SYSIOP_CKEN) & CKEN_HOSTIFC_SEQ))
+    {
+      /* Already disabled */
+
+      return ret;
+    }
+
+  modifyreg32(CXD56_TOPREG_SWRESET_BUS, XRST_HOSTIFC_ISOP, 0);
+  ret = cxd56_hostif_clock_ctrl(CKEN_HOSTIFC_SEQ, CRG_CK_HOSTIFC_SEQ, 0);
+
+  return ret;
+}
+
 int up_pmramctrl(int cmd, uintptr_t addr, size_t size)
 {
   int startidx;
@@ -2312,8 +2492,8 @@ int up_pmramctrl(int cmd, uintptr_t addr, size_t size)
   endidx = TILEALIGNIDX(TILEALIGN(addr + size));
 
   DEBUGASSERT(startidx < 12 && endidx <= 12);
-  pmdbg("%x (size: %x) [%d:%d] -> %d\n", addr, size,
-        startidx, endidx, cmd);
+  pminfo("%x (size: %x) [%d:%d] -> %d\n", addr, size,
+         startidx, endidx, cmd);
 
   /* Make controls bits for RAM power control */
 
@@ -2378,7 +2558,7 @@ int up_pmramctrl(int cmd, uintptr_t addr, size_t size)
   return OK;
 }
 
-#ifdef CONFIG_DEBUG_PM
+#ifdef CONFIG_CXD56_PM_DEBUG_INFO
 /****************************************************************************
  * Name: up_pmstatdump
  *
@@ -2397,34 +2577,34 @@ void up_pmstatdump(void)
   stat0 = getreg32(CXD56_TOPREG_APPDSP_RAMMODE_STAT0);
   stat1 = getreg32(CXD56_TOPREG_APPDSP_RAMMODE_STAT1);
 
-  pmdbg("              0 1 2 3 4 5 6 7 8 9 A B\n");
-  pmdbg("DSP RAM stat: %c %c %c %c %c %c %c %c %c %c %c %c\n",
-        statch[(stat0 >>  0) & 3],
-        statch[(stat0 >>  2) & 3],
-        statch[(stat0 >>  4) & 3],
-        statch[(stat0 >>  6) & 3],
-        statch[(stat0 >>  8) & 3],
-        statch[(stat0 >> 10) & 3],
-        statch[(stat1 >>  0) & 3],
-        statch[(stat1 >>  2) & 3],
-        statch[(stat1 >>  4) & 3],
-        statch[(stat1 >>  6) & 3],
-        statch[(stat1 >>  8) & 3],
-        statch[(stat1 >> 10) & 3]);
+  pminfo("              0 1 2 3 4 5 6 7 8 9 A B\n");
+  pminfo("DSP RAM stat: %c %c %c %c %c %c %c %c %c %c %c %c\n",
+         statch[(stat0 >>  0) & 3],
+         statch[(stat0 >>  2) & 3],
+         statch[(stat0 >>  4) & 3],
+         statch[(stat0 >>  6) & 3],
+         statch[(stat0 >>  8) & 3],
+         statch[(stat0 >> 10) & 3],
+         statch[(stat1 >>  0) & 3],
+         statch[(stat1 >>  2) & 3],
+         statch[(stat1 >>  4) & 3],
+         statch[(stat1 >>  6) & 3],
+         statch[(stat1 >>  8) & 3],
+         statch[(stat1 >> 10) & 3]);
 
   stat0 = getreg32(CXD56_CRG_APP_TILE_CLK_GATING_ENB);
-  pmdbg("Clock gating: %c %c %c %c %c %c %c %c %c %c %c %c\n",
-        gatech[(stat0 >>  0) & 1],
-        gatech[(stat0 >>  1) & 1],
-        gatech[(stat0 >>  2) & 1],
-        gatech[(stat0 >>  3) & 1],
-        gatech[(stat0 >>  4) & 1],
-        gatech[(stat0 >>  5) & 1],
-        gatech[(stat0 >>  6) & 1],
-        gatech[(stat0 >>  7) & 1],
-        gatech[(stat0 >>  8) & 1],
-        gatech[(stat0 >>  9) & 1],
-        gatech[(stat0 >> 10) & 1],
-        gatech[(stat0 >> 11) & 1]);
+  pminfo("Clock gating: %c %c %c %c %c %c %c %c %c %c %c %c\n",
+         gatech[(stat0 >>  0) & 1],
+         gatech[(stat0 >>  1) & 1],
+         gatech[(stat0 >>  2) & 1],
+         gatech[(stat0 >>  3) & 1],
+         gatech[(stat0 >>  4) & 1],
+         gatech[(stat0 >>  5) & 1],
+         gatech[(stat0 >>  6) & 1],
+         gatech[(stat0 >>  7) & 1],
+         gatech[(stat0 >>  8) & 1],
+         gatech[(stat0 >>  9) & 1],
+         gatech[(stat0 >> 10) & 1],
+         gatech[(stat0 >> 11) & 1]);
 }
 #endif

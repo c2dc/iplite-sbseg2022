@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <string.h>
@@ -71,28 +72,27 @@ struct lis3mdl_dev_s
 
 static void lis3mdl_read_register(FAR struct lis3mdl_dev_s *dev,
                                   uint8_t const reg_addr,
-                                  uint8_t * reg_data);
+                                  uint8_t *reg_data);
 static void lis3mdl_write_register(FAR struct lis3mdl_dev_s *dev,
                                    uint8_t const reg_addr,
                                    uint8_t const reg_data);
 static void lis3mdl_reset(FAR struct lis3mdl_dev_s *dev);
 static void lis3mdl_read_measurement_data(FAR struct lis3mdl_dev_s *dev);
 static void lis3mdl_read_magnetic_data(FAR struct lis3mdl_dev_s *dev,
-                                       uint16_t * x_mag, uint16_t * y_mag,
-                                       uint16_t * z_mag);
+                                       uint16_t *x_mag, uint16_t *y_mag,
+                                       uint16_t *z_mag);
 static void lis3mdl_read_temperature(FAR struct lis3mdl_dev_s *dev,
-                                     uint16_t * temperature);
+                                     uint16_t *temperature);
 static int lis3mdl_interrupt_handler(int irq, FAR void *context);
 static void lis3mdl_worker(FAR void *arg);
 
 static int lis3mdl_open(FAR struct file *filep);
 static int lis3mdl_close(FAR struct file *filep);
-static ssize_t lis3mdl_read(FAR struct file *, FAR char *, size_t);
+static ssize_t lis3mdl_read(FAR struct file *filep, FAR char *buffer,
+                            size_t buflen);
 static ssize_t lis3mdl_write(FAR struct file *filep,
                              FAR const char *buffer,
                              size_t buflen);
-static int lis3mdl_ioctl(FAR struct file *filep,
-                         int cmd, unsigned long arg);
 
 /****************************************************************************
  * Private Data
@@ -100,15 +100,15 @@ static int lis3mdl_ioctl(FAR struct file *filep,
 
 static const struct file_operations g_lis3mdl_fops =
 {
-  lis3mdl_open,
-  lis3mdl_close,
-  lis3mdl_read,
-  lis3mdl_write,
-  NULL,
-  lis3mdl_ioctl,
-  NULL
+  lis3mdl_open,    /* open */
+  lis3mdl_close,   /* close */
+  lis3mdl_read,    /* read */
+  lis3mdl_write,   /* write */
+  NULL,            /* seek */
+  NULL,            /* ioctl */
+  NULL             /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  , NULL
+  , NULL           /* unlink */
 #endif
 };
 
@@ -536,27 +536,6 @@ static ssize_t lis3mdl_write(FAR struct file *filep, FAR const char *buffer,
                              size_t buflen)
 {
   return -ENOSYS;
-}
-
-/****************************************************************************
- * Name: lis3mdl_ioctl
- ****************************************************************************/
-
-static int lis3mdl_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
-{
-  int ret = OK;
-
-  switch (cmd)
-    {
-      /* Command was not recognized */
-
-    default:
-      snerr("ERROR: Unrecognized cmd: %d\n", cmd);
-      ret = -ENOTTY;
-      break;
-    }
-
-  return ret;
 }
 
 /****************************************************************************

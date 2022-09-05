@@ -340,9 +340,16 @@
 #    define CONFIG_NSH_ROMFSMOUNTPT "/etc"
 #  endif
 
+#  ifndef CONFIG_NSH_SYSINITSCRIPT
+#    define CONFIG_NSH_SYSINITSCRIPT "init.d/rc.sysinit"
+#  endif
+
 #  ifndef CONFIG_NSH_INITSCRIPT
 #    define CONFIG_NSH_INITSCRIPT "init.d/rcS"
 #  endif
+
+#  undef NSH_SYSINITPATH
+#  define NSH_SYSINITPATH CONFIG_NSH_ROMFSMOUNTPT "/" CONFIG_NSH_SYSINITSCRIPT
 
 #  undef NSH_INITPATH
 #  define NSH_INITPATH CONFIG_NSH_ROMFSMOUNTPT "/" CONFIG_NSH_INITSCRIPT
@@ -462,8 +469,8 @@
 
 /* Make sure that the home directory is defined */
 
-#ifndef CONFIG_LIB_HOMEDIR
-# define CONFIG_LIB_HOMEDIR "/"
+#ifndef CONFIG_LIBC_HOMEDIR
+# define CONFIG_LIBC_HOMEDIR "/"
 #endif
 
 #undef NSH_HAVE_VARS
@@ -490,7 +497,8 @@
  */
 
 #if defined(CONFIG_NSH_DISABLE_LS) && defined(CONFIG_NSH_DISABLE_CP) && \
-    defined(CONFIG_NSH_DISABLE_PS) && !defined(CONFIG_NSH_PLATFORM_MOTD)
+    defined(CONFIG_NSH_DISABLE_PS) && !defined(CONFIG_NSH_PLATFORM_MOTD) && \
+    defined(CONFIG_DISABLE_ENVIRON)
 #  undef NSH_HAVE_IOBUFFER
 #endif
 
@@ -565,9 +573,15 @@
 #  define CONFIG_NSH_DISABLE_FREE 1
 #endif
 
+#if !defined(CONFIG_FS_PROCFS) || defined(CONFIG_FS_PROCFS_EXCLUDE_MEMDUMP)
+#  undef  CONFIG_NSH_DISABLE_MEMDUMP
+#  define CONFIG_NSH_DISABLE_MEMDUMP 1
+#endif
+
 /* Suppress unused file utilities */
 
 #define NSH_HAVE_CATFILE          1
+#define NSH_HAVE_WRITEFILE        1
 #define NSH_HAVE_READFILE         1
 #define NSH_HAVE_FOREACH_DIRENTRY 1
 #define NSH_HAVE_TRIMDIR          1
@@ -799,6 +813,11 @@ extern const char g_fmtsignalrecvd[];
  * Public Function Prototypes
  ****************************************************************************/
 
+#if defined(__cplusplus)
+extern "C"
+{
+#endif
+
 /* Initialization */
 
 #ifdef CONFIG_NSH_ROMFSETC
@@ -817,6 +836,7 @@ int nsh_usbconsole(void);
 int nsh_script(FAR struct nsh_vtbl_s *vtbl, FAR const char *cmd,
                FAR const char *path);
 #ifdef CONFIG_NSH_ROMFSETC
+int nsh_sysinitscript(FAR struct nsh_vtbl_s *vtbl);
 int nsh_initscript(FAR struct nsh_vtbl_s *vtbl);
 #ifdef CONFIG_NSH_ROMFSRC
 int nsh_loginscript(FAR struct nsh_vtbl_s *vtbl);
@@ -830,14 +850,14 @@ int nsh_loginscript(FAR struct nsh_vtbl_s *vtbl);
 
 /* Architecture-specific initialization depends on boardctl(BOARDIOC_INIT) */
 
-#if defined(CONFIG_NSH_ARCHINIT) && !defined(CONFIG_LIB_BOARDCTL)
-#  warning CONFIG_NSH_ARCHINIT is set, but CONFIG_LIB_BOARDCTL is not
+#if defined(CONFIG_NSH_ARCHINIT) && !defined(CONFIG_BOARDCTL)
+#  warning CONFIG_NSH_ARCHINIT is set, but CONFIG_BOARDCTL is not
 #  undef CONFIG_NSH_ARCHINIT
 #endif
 
 /* The mkrd command depends on boardctl(BOARDIOC_MKRD) */
 
-#if !defined(CONFIG_LIB_BOARDCTL) || !defined(CONFIG_BOARDCTL_MKRD)
+#if !defined(CONFIG_BOARDCTL) || !defined(CONFIG_BOARDCTL_MKRD)
 #  undef CONFIG_NSH_DISABLE_MKRD
 #  define CONFIG_NSH_DISABLE_MKRD 1
 #endif
@@ -935,6 +955,9 @@ void nsh_usbtrace(void);
 #ifndef CONFIG_NSH_DISABLE_FREE
   int cmd_free(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #endif
+#ifndef CONFIG_NSH_DISABLE_MEMDUMP
+  int cmd_memdump(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
+#endif
 #ifndef CONFIG_NSH_DISABLE_TIME
   int cmd_time(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #endif
@@ -962,6 +985,10 @@ int cmd_irqinfo(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
   int cmd_lbracket(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #endif
 
+#ifndef CONFIG_NSH_DISABLE_TIMEDATECTL
+  int cmd_timedatectl(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
+#endif
+
 #ifndef CONFIG_NSH_DISABLE_DATE
   int cmd_date(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #endif
@@ -987,7 +1014,7 @@ int cmd_irqinfo(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #ifndef CONFIG_NSH_DISABLE_LS
   int cmd_ls(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #endif
-#if defined(CONFIG_RAMLOG_SYSLOG) && !defined(CONFIG_NSH_DISABLE_DMESG)
+#if defined(CONFIG_SYSLOG_DEVPATH) && !defined(CONFIG_NSH_DISABLE_DMESG)
   int cmd_dmesg(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #endif
 #if !defined(CONFIG_NSH_DISABLE_READLINK) && defined(CONFIG_PSEUDOFS_SOFTLINKS)
@@ -1142,6 +1169,10 @@ int cmd_pmconfig(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
   int cmd_reboot(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #endif
 
+#if defined(CONFIG_BOARDCTL_RESET_CAUSE) && !defined(CONFIG_NSH_DISABLE_RESET_CAUSE)
+  int cmd_reset_cause(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
+#endif
+
 #if defined(CONFIG_RPTUN) && !defined(CONFIG_NSH_DISABLE_RPTUN)
   int cmd_rptun(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv);
 #endif
@@ -1268,7 +1299,7 @@ int nsh_catfile(FAR struct nsh_vtbl_s *vtbl, FAR const char *cmd,
  *
  * Description:
  *   Read a small file into a user-provided buffer.  The data is assumed to
- *   be a string and is guaranteed to be NUL-termined.  An error occurs if
+ *   be a string and is guaranteed to be NULL-terminated.  An error occurs if
  *   the file content (+terminator)  will not fit into the provided 'buffer'.
  *
  * Input Parameters:
@@ -1287,6 +1318,30 @@ int nsh_catfile(FAR struct nsh_vtbl_s *vtbl, FAR const char *cmd,
 #ifdef NSH_HAVE_READFILE
 int nsh_readfile(FAR struct nsh_vtbl_s *vtbl, FAR const char *cmd,
                  FAR const char *filepath, FAR char *buffer, size_t buflen);
+#endif
+
+/****************************************************************************
+ * Name: nsh_writefile
+ *
+ * Description:
+ *   Dump the contents of a file to the current NSH terminal.
+ *
+ * Input Paratemets:
+ *   vtbl     - session vtbl
+ *   cmd      - NSH command name to use in error reporting
+ *   buffer   - The pointer of writing buffer
+ *   len      - The length of writing buffer
+ *   filepath - The full path to the file to be dumped
+ *
+ * Returned Value:
+ *   Zero (OK) on success; -1 (ERROR) on failure.
+ *
+ ****************************************************************************/
+
+#ifdef NSH_HAVE_WRITEFILE
+int nsh_writefile(FAR struct nsh_vtbl_s *vtbl, FAR const char *cmd,
+                  FAR const char *buffer, size_t len,
+                  FAR const char *filepath);
 #endif
 
 /****************************************************************************
@@ -1351,6 +1406,25 @@ FAR char *nsh_trimspaces(FAR char *str);
 #endif
 
 /****************************************************************************
+ * Name: nsh_getdirpath
+ *
+ * Description:
+ *   Combine dirpath with a file/path, this will generated a new string,
+ *   which need free outside.
+ *
+ * Input Parameters:
+ *   dirpath - the dirpath
+ *   path    - the file/path
+ *
+ * Returned value:
+ *   The new string pointer, need free in caller.
+ *
+ ****************************************************************************/
+
+FAR char *nsh_getdirpath(FAR struct nsh_vtbl_s *vtbl,
+                         FAR const char *dirpath, FAR const char *path);
+
+/****************************************************************************
  * Name: nsh_getvar, nsh_setvar, and nsh_setvar
  *
  * Description:
@@ -1401,6 +1475,10 @@ int nsh_unsetvar(FAR struct nsh_vtbl_s *vtbl, FAR const char *name);
 #if defined(CONFIG_NSH_VARS) && !defined(CONFIG_NSH_DISABLE_SET)
 int nsh_foreach_var(FAR struct nsh_vtbl_s *vtbl, nsh_foreach_var_t cb,
                     FAR void *arg);
+#endif
+
+#if defined(__cplusplus)
+}
 #endif
 
 #endif /* __APPS_NSHLIB_NSH_H */

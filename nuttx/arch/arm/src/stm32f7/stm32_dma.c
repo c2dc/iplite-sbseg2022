@@ -27,6 +27,7 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
@@ -34,8 +35,6 @@
 #include <nuttx/arch.h>
 #include <nuttx/semaphore.h>
 #include <arch/stm32f7/chip.h>
-
-#include "arm_arch.h"
 
 #include "arm_internal.h"
 #include "sched/sched.h"
@@ -238,12 +237,12 @@ static inline void dmast_putreg(struct stm32_dma_s *dmast, uint32_t offset,
  *
  ****************************************************************************/
 
-static int stm32_dmatake(FAR struct stm32_dma_s *dmast)
+static int stm32_dmatake(struct stm32_dma_s *dmast)
 {
   return nxsem_wait_uninterruptible(&dmast->sem);
 }
 
-static inline void stm32_dmagive(FAR struct stm32_dma_s *dmast)
+static inline void stm32_dmagive(struct stm32_dma_s *dmast)
 {
   nxsem_post(&dmast->sem);
 }
@@ -257,8 +256,8 @@ static inline void stm32_dmagive(FAR struct stm32_dma_s *dmast)
  *
  ****************************************************************************/
 
-static inline FAR struct stm32_dma_s *stm32_dmastream(unsigned int stream,
-                                                    unsigned int controller)
+static inline struct stm32_dma_s *stm32_dmastream(unsigned int stream,
+                                                  unsigned int controller)
 {
   int index;
 
@@ -287,7 +286,7 @@ static inline FAR struct stm32_dma_s *stm32_dmastream(unsigned int stream,
  *
  ****************************************************************************/
 
-static inline FAR struct stm32_dma_s *stm32_dmamap(unsigned long dmamap)
+static inline struct stm32_dma_s *stm32_dmamap(unsigned long dmamap)
 {
   /* Extract the DMA controller number from the bit encoded value */
 
@@ -349,7 +348,7 @@ static void stm32_dmastreamdisable(struct stm32_dma_s *dmast)
  *
  ****************************************************************************/
 
-static int stm32_dmainterrupt(int irq, void *context, FAR void *arg)
+static int stm32_dmainterrupt(int irq, void *context, void *arg)
 {
   struct stm32_dma_s *dmast;
   uint32_t status;
@@ -514,7 +513,7 @@ void weak_function arm_dma_initialize(void)
 
 DMA_HANDLE stm32_dmachannel(unsigned int dmamap)
 {
-  FAR struct stm32_dma_s *dmast;
+  struct stm32_dma_s *dmast;
   int ret;
 
   /* Get the stream index from the bit-encoded channel value */
@@ -921,8 +920,8 @@ bool stm32_dmacapable(uintptr_t maddr, uint32_t count, uint32_t ccr)
       ((mend + 1) & (ARMV7M_DCACHE_LINESIZE - 1)) != 0)
     {
       dmawarn("stm32_dmacapable:"
-              " dcache unaligned maddr:0x%08x mend:0x%08x\n",
-              maddr, mend);
+              " dcache unaligned maddr:0x%08" PRIxPTR " mend:0x%08"
+              PRIx32 "\n", maddr, mend);
 #if !defined(CONFIG_STM32F7_DMACAPABLE_ASSUME_CACHE_ALIGNED)
       return false;
 #endif

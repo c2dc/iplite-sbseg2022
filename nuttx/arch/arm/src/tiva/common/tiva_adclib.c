@@ -69,7 +69,6 @@
 #include <nuttx/analog/adc.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "tiva_gpio.h"
 #include "tiva_adc.h"
@@ -398,7 +397,7 @@ void tiva_adc_irq_attach(uint8_t adc, uint8_t sse, xcpt_t isr)
   int irq = sse2irq[SSE_IDX(adc, sse)];
 
 #ifdef CONFIG_DEBUG_ANALOG
-  ainfo("assigning ISR=0x%p to ADC%d SSE%d IRQ=0x%02x...\n",
+  ainfo("assigning ISR=%p to ADC%d SSE%d IRQ=0x%02x...\n",
         isr, adc, sse, irq);
 #endif
 

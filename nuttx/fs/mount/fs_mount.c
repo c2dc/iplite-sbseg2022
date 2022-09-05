@@ -178,6 +178,9 @@ extern const struct mountpt_operations cromfs_operations;
 #ifdef CONFIG_FS_UNIONFS
 extern const struct mountpt_operations unionfs_operations;
 #endif
+#ifdef CONFIG_FS_RPMSGFS
+extern const struct mountpt_operations rpmsgfs_operations;
+#endif
 
 static const struct fsmap_t g_nonbdfsmap[] =
 {
@@ -207,6 +210,9 @@ static const struct fsmap_t g_nonbdfsmap[] =
 #endif
 #ifdef CONFIG_FS_UNIONFS
     { "unionfs", &unionfs_operations },
+#endif
+#ifdef CONFIG_FS_RPMSGFS
+    { "rpmsgfs", &rpmsgfs_operations },
 #endif
     { NULL, NULL },
 };
@@ -266,11 +272,9 @@ int nx_mount(FAR const char *source, FAR const char *target,
              FAR const void *data)
 {
 #if defined(BDFS_SUPPORT) || defined(MDFS_SUPPORT) || defined(NODFS_SUPPORT)
-#if defined(BDFS_SUPPORT) || defined(MDFS_SUPPORT)
   FAR struct inode *drvr_inode = NULL;
-#endif
   FAR struct inode *mountpt_inode;
-  FAR const struct mountpt_operations *mops;
+  FAR const struct mountpt_operations *mops = NULL;
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   struct inode_search_s desc;
 #endif
@@ -283,13 +287,14 @@ int nx_mount(FAR const char *source, FAR const char *target,
 
   /* Find the specified filesystem. Try the block driver filesystems first */
 
-#ifdef BDFS_SUPPORT
   if (source != NULL &&
       find_blockdriver(source, mountflags, &drvr_inode) >= 0)
     {
       /* Find the block based file system */
 
+#ifdef BDFS_SUPPORT
       mops = mount_findfs(g_bdfsmap, filesystemtype);
+#endif /* BDFS_SUPPORT */
       if (mops == NULL)
         {
           ferr("ERROR: Failed to find block based file system %s\n",
@@ -299,14 +304,14 @@ int nx_mount(FAR const char *source, FAR const char *target,
           goto errout_with_inode;
         }
     }
-  else
-#endif /* BDFS_SUPPORT */
-#ifdef MDFS_SUPPORT
-  if (source != NULL && (ret = find_mtddriver(source, &drvr_inode)) >= 0)
+  else if (source != NULL &&
+           (ret = find_mtddriver(source, &drvr_inode)) >= 0)
     {
       /* Find the MTD based file system */
 
+#ifdef MDFS_SUPPORT
       mops = mount_findfs(g_mdfsmap, filesystemtype);
+#endif /* MDFS_SUPPORT */
       if (mops == NULL)
         {
           ferr("ERROR: Failed to find MTD based file system %s\n",
@@ -317,7 +322,6 @@ int nx_mount(FAR const char *source, FAR const char *target,
         }
     }
   else
-#endif /* MDFS_SUPPORT */
 #ifdef NODFS_SUPPORT
   if ((mops = mount_findfs(g_nonbdfsmap, filesystemtype)) != NULL)
     {
@@ -374,7 +378,7 @@ int nx_mount(FAR const char *source, FAR const char *target,
    */
 
     {
-      ret = inode_reserve(target, &mountpt_inode);
+      ret = inode_reserve(target, 0777, &mountpt_inode);
       if (ret < 0)
         {
           /* inode_reserve can fail for a couple of reasons, but the most
@@ -450,9 +454,6 @@ int nx_mount(FAR const char *source, FAR const char *target,
   INODE_SET_MOUNTPT(mountpt_inode);
 
   mountpt_inode->u.i_mops  = mops;
-#ifdef CONFIG_FILE_MODE
-  mountpt_inode->i_mode    = mode;
-#endif
   mountpt_inode->i_private = fshandle;
   inode_semgive();
 
@@ -479,8 +480,8 @@ int nx_mount(FAR const char *source, FAR const char *target,
   /* A lot of goto's!  But they make the error handling much simpler */
 
 errout_with_mountpt:
-  inode_remove(target);
   inode_release(mountpt_inode);
+  inode_remove(target);
 
 errout_with_semaphore:
   inode_semgive();

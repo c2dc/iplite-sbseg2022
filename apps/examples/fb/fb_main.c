@@ -1,35 +1,20 @@
 /****************************************************************************
- * examples/fb/fb_main.c
+ * apps/examples/fb/fb_main.c
  *
- *   Copyright (C) 2017 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -43,6 +28,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdio.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -174,32 +160,43 @@ static void draw_rect1(FAR struct fb_state_s *state,
   FAR uint8_t *pixel;
   FAR uint8_t *row;
   uint8_t color8 = (color & 1) == 0 ? 0 : 0xff;
+
+  int start_full_x;
+  int end_full_x;
+  int start_bit_shift;
+  int last_bits;
   uint8_t lmask;
   uint8_t rmask;
-  int startx;
-  int endx;
-  int x;
   int y;
 
   /* Calculate the framebuffer address of the first row to draw on */
 
   row    = (FAR uint8_t *)state->fbmem + state->pinfo.stride * area->y;
 
-  /* Calculate the start byte position rounding down so that we get the
-   * first byte containing any part of the pixel sequence.  Then calculate
-   * the last byte position with a ceil() operation so it includes any final
-   * final pixels of the sequence.
+  /* Calculate the position of the first complete (with all bits) byte.
+   * Then calculate the last byte with all the bits.
    */
 
-  startx = (area->x >> 3);
-  endx   = ((area->x + area->w + 6) >> 3);
+  start_full_x = ((area->x + 7) >> 3);
+  end_full_x   = ((area->x + area->w) >> 3);
+
+  /* Calculate the number of bits in byte before start that need to remain
+   * unchanged. Later calculate the mask.
+   */
+
+  start_bit_shift = 8 + area->x - (start_full_x << 3);
+  lmask = 0xff >> start_bit_shift;
+
+  /* Calculate the number of bits that needs to be changed after last byte
+   * with all the bits. Later calculate the mask.
+   */
+
+  last_bits = area->x + area->w - (end_full_x << 3);
+  rmask = 0xff << (8 - last_bits);
 
   /* Calculate a mask on the first and last bytes of the sequence that may
    * not be completely filled with pixel.
    */
-
-  lmask  = 0xff << (8 - (area->x & 7));
-  rmask  = 0xff >> ((area->x + area->w - 1) & 7);
 
   /* Now draw each row, one-at-a-time */
 
@@ -207,33 +204,31 @@ static void draw_rect1(FAR struct fb_state_s *state,
     {
       /* 'pixel' points to the 1st pixel the next row */
 
-      pixel = row + startx;
+      /* Special case: The row starts and ends within the same byte */
 
-      /* Special case: The row is less no more than one byte wide */
-
-      if (startx == endx)
+      if (start_full_x > end_full_x)
         {
-          uint8_t mask = lmask | rmask;
-
-          *pixel = (*pixel & mask) | (color8 & ~mask);
+          pixel = row + start_full_x - 1;
+          *pixel = (*pixel & (~lmask | ~rmask)) | (lmask & rmask & color8);
+          continue;
         }
-      else
+
+      if (start_bit_shift != 0)
         {
-          /* Special case the first byte of the row */
+          pixel = row + start_full_x - 1;
+          *pixel = (*pixel & ~lmask) | (lmask & color8);
+        }
 
-          *pixel = (*pixel & lmask) | (color8 & ~lmask);
-          pixel++;
+      if (end_full_x > start_full_x)
+        {
+          pixel = row + start_full_x;
+          memset(pixel, color8, end_full_x - start_full_x);
+        }
 
-          /* Handle all middle bytes in the row */
-
-          for (x = startx + 1; x < endx; x++)
-            {
-              *pixel++ = color8;
-            }
-
-          /* Handle the final byte of the row */
-
-          *pixel = (*pixel & rmask) | (color8 & ~rmask);
+      if (last_bits != 0)
+        {
+          pixel = row + end_full_x;
+          *pixel = (*pixel & ~rmask) | (rmask & color8);
         }
 
       row += state->pinfo.stride;
@@ -361,6 +356,9 @@ int main(int argc, FAR char *argv[])
       return EXIT_FAILURE;
     }
 
+  /* Get the first overlay information */
+
+  state.oinfo.overlay = 0;
   ret = ioctl(state.fd, FBIOGET_OVERLAYINFO,
                         (unsigned long)((uintptr_t)&state.oinfo));
   if (ret < 0)

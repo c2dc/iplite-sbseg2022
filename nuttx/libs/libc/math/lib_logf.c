@@ -7,7 +7,7 @@
  *   Ported by: Darcy Gong
  *
  * It derives from the Rhombus OS math library by Nick Johnson which has
- * a compatibile, MIT-style license:
+ * a compatible, MIT-style license:
  *
  * Copyright (C) 2009, 2010 Nick Johnson <nickbjohnson4224 at gmail.com>
  *
@@ -44,7 +44,7 @@
  */
 
 #define LOGF_MAX_ITER         10
-#define LOGF_RELAX_MULTIPLIER 2
+#define LOGF_RELAX_MULTIPLIER 2.0F
 
 /****************************************************************************
  * Public Functions
@@ -58,9 +58,9 @@ float logf(float x)
 {
   float y;
   float y_old;
-  float ney;
+  float ey;
   float epsilon;
-  int   relax_factor;
+  float relax_factor;
   int   iter;
 
   y       = 0.0F;
@@ -68,13 +68,13 @@ float logf(float x)
   epsilon = FLT_EPSILON;
 
   iter         = 0;
-  relax_factor = 1;
+  relax_factor = 1.0F;
 
   while (y > y_old + epsilon || y < y_old - epsilon)
     {
       y_old = y;
-      ney   = expf(-y);
-      y    -= 1.0F - x * ney;
+      ey    = expf(y);
+      y    -= (ey - x) / ey;
 
       if (y > FLT_MAX_EXP_X)
         {
@@ -94,7 +94,7 @@ float logf(float x)
           iter = 0;
         }
 
-      if (relax_factor > 1)
+      if (relax_factor > 1.0F)
         {
           epsilon *= relax_factor;
         }

@@ -242,7 +242,7 @@ struct net_driver_s
 
   /* Drivers interface flags.  See IFF_* definitions in include/net/if.h */
 
-  uint8_t d_flags;
+  uint32_t d_flags;
 
   /* Multi network devices using multiple link layer protocols are
    * supported
@@ -258,21 +258,25 @@ struct net_driver_s
 
   /* Link layer address */
 
+#if defined(CONFIG_NET_ETHERNET) || defined(CONFIG_NET_6LOWPAN) || \
+    defined(CONFIG_NET_BLUETOOTH) || defined(CONFIG_NET_IEEE802154) || \
+    defined(CONFIG_NET_TUN)
   union
   {
-#ifdef CONFIG_NET_ETHERNET
+# if defined(CONFIG_NET_ETHERNET) || defined(CONFIG_NET_TUN)
     /* Ethernet device identity */
 
     struct ether_addr ether;    /* Device Ethernet MAC address */
-#endif
+# endif
 
-#if defined(CONFIG_NET_6LOWPAN) || defined(CONFIG_NET_BLUETOOTH) || \
+# if defined(CONFIG_NET_6LOWPAN) || defined(CONFIG_NET_BLUETOOTH) || \
     defined(CONFIG_NET_IEEE802154)
   /* The address assigned to an IEEE 802.15.4 or generic packet radio. */
 
     struct netdev_varaddr_s radio;
-#endif
+# endif
   } d_mac;
+#endif
 
   /* Network identity */
 
@@ -382,7 +386,8 @@ struct net_driver_s
    *        NETDEV_DOWN - The network is down
    */
 
-  FAR struct devif_callback_s *d_conncb;
+  FAR struct devif_callback_s *d_conncb;      /* This is the list head */
+  FAR struct devif_callback_s *d_conncb_tail; /* This is the list tail */
   FAR struct devif_callback_s *d_devcb;
 
   /* Driver callbacks */
@@ -450,7 +455,7 @@ typedef CODE int (*devif_poll_callback_t)(FAR struct net_driver_s *dev);
  * Ethernet, you will need to call the network ARP code before calling
  * this function:
  *
- *     #define BUF ((struct eth_hdr_s *)&dev->d_buf[0])
+ *     #define BUF ((FAR struct eth_hdr_s *)&dev->d_buf[0])
  *     dev->d_len = ethernet_devicedrver_poll();
  *     if (dev->d_len > 0)
  *       {
@@ -495,10 +500,8 @@ int sixlowpan_input(FAR struct radio_driver_s *ieee,
  * Polling of connections
  *
  * These functions will traverse each active network connection structure
- * and perform appropriate operations:  devif_timer() will perform TCP timer
- * operations (and UDP polling operations); devif_poll() will perform TCP
- * and UDP polling operations. The CAN driver MUST implement logic to
- * periodically call devif_timer(); devif_poll() may be called asynchronously
+ * and perform appropriate operations:  devif_poll() will perform TCP
+ * and UDP polling operations. devif_poll() may be called asynchronously
  * from the network driver can accept another outgoing packet.
  *
  * In both cases, these functions will call the provided callback function
@@ -545,8 +548,6 @@ int sixlowpan_input(FAR struct radio_driver_s *ieee,
  ****************************************************************************/
 
 int devif_poll(FAR struct net_driver_s *dev, devif_poll_callback_t callback);
-int devif_timer(FAR struct net_driver_s *dev, int delay,
-                devif_poll_callback_t callback);
 
 /****************************************************************************
  * Name: neighbor_out
@@ -596,6 +597,17 @@ void neighbor_out(FAR struct net_driver_s *dev);
 int devif_loopback(FAR struct net_driver_s *dev);
 
 /****************************************************************************
+ * Name: netdev_ifup / netdev_ifdown
+ *
+ * Description:
+ *   Bring the interface up/down
+ *
+ ****************************************************************************/
+
+int netdev_ifup(FAR struct net_driver_s *dev);
+int netdev_ifdown(FAR struct net_driver_s *dev);
+
+/****************************************************************************
  * Carrier detection
  *
  * Call netdev_carrier_on when the carrier has become available and the
@@ -624,9 +636,7 @@ int netdev_carrier_off(FAR struct net_driver_s *dev);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_NET_USRSOCK
 ssize_t net_ioctl_arglen(int cmd);
-#endif
 
 /****************************************************************************
  * Name: net_chksum

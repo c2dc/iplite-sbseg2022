@@ -28,8 +28,10 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <assert.h>
+#include <debug.h>
 
 #include <nuttx/fs/fs.h>
+#include <nuttx/fs/ioctl.h>
 
 #include "inode/inode.h"
 
@@ -67,7 +69,19 @@ int file_truncate(FAR struct file *filep, off_t length)
    */
 
   inode = filep->f_inode;
-  if (inode == NULL || !INODE_IS_MOUNTPT(inode) || inode->u.i_mops == NULL)
+  if (inode == NULL)
+    {
+      return -EINVAL;
+    }
+
+  /* If inode is not mountpoint try ioctl first */
+
+  if (!INODE_IS_MOUNTPT(inode))
+    {
+      return file_ioctl(filep, FIOC_TRUNCATE, length);
+    }
+
+  if (inode->u.i_mops == NULL)
     {
       fwarn("WARNING:  Not a (regular) file on a mounted file system.\n");
       return -EINVAL;
@@ -154,7 +168,12 @@ int file_truncate(FAR struct file *filep, off_t length)
 int ftruncate(int fd, off_t length)
 {
   FAR struct file *filep;
-  int ret;
+  int ret = -EINVAL;
+
+  if (length < 0)
+    {
+      goto errout;
+    }
 
   /* Get the file structure corresponding to the file descriptor. */
 

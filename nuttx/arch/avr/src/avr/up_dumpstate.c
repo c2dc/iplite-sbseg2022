@@ -31,9 +31,9 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/syslog/syslog.h>
 #include <arch/board/board.h>
 
-#include "up_arch.h"
 #include "sched/sched.h"
 #include "up_internal.h"
 
@@ -44,72 +44,74 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Name: up_stackdump
+ * Name: avr_stackdump
  ****************************************************************************/
 
-static void up_stackdump(uint16_t sp, uint16_t stack_base)
+static void avr_stackdump(uint16_t sp, uint16_t stack_top)
 {
-  uint16_t stack ;
+  uint16_t stack;
 
-  for (stack = sp & ~3; stack < stack_base; stack += 12)
+  /* Flush any buffered SYSLOG data to avoid overwrite */
+
+  syslog_flush();
+
+  for (stack = sp & ~0x7; stack < (stack_top & ~0x7); stack += 8)
     {
       uint8_t *ptr = (uint8_t *)stack;
-      _alert("%04x: %02x %02x %02x %02x %02x %02x %02x %02x"
-            " %02x %02x %02x %02x\n",
-             stack,
-             ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7],
-             ptr[8], ptr[9], ptr[10], ptr[11]);
+      _alert("%04x: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+             stack, ptr[0], ptr[1], ptr[2], ptr[3],
+             ptr[4], ptr[5], ptr[6], ptr[7]);
     }
 }
 
 /****************************************************************************
- * Name: up_registerdump
+ * Name: avr_registerdump
  ****************************************************************************/
 
-static inline void up_registerdump(void)
+static inline void avr_registerdump(void)
 {
   /* Are user registers available from interrupt processing? */
 
   if (g_current_regs)
     {
       _alert("R%02d: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-            0,
-            g_current_regs[REG_R0],  g_current_regs[REG_R1],
-            g_current_regs[REG_R2],  g_current_regs[REG_R3],
-            g_current_regs[REG_R4],  g_current_regs[REG_R5],
-            g_current_regs[REG_R6],  g_current_regs[REG_R7]);
+             0,
+             g_current_regs[REG_R0],  g_current_regs[REG_R1],
+             g_current_regs[REG_R2],  g_current_regs[REG_R3],
+             g_current_regs[REG_R4],  g_current_regs[REG_R5],
+             g_current_regs[REG_R6],  g_current_regs[REG_R7]);
 
       _alert("R%02d: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-            8,
-            g_current_regs[REG_R8],  g_current_regs[REG_R9],
-            g_current_regs[REG_R10], g_current_regs[REG_R11],
-            g_current_regs[REG_R12], g_current_regs[REG_R13],
-            g_current_regs[REG_R14], g_current_regs[REG_R15]);
+             8,
+             g_current_regs[REG_R8],  g_current_regs[REG_R9],
+             g_current_regs[REG_R10], g_current_regs[REG_R11],
+             g_current_regs[REG_R12], g_current_regs[REG_R13],
+             g_current_regs[REG_R14], g_current_regs[REG_R15]);
 
       _alert("R%02d: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-            16,
-            g_current_regs[REG_R16], g_current_regs[REG_R17],
-            g_current_regs[REG_R18], g_current_regs[REG_R19],
-            g_current_regs[REG_R20], g_current_regs[REG_R21],
-            g_current_regs[REG_R22], g_current_regs[REG_R23]);
+             16,
+             g_current_regs[REG_R16], g_current_regs[REG_R17],
+             g_current_regs[REG_R18], g_current_regs[REG_R19],
+             g_current_regs[REG_R20], g_current_regs[REG_R21],
+             g_current_regs[REG_R22], g_current_regs[REG_R23]);
 
       _alert("R%02d: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-            24,
-            g_current_regs[REG_R24], g_current_regs[REG_R25],
-            g_current_regs[REG_R26], g_current_regs[REG_R27],
-            g_current_regs[REG_R28], g_current_regs[REG_R29],
-            g_current_regs[REG_R30], g_current_regs[REG_R31]);
+             24,
+             g_current_regs[REG_R24], g_current_regs[REG_R25],
+             g_current_regs[REG_R26], g_current_regs[REG_R27],
+             g_current_regs[REG_R28], g_current_regs[REG_R29],
+             g_current_regs[REG_R30], g_current_regs[REG_R31]);
 
 #if !defined(REG_PC2)
       _alert("PC:  %02x%02x  SP: %02x%02x SREG: %02x\n",
-            g_current_regs[REG_PC0], g_current_regs[REG_PC1],
-            g_current_regs[REG_SPH], g_current_regs[REG_SPL],
-            g_current_regs[REG_SREG]);
+             g_current_regs[REG_PC0], g_current_regs[REG_PC1],
+             g_current_regs[REG_SPH], g_current_regs[REG_SPL],
+             g_current_regs[REG_SREG]);
 #else
       _alert("PC:  %02x%02x%02x  SP: %02x%02x SREG: %02x\n",
-            g_current_regs[REG_PC0], g_current_regs[REG_PC1],
-            g_current_regs[REG_PC2], g_current_regs[REG_SPH],
-            g_current_regs[REG_SPL], g_current_regs[REG_SREG]);
+             g_current_regs[REG_PC0], g_current_regs[REG_PC1],
+             g_current_regs[REG_PC2], g_current_regs[REG_SPH],
+             g_current_regs[REG_SPL], g_current_regs[REG_SREG]);
 #endif
     }
 }
@@ -124,8 +126,8 @@ static inline void up_registerdump(void)
 
 void up_dumpstate(void)
 {
-  struct tcb_s *rtcb = running_task();
-  uint16_t sp = avr_getsp();
+  FAR struct tcb_s *rtcb = running_task();
+  uint16_t sp = up_getsp();
   uint16_t ustackbase;
   uint16_t ustacksize;
 #if CONFIG_ARCH_INTERRUPTSTACK > 0
@@ -135,17 +137,17 @@ void up_dumpstate(void)
 
   /* Dump the registers (if available) */
 
-  up_registerdump();
+  avr_registerdump();
 
   /* Get the limits on the user stack memory */
 
-  ustackbase = (uint16_t)rtcb->adj_stack_ptr;
+  ustackbase = (uint16_t)rtcb->stack_base_ptr;
   ustacksize = (uint16_t)rtcb->adj_stack_size;
 
   /* Get the limits on the interrupt stack memory */
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 0
-  istackbase = (uint16_t)&g_intstackbase - 1;
+  istackbase = (uint16_t)&g_intstackalloc;
   istacksize = CONFIG_ARCH_INTERRUPTSTACK;
 
   /* Show interrupt stack info */
@@ -162,16 +164,16 @@ void up_dumpstate(void)
    * stack?
    */
 
-  if (sp <= istackbase && sp > istackbase - istacksize)
+  if (sp >= istackbase && sp < istackbase + istacksize)
     {
       /* Yes.. dump the interrupt stack */
 
-      up_stackdump(sp, istackbase);
+      avr_stackdump(sp, istackbase + istacksize);
     }
   else if (g_current_regs)
     {
       _alert("ERROR: Stack pointer is not within the interrupt stack\n");
-      up_stackdump(istackbase - istacksize, istackbase);
+      avr_stackdump(istackbase, istackbase + istacksize);
     }
 
   /* Extract the user stack pointer if we are in an interrupt handler.
@@ -191,20 +193,6 @@ void up_dumpstate(void)
 #ifdef CONFIG_STACK_COLORATION
   _alert("  used: %08x\n", up_check_tcbstack(rtcb));
 #endif
-
-  /* Dump the user stack if the stack pointer lies within the allocated user
-   * stack memory.
-   */
-
-  if (sp <= ustackbase && sp > ustackbase - ustacksize)
-    {
-      up_stackdump(sp, ustackbase);
-    }
-  else
-    {
-      _alert("ERROR: Stack pointer is not within allocated stack\n");
-      up_stackdump(ustackbase - ustacksize, ustackbase);
-    }
 #else
   _alert("sp:         %04x\n", sp);
   _alert("stack base: %04x\n", ustackbase);
@@ -212,21 +200,21 @@ void up_dumpstate(void)
 #ifdef CONFIG_STACK_COLORATION
   _alert("stack used: %08x\n", up_check_tcbstack(rtcb));
 #endif
+#endif
 
   /* Dump the user stack if the stack pointer lies within the allocated user
    * stack memory.
    */
 
-  if (sp > ustackbase || sp <= ustackbase - ustacksize)
+  if (sp >= ustackbase && sp < ustackbase + ustacksize)
     {
-      _alert("ERROR: Stack pointer is not within allocated stack\n");
-      up_stackdump(ustackbase - ustacksize, ustackbase);
+      avr_stackdump(sp, ustackbase + ustacksize);
     }
   else
     {
-      up_stackdump(sp, ustackbase);
+      _alert("ERROR: Stack pointer is not within allocated stack\n");
+      avr_stackdump(ustackbase, ustackbase + ustacksize);
     }
-#endif
 }
 
 #endif /* CONFIG_ARCH_STACKDUMP */

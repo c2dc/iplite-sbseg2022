@@ -27,14 +27,11 @@
 #include <sys/types.h>
 
 #include <nuttx/board.h>
+#include <nuttx/leds/userled.h>
 
 #include "imxrt1060-evk.h"
 
-#if !defined(CONFIG_ARCH_LEDS) && defined(CONFIG_USERLED_LOWER)
-#  define HAVE_LEDS 0
-#endif
-
-#ifdef CONFIG_LIB_BOARDCTL
+#ifdef CONFIG_BOARDCTL
 
 /****************************************************************************
  * Public Functions
@@ -67,7 +64,7 @@
 
 int board_app_initialize(uintptr_t arg)
 {
-#ifdef HAVE_LEDS
+#if !defined(CONFIG_ARCH_LEDS) && defined(CONFIG_USERLED_LOWER)
   /* Register the LED driver */
 
   int ret;
@@ -88,4 +85,4 @@ int board_app_initialize(uintptr_t arg)
 #endif
 }
 
-#endif /* CONFIG_LIB_BOARDCTL */
+#endif /* CONFIG_BOARDCTL */

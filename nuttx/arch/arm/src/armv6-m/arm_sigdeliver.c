@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include <sched.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -35,7 +36,6 @@
 
 #include "sched/sched.h"
 #include "arm_internal.h"
-#include "arm_arch.h"
 
 /****************************************************************************
  * Public Functions
@@ -53,20 +53,8 @@
 
 void arm_sigdeliver(void)
 {
-  /* NOTE the "magic" guard space added to regs.  This is a little kludge
-   * because arm_fullcontextrestore (called below) will do a stack-to-stack
-   * copy an may overwrite the regs[] array contents.  Sorry.
-   */
-
   struct tcb_s  *rtcb = this_task();
-  uint32_t regs[XCPTCONTEXT_REGS + 4];
-
-  /* Save the errno.  This must be preserved throughout the signal handling
-   * so that the user code final gets the correct errno value (probably
-   * EINTR).
-   */
-
-  int saved_errno = get_errno();
+  uint32_t *regs = rtcb->xcp.saved_regs;
 
 #ifdef CONFIG_SMP
   /* In the SMP case, we must terminate the critical section while the signal
@@ -82,10 +70,6 @@ void arm_sigdeliver(void)
   sinfo("rtcb=%p sigdeliver=%p sigpendactionq.head=%p\n",
         rtcb, rtcb->xcp.sigdeliver, rtcb->sigpendactionq.head);
   DEBUGASSERT(rtcb->xcp.sigdeliver != NULL);
-
-  /* Save the return state on the stack. */
-
-  arm_copyfullstate(regs, rtcb->xcp.regs);
 
 #ifdef CONFIG_SMP
   /* In the SMP case, up_schedule_sigaction(0) will have incremented
@@ -145,10 +129,6 @@ void arm_sigdeliver(void)
   up_irq_save();
 #endif
 
-  /* Restore the saved errno value */
-
-  set_errno(saved_errno);
-
   /* Modify the saved return state with the actual saved values in the
    * TCB.  This depends on the fact that nested signal handling is
    * not supported.  Therefore, these values will persist throughout the
@@ -159,12 +139,6 @@ void arm_sigdeliver(void)
    * could be modified by a hostile program.
    */
 
-  regs[REG_PC]         = rtcb->xcp.saved_pc;
-  regs[REG_PRIMASK]    = rtcb->xcp.saved_primask;
-  regs[REG_XPSR]       = rtcb->xcp.saved_xpsr;
-#ifdef CONFIG_BUILD_PROTECTED
-  regs[REG_LR]         = rtcb->xcp.saved_lr;
-#endif
   rtcb->xcp.sigdeliver = NULL;  /* Allows next handler to be scheduled */
 
   /* Then restore the correct state for this thread of

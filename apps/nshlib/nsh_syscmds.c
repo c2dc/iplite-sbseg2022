@@ -1,35 +1,20 @@
 /****************************************************************************
  * apps/nshlib/nsh_syscmds.c
  *
- *   Copyright (C) 2015 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -43,6 +28,7 @@
 #include <sys/boardctl.h>
 #include <sys/ioctl.h>
 #include <sys/utsname.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,17 +58,21 @@
 #define UNAME_KERNEL   (1 << 0)
 #define UNAME_NODE     (1 << 1)
 #define UNAME_RELEASE  (1 << 2)
-#define UNAME_VERISON  (1 << 3)
+#define UNAME_VERSION  (1 << 3)
 #define UNAME_MACHINE  (1 << 4)
 #define UNAME_PLATFORM (1 << 5)
 #define UNAME_UNKNOWN  (1 << 6)
 
 #ifdef CONFIG_NET
 #  define UNAME_ALL    (UNAME_KERNEL | UNAME_NODE | UNAME_RELEASE | \
-                        UNAME_VERISON | UNAME_MACHINE | UNAME_PLATFORM)
+                        UNAME_VERSION | UNAME_MACHINE | UNAME_PLATFORM)
 #else
-#  define UNAME_ALL    (UNAME_KERNEL | UNAME_RELEASE | UNAME_VERISON | \
+#  define UNAME_ALL    (UNAME_KERNEL | UNAME_RELEASE | UNAME_VERSION | \
                         UNAME_MACHINE | UNAME_PLATFORM)
+#endif
+
+#ifndef CONFIG_NSH_PROC_MOUNTPOINT
+#  define CONFIG_NSH_PROC_MOUNTPOINT "/proc"
 #endif
 
 /****************************************************************************
@@ -127,7 +117,7 @@ int cmd_shutdown(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
        * reset the board due to some constraints.
        */
 
-      boardctl(BOARDIOC_RESET, EXIT_SUCCESS);
+      boardctl(BOARDIOC_RESET, 0);
     }
   else
     {
@@ -136,7 +126,7 @@ int cmd_shutdown(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
        * to power-off the* board due to some constraints.
        */
 
-      boardctl(BOARDIOC_POWEROFF, EXIT_SUCCESS);
+      boardctl(BOARDIOC_POWEROFF, 0);
     }
 
 #elif defined(CONFIG_BOARDCTL_RESET)
@@ -157,7 +147,7 @@ int cmd_shutdown(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
    * reset the board due to some constraints.
    */
 
-  boardctl(BOARDIOC_RESET, EXIT_SUCCESS);
+  boardctl(BOARDIOC_RESET, 0);
 
 #else
   /* Only the reset behavior is supported and we already know that there is
@@ -169,10 +159,10 @@ int cmd_shutdown(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
    * off the board due to some constraints.
    */
 
-  boardctl(BOARDIOC_POWEROFF, EXIT_SUCCESS);
+  boardctl(BOARDIOC_POWEROFF, 0);
 #endif
 
-  /* boarctl() will not return in any case.  It if does, it means that
+  /* boardctl() will not return in any case.  It if does, it means that
    * there was a problem with the shutdown/resaet operation.
    */
 
@@ -186,46 +176,68 @@ int cmd_shutdown(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
  ****************************************************************************/
 
 #if defined(CONFIG_PM) && !defined(CONFIG_NSH_DISABLE_PMCONFIG)
+static int cmd_pmconfig_recursive(FAR struct nsh_vtbl_s *vtbl,
+                                  FAR const char *dirpath,
+                                  FAR struct dirent *entryp,
+                                  FAR void *pvarg)
+{
+  char *path;
+  int ret = ERROR;
+
+  if (DIRENT_ISDIRECTORY(entryp->d_type))
+    {
+      return 0;
+    }
+
+  path = nsh_getdirpath(vtbl, dirpath, entryp->d_name);
+  if (path)
+    {
+      nsh_output(vtbl, "\n%s:\n", path);
+      ret = nsh_catfile(vtbl, pvarg, path);
+      free(path);
+    }
+
+  return ret;
+}
+
 int cmd_pmconfig(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 {
   struct boardioc_pm_ctrl_s ctrl =
   {
   };
 
-  if (argc == 1)
+  if (argc <= 2)
     {
-      int current_state;
-      int normal_count;
-      int idle_count;
-      int standby_count;
-      int sleep_count;
+      int next_state;
+      int last_state;
+
+      if (argc == 2)
+        {
+          ctrl.domain = atoi(argv[1]);
+        }
 
       ctrl.action = BOARDIOC_PM_QUERYSTATE;
       boardctl(BOARDIOC_PM_CONTROL, (uintptr_t)&ctrl);
-      current_state = ctrl.state;
+      last_state = ctrl.state;
 
-      ctrl.action = BOARDIOC_PM_STAYCOUNT;
-      ctrl.state = PM_NORMAL;
+      ctrl.action = BOARDIOC_PM_CHECKSTATE;
       boardctl(BOARDIOC_PM_CONTROL, (uintptr_t)&ctrl);
-      normal_count = ctrl.count;
+      next_state = ctrl.state;
 
-      ctrl.state = PM_IDLE;
-      boardctl(BOARDIOC_PM_CONTROL, (uintptr_t)&ctrl);
-      idle_count = ctrl.count;
+      nsh_output(vtbl, "Last state %d, Next state %d\n",
+                 last_state, next_state);
 
-      ctrl.state = PM_STANDBY;
-      boardctl(BOARDIOC_PM_CONTROL, (uintptr_t)&ctrl);
-      standby_count = ctrl.count;
-
-      ctrl.state = PM_SLEEP;
-      boardctl(BOARDIOC_PM_CONTROL, (uintptr_t)&ctrl);
-      sleep_count = ctrl.count;
-
-      nsh_output(vtbl, "Current state %d, PM stay [%d, %d, %d, %d]\n",
-        current_state, normal_count, idle_count, standby_count, sleep_count);
+      return nsh_foreach_direntry(vtbl, argv[0],
+                                  CONFIG_NSH_PROC_MOUNTPOINT "/pm",
+                                  cmd_pmconfig_recursive, argv[0]);
     }
-  else if (argc == 3)
+  else if (argc <= 4)
     {
+      if (argc == 4)
+        {
+          ctrl.domain = atoi(argv[3]);
+        }
+
       if (strcmp(argv[1], "stay") == 0)
         {
           ctrl.action = BOARDIOC_PM_STAY;
@@ -292,10 +304,10 @@ int cmd_poweroff(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
     }
   else
     {
-      boardctl(BOARDIOC_POWEROFF, EXIT_SUCCESS);
+      boardctl(BOARDIOC_POWEROFF, 0);
     }
 
-  /* boarctl() will not return in any case.  It if does, it means that
+  /* boardctl() will not return in any case.  It if does, it means that
    * there was a problem with the shutdown operation.
    */
 
@@ -322,10 +334,10 @@ int cmd_reboot(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
     }
   else
     {
-      boardctl(BOARDIOC_RESET, EXIT_SUCCESS);
+      boardctl(BOARDIOC_RESET, 0);
     }
 
-  /* boarctl() will not return in this case.  It if does, it means that
+  /* boardctl() will not return in this case.  It if does, it means that
    * there was a problem with the reset operation.
    */
 
@@ -334,21 +346,40 @@ int cmd_reboot(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
 }
 #endif
 
+#if defined(CONFIG_BOARDCTL_RESET_CAUSE) && !defined(CONFIG_NSH_DISABLE_RESET_CAUSE)
+int cmd_reset_cause(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
+{
+  UNUSED(argc);
+
+  int ret;
+  struct boardioc_reset_cause_s cause;
+
+  memset(&cause, 0, sizeof(cause));
+  ret = boardctl(BOARDIOC_RESET_CAUSE, (uintptr_t)&cause);
+  if (ret < 0)
+    {
+      nsh_error(vtbl, g_fmtcmdfailed, argv[0], "boardctl", NSH_ERRNO);
+      return ERROR;
+    }
+
+  nsh_output(vtbl, "cause:0x%x,flag:0x%" PRIx32 "\n",
+             cause.cause, cause.flag);
+  return OK;
+}
+#endif
+
 /****************************************************************************
  * Name: cmd_rptun
  ****************************************************************************/
 
 #if defined(CONFIG_RPTUN) && !defined(CONFIG_NSH_DISABLE_RPTUN)
-int cmd_rptun(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
+static int cmd_rptun_once(FAR struct nsh_vtbl_s *vtbl,
+                          FAR const char *path, char **argv)
 {
-  int fd;
+  struct rptun_ping_s ping;
+  unsigned long val = 0;
   int cmd;
-
-  if (argc < 3)
-    {
-      nsh_output(vtbl, g_fmtargrequired, argv[0]);
-      return ERROR;
-    }
+  int fd;
 
   if (strcmp(argv[1], "start") == 0)
     {
@@ -358,23 +389,92 @@ int cmd_rptun(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
     {
       cmd = RPTUNIOC_STOP;
     }
+  else if (strcmp(argv[1], "reset") == 0)
+    {
+      val = atoi(argv[3]);
+      cmd = RPTUNIOC_RESET;
+    }
+  else if (strcmp(argv[1], "panic") == 0)
+    {
+      cmd = RPTUNIOC_PANIC;
+    }
+  else if (strcmp(argv[1], "dump") == 0)
+    {
+      cmd = RPTUNIOC_DUMP;
+    }
+  else if (strcmp(argv[1], "ping") == 0)
+    {
+      if (argv[3] == 0 || argv[4] == 0 ||
+          argv[5] == 0 || argv[6] == 0)
+        {
+          return ERROR;
+        }
+
+      ping.times = atoi(argv[3]);
+      ping.len   = atoi(argv[4]);
+      ping.ack   = atoi(argv[5]);
+      ping.sleep = atoi(argv[6]);
+
+      cmd = RPTUNIOC_PING;
+      val = (unsigned long)&ping;
+    }
   else
     {
       nsh_output(vtbl, g_fmtarginvalid, argv[1]);
       return ERROR;
     }
 
-  fd = open(argv[2], 0);
+  fd = open(path, 0);
   if (fd < 0)
     {
-      nsh_output(vtbl, g_fmtarginvalid, argv[2]);
+      nsh_output(vtbl, g_fmtarginvalid, path);
       return ERROR;
     }
 
-  ioctl(fd, cmd, 0);
+  cmd = ioctl(fd, cmd, val);
 
   close(fd);
-  return 0;
+
+  return cmd;
+}
+
+static int cmd_rptun_recursive(FAR struct nsh_vtbl_s *vtbl,
+                               const char *dirpath,
+                               struct dirent *entryp, void *pvarg)
+{
+  char *path;
+  int ret = ERROR;
+
+  if (DIRENT_ISDIRECTORY(entryp->d_type))
+    {
+      return 0;
+    }
+
+  path = nsh_getdirpath(vtbl, dirpath, entryp->d_name);
+  if (path)
+    {
+      ret = cmd_rptun_once(vtbl, path, pvarg);
+      free(path);
+    }
+
+  return ret;
+}
+
+int cmd_rptun(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
+{
+  if (argc < 3)
+    {
+      nsh_output(vtbl, g_fmtargrequired, argv[0]);
+      return ERROR;
+    }
+
+  if (strcmp(argv[2], "all") == 0)
+    {
+      return nsh_foreach_direntry(vtbl, "rptun", "/dev/rptun",
+                                  cmd_rptun_recursive, argv);
+    }
+
+  return cmd_rptun_once(vtbl, argv[2], argv);
 }
 #endif
 
@@ -423,7 +523,7 @@ int cmd_uname(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
             break;
 
           case 'v':
-            set |= UNAME_VERISON;
+            set |= UNAME_VERSION;
             break;
 
           case 'm':
@@ -524,7 +624,7 @@ int cmd_uname(FAR struct nsh_vtbl_s *vtbl, int argc, char **argv)
               nsh_output(vtbl, " ");
             }
 
-          nsh_output(vtbl, str);
+          nsh_output(vtbl, "%s", str);
           first = false;
         }
     }

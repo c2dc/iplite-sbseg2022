@@ -29,7 +29,6 @@
 #include <nuttx/arch.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "clock/clock.h"
 #include "arm_internal.h"
 
@@ -93,7 +92,7 @@
  *
  ****************************************************************************/
 
-static int dm320_timerisr(int irq, uint32_t *regs, FAR void *arg)
+static int dm320_timerisr(int irq, uint32_t *regs, void *arg)
 {
   /* Process timer interrupt */
 

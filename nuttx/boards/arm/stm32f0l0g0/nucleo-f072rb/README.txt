@@ -265,7 +265,7 @@ Configurations
        CONFIG_HOST_LINUX=y                 : Linux environment
 
      System Type -> Toolchain:
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL=y : GNU ARM EABI toolchain
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : GNU ARM EABI toolchain
 
   Configuration sub-directories
   -----------------------------
@@ -312,7 +312,7 @@ Configurations
          CONFIG_FS_PROCFS=y
          CONFIG_NSH_PROC_MOUNTPOINT="/proc"
 
-         CONFIG_LIB_BOARDCTL=y
+         CONFIG_BOARDCTL=y
          CONFIG_NSH_ARCHINIT=y
          CONFIG_NSH_BUILTIN_APPS=y
 

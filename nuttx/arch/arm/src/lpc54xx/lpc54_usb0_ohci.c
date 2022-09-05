@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -45,9 +46,7 @@
 
 #include <arch/board/board.h> /* May redefine GPIO settings */
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "hardware/lpc54_usb.h"
 #include "hardware/lpc54_syscon.h"
@@ -435,7 +434,7 @@ static int lpc54_ctrltd(struct lpc54_usbhost_s *priv, struct lpc54_ed_s *ed,
 
 /* Interrupt handling *******************************************************/
 
-static int lpc54_usbinterrupt(int irq, void *context, FAR void *arg);
+static int lpc54_usbinterrupt(int irq, void *context, void *arg);
 
 /* USB host controller operations *******************************************/
 
@@ -481,14 +480,14 @@ static ssize_t lpc54_transfer(struct usbhost_driver_s *drvr, usbhost_ep_t ep,
 #ifdef CONFIG_OHCI_ASYNCH
 static void lpc54_asynch_completion(struct lpc54_usbhost_s *priv,
                                     struct lpc54_ed_s *ed);
-static int lpc54_asynch(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep,
-                        FAR uint8_t *buffer, size_t buflen,
-                        usbhost_asynch_t callback, FAR void *arg);
+static int lpc54_asynch(struct usbhost_driver_s *drvr, usbhost_ep_t ep,
+                        uint8_t *buffer, size_t buflen,
+                        usbhost_asynch_t callback, void *arg);
 #endif
-static int lpc54_cancel(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep);
+static int lpc54_cancel(struct usbhost_driver_s *drvr, usbhost_ep_t ep);
 #ifdef CONFIG_OHCI_HUB
-static int lpc54_connect(FAR struct usbhost_driver_s *drvr,
-                         FAR struct usbhost_hubport_s *hport,
+static int lpc54_connect(struct usbhost_driver_s *drvr,
+                         struct usbhost_hubport_s *hport,
                          bool connected);
 #endif
 static void lpc54_disconnect(struct usbhost_driver_s *drvr,
@@ -520,21 +519,21 @@ static struct usbhost_connection_s g_usbconn =
 /* Aligned static memory allocations */
 
 static uint8_t g_hcca[LPC54_HCCA_SIZE] \
-  __attribute__ ((aligned(LPC54_ALIGN_SIZE)));
+  aligned_data(LPC54_ALIGN_SIZE);
 static uint8_t g_tdtail_alloc[LPC54_TD_SIZE] \
-  __attribute__ ((aligned(LPC54_ALIGN_SIZE)));
+  aligned_data(LPC54_ALIGN_SIZE);
 static uint8_t g_edctrl_alloc[LPC54_ED_SIZE] \
-  __attribute__ ((aligned(LPC54_ALIGN_SIZE)));
+  aligned_data(LPC54_ALIGN_SIZE);
 static uint8_t g_edfree_alloc[LPC54_EDFREE_SIZE] \
-  __attribute__ ((aligned(LPC54_ALIGN_SIZE)));
+  aligned_data(LPC54_ALIGN_SIZE);
 static uint8_t g_tdfree_alloc[LPC54_TDFREE_SIZE] \
-  __attribute__ ((aligned(LPC54_ALIGN_SIZE)));
+  aligned_data(LPC54_ALIGN_SIZE);
 static uint8_t g_tbfree_alloc[LPC54_TBFREE_SIZE] \
-  __attribute__ ((aligned(LPC54_ALIGN_SIZE)));
+  aligned_data(LPC54_ALIGN_SIZE);
 
 #if LPC54_IOBUFFERS > 0
 static uint8_t g_iobuffers[LPC54_IOBUF_ALLOC] \
-  __attribute__ ((aligned(LPC54_ALIGN_SIZE)));
+  aligned_data(LPC54_ALIGN_SIZE);
 #endif
 
 /* This is a free list of EDs and TD buffers */
@@ -1782,7 +1781,7 @@ errout_with_xfrinfo:
  *
  ****************************************************************************/
 
-static int lpc54_usbinterrupt(int irq, void *context, FAR void *arg)
+static int lpc54_usbinterrupt(int irq, void *context, void *arg)
 {
   struct lpc54_usbhost_s *priv = &g_usbhost;
   struct lpc54_ed_s *ed;
@@ -2238,8 +2237,8 @@ static int lpc54_rh_enumerate(struct usbhost_connection_s *conn,
   return OK;
 }
 
-static int lpc54_enumerate(FAR struct usbhost_connection_s *conn,
-                           FAR struct usbhost_hubport_s *hport)
+static int lpc54_enumerate(struct usbhost_connection_s *conn,
+                           struct usbhost_hubport_s *hport)
 {
   int ret;
 
@@ -3544,7 +3543,7 @@ errout_with_sem:
  *
  ****************************************************************************/
 
-static int lpc54_cancel(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep)
+static int lpc54_cancel(struct usbhost_driver_s *drvr, usbhost_ep_t ep)
 {
 #ifdef CONFIG_OHCI_ASYNCH
   struct lpc54_usbhost_s *priv = (struct lpc54_usbhost_s *)drvr;
@@ -3698,8 +3697,8 @@ static int lpc54_cancel(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep)
  ****************************************************************************/
 
 #ifdef CONFIG_OHCI_HUB
-static int lpc54_connect(FAR struct usbhost_driver_s *drvr,
-                         FAR struct usbhost_hubport_s *hport,
+static int lpc54_connect(struct usbhost_driver_s *drvr,
+                         struct usbhost_hubport_s *hport,
                          bool connected)
 {
   struct lpc54_usbhost_s *priv = (struct lpc54_usbhost_s *)drvr;

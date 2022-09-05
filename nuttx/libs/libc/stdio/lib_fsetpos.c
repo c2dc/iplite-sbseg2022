@@ -47,7 +47,7 @@
  *   only way to portably reposition a stream.
  *
  * Returned Value:
- *   Zero on succes; -1 on failure with errno set appropriately.
+ *   Zero on success; -1 on failure with errno set appropriately.
  *
  ****************************************************************************/
 
@@ -61,5 +61,5 @@ int fsetpos(FAR FILE *stream, FAR fpos_t *pos)
     }
 #endif
 
-  return fseek(stream, (FAR off_t)*pos, SEEK_SET);
+  return fseeko(stream, *pos, SEEK_SET);
 }

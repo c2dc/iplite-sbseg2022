@@ -28,7 +28,7 @@
 #include <stdbool.h>
 #include <assert.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "hardware/max326_icc.h"
 #include "max326_periphclks.h"
 #include "max326_icc.h"
@@ -114,7 +114,7 @@ void max326_icc_invalidate(void)
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_ADDRENV
-int up_addrenv_coherent(FAR const group_addrenv_t *addrenv)
+int up_addrenv_coherent(const group_addrenv_t *addrenv)
 {
   max326_icc_invalidate();
 }

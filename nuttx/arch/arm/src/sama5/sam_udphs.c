@@ -55,6 +55,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -66,9 +67,7 @@
 
 #include <nuttx/irq.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "sam_periphclks.h"
 #include "sam_memories.h"
 #include "hardware/sam_udphs.h"
@@ -455,7 +454,7 @@ static void   sam_setdevaddr(struct sam_usbdev_s *priv, uint8_t value);
 static void   sam_ep0_setup(struct sam_usbdev_s *priv);
 static void   sam_dma_interrupt(struct sam_usbdev_s *priv, int chan);
 static void   sam_ep_interrupt(struct sam_usbdev_s *priv, int epno);
-static int    sam_udphs_interrupt(int irq, void *context, FAR void *arg);
+static int    sam_udphs_interrupt(int irq, void *context, void *arg);
 
 /* Endpoint helpers *********************************************************/
 
@@ -499,7 +498,7 @@ static void   sam_freeep(struct usbdev_s *dev, struct usbdev_ep_s *ep);
 static int    sam_getframe(struct usbdev_s *dev);
 static int    sam_wakeup(struct usbdev_s *dev);
 static int    sam_selfpowered(struct usbdev_s *dev, bool selfpowered);
-static int    sam_pullup(FAR struct usbdev_s *dev,  bool enable);
+static int    sam_pullup(struct usbdev_s *dev,  bool enable);
 
 /* Initialization/Reset *****************************************************/
 
@@ -562,7 +561,7 @@ static const struct usb_epdesc_s g_ep0desc =
 /* This is a properly aligned pool of preallocated DMA transfer descriptors */
 
 static struct sam_dtd_s g_dtdpool[CONFIG_SAMA5_UDPHS_NDTDS]
-                        __attribute__ ((aligned(16)));
+                        aligned_data(16);
 #endif
 #endif
 
@@ -2817,7 +2816,7 @@ static void sam_ep_interrupt(struct sam_usbdev_s *priv, int epno)
  *
  ****************************************************************************/
 
-static int sam_udphs_interrupt(int irq, void *context, FAR void *arg)
+static int sam_udphs_interrupt(int irq, void *context, void *arg)
 {
   /* For now there is only one USB controller, but we will always refer to
    * it using a pointer to make any future ports to multiple UDPHS
@@ -4079,7 +4078,7 @@ static int sam_selfpowered(struct usbdev_s *dev, bool selfpowered)
  *
  ****************************************************************************/
 
-static int sam_pullup(FAR struct usbdev_s *dev, bool enable)
+static int sam_pullup(struct usbdev_s *dev, bool enable)
 {
   struct sam_usbdev_s *priv = (struct sam_usbdev_s *)dev;
   uint32_t regval;

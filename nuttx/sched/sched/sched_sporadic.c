@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <assert.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/sched.h>
@@ -135,7 +136,7 @@ static int sporadic_set_lowpriority(FAR struct tcb_s *tcb)
        * state.
        */
 
-      tcb->base_priority = tcb->low_priority;
+      tcb->base_priority = sporadic->low_priority;
     }
   else
 #endif
@@ -462,7 +463,7 @@ static void sporadic_budget_expire(wdparm_t arg)
 
   if (nxsched_islocked_tcb(tcb))
     {
-      DEBUGASSERT((mrepl->flags && SPORADIC_FLAG_ALLOCED) != 0);
+      DEBUGASSERT((mrepl->flags & SPORADIC_FLAG_ALLOCED) != 0);
 
       /* Set the timeslice to the magic value */
 

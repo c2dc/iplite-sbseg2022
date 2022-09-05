@@ -43,7 +43,7 @@
 static int     nxterm_open(FAR struct file *filep);
 static int     nxterm_close(FAR struct file *filep);
 static ssize_t nxterm_write(FAR struct file *filep, FAR const char *buffer,
-                 size_t buflen);
+                            size_t buflen);
 static int     nxterm_ioctl(FAR struct file *filep, int cmd,
                             unsigned long arg);
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
@@ -60,16 +60,15 @@ static int     nxterm_unlink(FAR struct inode *inode);
 
 const struct file_operations g_nxterm_drvrops =
 {
-  nxterm_open,  /* open */
-  nxterm_close, /* close */
-  nxterm_read,  /* read */
-  nxterm_write, /* write */
-  NULL,         /* seek */
-  nxterm_ioctl, /* ioctl */
-  nxterm_poll   /* poll */
+  nxterm_open,    /* open */
+  nxterm_close,   /* close */
+  nxterm_read,    /* read */
+  nxterm_write,   /* write */
+  NULL,           /* seek */
+  nxterm_ioctl,   /* ioctl */
+  nxterm_poll     /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  ,
-  nxterm_unlink /* unlink */
+  , nxterm_unlink /* unlink */
 #endif
 };
 
@@ -77,16 +76,15 @@ const struct file_operations g_nxterm_drvrops =
 
 const struct file_operations g_nxterm_drvrops =
 {
-  nxterm_open,  /* open */
-  nxterm_close, /* close */
-  NULL,         /* read */
-  nxterm_write, /* write */
-  NULL,         /* seek */
-  nxterm_ioctl, /* ioctl */
-  NULL          /* poll */
+  nxterm_open,    /* open */
+  nxterm_close,   /* close */
+  NULL,           /* read */
+  nxterm_write,   /* write */
+  NULL,           /* seek */
+  nxterm_ioctl,   /* ioctl */
+  NULL            /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  ,
-  nxterm_unlink /* unlink */
+  , nxterm_unlink /* unlink */
 #endif
 };
 
@@ -103,7 +101,7 @@ const struct file_operations g_nxterm_drvrops =
 static int nxterm_open(FAR struct file *filep)
 {
   FAR struct inode         *inode = filep->f_inode;
-  FAR struct nxterm_state_s *priv  = inode->i_private;
+  FAR struct nxterm_state_s *priv = inode->i_private;
 
   DEBUGASSERT(filep && filep->f_inode);
 
@@ -168,7 +166,9 @@ static int nxterm_close(FAR struct file *filep)
     {
       /* Yes.. Unregister the terminal device */
 
+      nxterm_sempost(priv);
       nxterm_unregister(priv);
+      return OK;
     }
   else
     {
@@ -348,7 +348,9 @@ static int nxterm_unlink(FAR struct inode *inode)
     {
       /* No.. Unregister the terminal device now */
 
+      nxterm_sempost(priv);
       nxterm_unregister(priv);
+      return OK;
     }
 
   nxterm_sempost(priv);

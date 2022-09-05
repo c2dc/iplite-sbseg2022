@@ -1,35 +1,20 @@
 /****************************************************************************
  * arch/arm/src/stm32/stm32_i2s.c
  *
- *   Copyright (C) 2017 Gregory Nutt. All rights reserved.
- *   Author: Taras Drozdovskiy <t.drozdovskiy@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -83,8 +68,6 @@
 #include <arch/board/board.h>
 
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "stm32_dma.h"
 #include "stm32_spi.h"
 #include "stm32_rcc.h"
@@ -548,7 +531,7 @@ static bool i2s_checkreg(struct stm32_i2s_s *priv, bool wr, uint16_t regval,
  *
  ****************************************************************************/
 
-static inline uint16_t i2s_getreg(FAR struct stm32_i2s_s *priv,
+static inline uint16_t i2s_getreg(struct stm32_i2s_s *priv,
                                   uint8_t offset)
 {
   uint32_t regaddr = priv->base + offset;
@@ -580,7 +563,7 @@ static inline uint16_t i2s_getreg(FAR struct stm32_i2s_s *priv,
  *
  ****************************************************************************/
 
-static inline void i2s_putreg(FAR struct stm32_i2s_s *priv, uint8_t offset,
+static inline void i2s_putreg(struct stm32_i2s_s *priv, uint8_t offset,
                               uint16_t regval)
 {
   uint32_t regaddr = priv->base + offset;
@@ -1961,7 +1944,7 @@ errout_with_buf:
 #endif
 }
 
-static int roundf(float num)
+static int stm32_i2s_roundf(float num)
 {
   if (((int)(num + 0.5f)) > num)
     {
@@ -2224,8 +2207,8 @@ static uint32_t i2s_mckdivider(struct stm32_i2s_s *priv)
             {
               for (n = 2; n <= 256; ++n)
                 {
-                  napprox = roundf(priv->samplerate / 1000000.0f *
-                                   (8 * 32 * R * (2 * n + od)));
+                  napprox = stm32_i2s_roundf(priv->samplerate / 1000000.0f *
+                                             (8 * 32 * R * (2 * n + od)));
                   if ((napprox > 432) || (napprox < 50))
                     {
                       continue;
@@ -2582,9 +2565,9 @@ static void i2s3_configure(struct stm32_i2s_s *priv)
  *
  ****************************************************************************/
 
-FAR struct i2s_dev_s *stm32_i2sbus_initialize(int port)
+struct i2s_dev_s *stm32_i2sbus_initialize(int port)
 {
-  FAR struct stm32_i2s_s *priv = NULL;
+  struct stm32_i2s_s *priv = NULL;
   irqstate_t flags;
   int ret;
 
@@ -2640,6 +2623,7 @@ FAR struct i2s_dev_s *stm32_i2sbus_initialize(int port)
 #endif
     {
       i2serr("ERROR: Unsupported I2S port: %d\n", port);
+      leave_critical_section(flags);
       return NULL;
     }
 
@@ -2661,6 +2645,7 @@ FAR struct i2s_dev_s *stm32_i2sbus_initialize(int port)
   /* Failure exits */
 
 errout_with_alloc:
+  leave_critical_section(flags);
   nxsem_destroy(&priv->exclsem);
   kmm_free(priv);
   return NULL;

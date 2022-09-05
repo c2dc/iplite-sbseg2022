@@ -49,7 +49,17 @@ config ADBD_TOKEN_SIZE
 
 endif # ADBD_AUTHENTICATION
 
-if ! BOARDCTL_UNIQUEID
+if BOARDCTL_RESET
+config ADBD_RESET_RECOVERY
+	int "Reset argument for recovery"
+	default 1
+
+config ADBD_RESET_BOOTLOADER
+	int "Reset argument for bootloader"
+	default 2
+endif # BOARDCTL_RESET
+
+if !BOARDCTL_UNIQUEID
 config ADBD_DEVICE_ID
 	string "Default adb device id"
 	default ""
@@ -73,7 +83,7 @@ config ADBD_FEATURES
 
 config ADBD_PAYLOAD_SIZE
 	int "Normal ADB frame size"
-	default 64
+	default 1024
 	---help---
 		Normal frame size in bytes.
 
@@ -126,33 +136,57 @@ config ADBD_FILE_SERVICE
 	---help---
 		Enable "adb ls/push/pull" feature.
 
- config ADBD_SHELL_SERVICE
-	bool "ADB shell support"
-	depends on NSH_CONSOLE
-	default n
-	---help---
-		Enable "adb shell" feature.
-
 config ADBD_FILE_SYMLINK
 	bool "File service symlink support"
 	default n
+	depends on ADBD_FILE_SERVICE
 	depends on PSEUDOFS_SOFTLINKS
 	---help---
 		Enable fs symlink support.
 
+config ADBD_SHELL_SERVICE
+	bool "ADB shell support"
+	depends on SYSTEM_NSH
+	select LIBC_EXECFUNCS
+	select PSEUDOTERM
+	default n
+	---help---
+		Enable "adb shell" feature.
+
+config ADBD_SHELL_SERVICE_CMD
+	string "ADB shell command"
+	depends on ADBD_SHELL_SERVICE
+	default "sh"
+	---help---
+		The shell command name.
+
+config ADBD_SHELL_SERVICE_PATH
+	string "ADB shell path"
+	depends on ADBD_SHELL_SERVICE
+	default "/bin/sh"
+	---help---
+		The path to the shell executable.
+
+config ADBD_SOCKET_SERVICE
+	bool "ADB socket service"
+	depends on NET
+	default n
+	---help---
+		Enable "adb forward|reverse" feature.
+
 config ADBD_BOARD_INIT
 	bool "Board initialization"
-	depends on LIB_BOARDCTL
+	depends on BOARDCTL
 	default n
 	---help---
 		Setup board before running adb daemon.
 
 config ADBD_NET_INIT
-    bool "Network initialization"
-    default n
-    depends on NET
-    select NETUTILS_NETINIT
-    ---help---
-        This option enables/disables all network initialization in ADB server.
+	bool "Network initialization"
+	default n
+	depends on NET
+	select NETUTILS_NETINIT
+	---help---
+		This option enables/disables all network initialization in ADB server.
 
 endif # SYSTEM_ADBD

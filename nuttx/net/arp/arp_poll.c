@@ -45,8 +45,8 @@
  *
  * Assumptions:
  *   This function is called from the MAC device driver indirectly through
- *   devif_poll() and devif_timer() and may be called from the timer
- *   interrupt/watchdog handler level.
+ *   devif_poll() and may be called from the timer  interrupt/watchdog
+ *   handler level.
  *
  ****************************************************************************/
 
@@ -60,7 +60,7 @@ int arp_poll(FAR struct net_driver_s *dev, devif_poll_callback_t callback)
 
   /* Perform the ARP callbacks */
 
-  devif_conn_event(dev, NULL, ARP_POLL, dev->d_conncb);
+  devif_conn_event(dev, ARP_POLL, dev->d_conncb);
 
   /* Call back into the driver */
 

@@ -34,7 +34,7 @@
 #include <nuttx/irq.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "tms570_gio.h"
 #include "tms570ls31x_usb_kit.h"
 
@@ -167,7 +167,7 @@ uint32_t board_buttons(void)
  *
  ****************************************************************************/
 
-int board_button_irq(int id, xcpt_t irqhandler, FAR void *arg)
+int board_button_irq(int id, xcpt_t irqhandler, void *arg)
 {
 #ifdef HAVE_IRQBUTTONS
   if (id == BUTTON_GIOA7)

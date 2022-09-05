@@ -102,7 +102,7 @@ int pthread_mutex_unlock(FAR pthread_mutex_t *mutex)
 {
   int ret = EPERM;
 
-  sinfo("mutex=0x%p\n", mutex);
+  sinfo("mutex=%p\n", mutex);
   DEBUGASSERT(mutex != NULL);
   if (mutex == NULL)
     {
@@ -214,7 +214,7 @@ int pthread_mutex_unlock(FAR pthread_mutex_t *mutex)
         {
           /* Nullify the pid and lock count then post the semaphore */
 
-          mutex->pid    = -1;
+          mutex->pid    = INVALID_PROCESS_ID;
 #ifdef CONFIG_PTHREAD_MUTEX_TYPES
           mutex->nlocks = 0;
 #endif

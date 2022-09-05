@@ -25,7 +25,6 @@
 #include <nuttx/config.h>
 
 #include <sys/types.h>
-#include <syslog.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -78,7 +77,7 @@
 #ifdef HAVE_RTC_DRIVER
 static int rtc_driver_initialize(void)
 {
-  FAR struct rtc_lowerhalf_s *lower;
+  struct rtc_lowerhalf_s *lower;
   int ret;
 
   /* Instantiate the STM32 lower-half RTC driver */
@@ -119,7 +118,7 @@ static int rtc_driver_initialize(void)
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -165,7 +164,7 @@ int stm32_bringup(void)
     }
 #endif
 
-#ifdef CONFIG_CAN
+#ifdef CONFIG_STM32_CAN_CHARDRIVER
   /* Initialize CAN and register the CAN driver. */
 
   ret = stm32_can_setup();

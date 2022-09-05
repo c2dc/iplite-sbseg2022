@@ -205,8 +205,8 @@ static uint32_t nxsched_cpu_scheduler(int cpu, uint32_t ticks,
        * committed to updating the scheduler for this TCB.
        */
 
-      sporadic->sched_time.tv_sec  = g_sched_time.tv_sec;
-      sporadic->sched_time.tv_nsec = g_sched_time.tv_nsec;
+      sporadic->eventtime = SEC2TICK(g_sched_time.tv_sec) +
+                            NSEC2TICK(g_sched_time.tv_nsec);
 
       /* Yes, check if the currently executing task has exceeded its
        * budget.
@@ -280,7 +280,7 @@ static uint32_t nxsched_process_scheduler(uint32_t ticks, bool noswitches)
   int i;
 
   /* If we are running on a single CPU architecture, then we know interrupts
-   * a disabled an there is no need to explicitly call
+   * are disabled and there is no need to explicitly call
    * enter_critical_section().  However, in the SMP case,
    * enter_critical_section() does much more than just disable interrupts on
    * the local CPU; it also manages spinlocks to assure the stability of the
@@ -314,6 +314,47 @@ static uint32_t nxsched_process_scheduler(uint32_t ticks, bool noswitches)
 #endif
 
 /****************************************************************************
+ * Name: nxsched_process_wdtimer
+ *
+ * Description:
+ *   Wdog timer process, should with critical_section when SMP mode.
+ *
+ * Input Parameters:
+ *   ticks - The number of ticks that have elapsed on the interval timer.
+ *   noswitches - True: Can't do context switches now.
+ *
+ * Returned Value:
+ *   The number of ticks for the next delay is provided (zero if no delay).
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_SMP
+static inline unsigned int nxsched_process_wdtimer(uint32_t ticks,
+                                                   bool noswitches)
+{
+  unsigned int ret;
+  irqstate_t flags;
+
+  /* We are in an interrupt handler and, as a consequence, interrupts are
+   * disabled.  But in the SMP case, interrupts MAY be disabled only on
+   * the local CPU since most architectures do not permit disabling
+   * interrupts on other CPUS.
+   *
+   * Hence, we must follow rules for critical sections even here in the
+   * SMP case.
+   */
+
+  flags = enter_critical_section();
+  ret = wd_timer(ticks, noswitches);
+  leave_critical_section(flags);
+
+  return ret;
+}
+#else
+#  define nxsched_process_wdtimer(t,n) wd_timer(t,n)
+#endif
+
+/****************************************************************************
  * Name:  nxsched_timer_process
  *
  * Description:
@@ -332,7 +373,6 @@ static uint32_t nxsched_process_scheduler(uint32_t ticks, bool noswitches)
 static unsigned int nxsched_timer_process(unsigned int ticks,
                                           bool noswitches)
 {
-  unsigned int cmptime = UINT_MAX;
   unsigned int rettime = 0;
   unsigned int tmp;
 
@@ -342,12 +382,19 @@ static unsigned int nxsched_timer_process(unsigned int ticks,
   clock_update_wall_time();
 #endif
 
+#ifndef CONFIG_SCHED_CPULOAD_EXTCLK
+  /* Perform CPU load measurements (before any timer-initiated context
+   * switches can occur)
+   */
+
+  nxsched_process_cpuload_ticks(ticks);
+#endif
+
   /* Process watchdogs */
 
-  tmp = wd_timer(ticks);
+  tmp = nxsched_process_wdtimer(ticks, noswitches);
   if (tmp > 0)
     {
-      cmptime = tmp;
       rettime = tmp;
     }
 
@@ -356,10 +403,13 @@ static unsigned int nxsched_timer_process(unsigned int ticks,
    */
 
   tmp = nxsched_process_scheduler(ticks, noswitches);
-  if (tmp > 0 && tmp < cmptime)
+
+#if CONFIG_RR_INTERVAL > 0 || defined(CONFIG_SCHED_SPORADIC)
+  if (tmp > 0 && tmp < rettime)
     {
       rettime = tmp;
     }
+#endif
 
   return rettime;
 }

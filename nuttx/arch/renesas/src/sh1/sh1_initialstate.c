@@ -27,7 +27,6 @@
 #include <string.h>
 #include <nuttx/arch.h>
 #include "up_internal.h"
-#include "up_arch.h"
 
 /****************************************************************************
  * Private Functions
@@ -75,11 +74,26 @@ void up_initial_state(struct tcb_s *tcb)
 
   /* Initialize the idle thread stack */
 
-  if (tcb->pid == 0)
+  if (tcb->pid == IDLE_PROCESS_ID)
     {
-      tcb->stack_alloc_ptr = (void *)(g_idle_topstack -
-                                      CONFIG_IDLETHREAD_STACKSIZE);
-      tcb->adj_stack_ptr   = (void *)g_idle_topstack;
+      char *stack_ptr = (char *)(g_idle_topstack -
+                                 CONFIG_IDLETHREAD_STACKSIZE);
+#ifdef CONFIG_STACK_COLORATION
+      char *stack_end = (char *)up_getsp();
+
+      /* If stack debug is enabled, then fill the stack with a
+       * recognizable value that we can use later to test for high
+       * water marks.
+       */
+
+      while (stack_ptr < stack_end)
+        {
+          *--stack_end = 0xaa;
+        }
+#endif /* CONFIG_STACK_COLORATION */
+
+      tcb->stack_alloc_ptr = stack_ptr;
+      tcb->stack_base_ptr  = stack_ptr;
       tcb->adj_stack_size  = CONFIG_IDLETHREAD_STACKSIZE;
     }
 
@@ -87,9 +101,10 @@ void up_initial_state(struct tcb_s *tcb)
 
   memset(xcp, 0, sizeof(struct xcptcontext));
 
-  /* Set the initial stack pointer to the "base" of the allocated stack */
+  /* Set the initial stack pointer to the "top" of the allocated stack */
 
-  xcp->regs[REG_SP] = (uint32_t)tcb->adj_stack_ptr;
+  xcp->regs[REG_SP] = (uint32_t)tcb->stack_base_ptr +
+                                tcb->adj_stack_size;
 
   /* Save the task entry point */
 

@@ -1,48 +1,20 @@
 /****************************************************************************
  * drivers/mtd/sst26.c
- * Driver for SPI-based or QSPI-based SST26VF parts of 32 or 64MBit.
  *
- * For smaller SST25 parts, use the sst25.c driver instead as support
- * a different program mechanism (byte or word writing vs page writing
- * supported in this driver).
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * For SST25VF064, see sst25cxx.c driver instead.
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *   Copyright (C) 2009-2011, 2013, 2016-2017, 2019 Gregory Nutt. All rights
- *     reserved.
- *   Author: Ken Pettit <pettitkd@gmail.com>
- *   Author: Sebastien Lorquet <sebastien@lorquet.fr>
- *
- *   Copied from / based on sst25.c driver written by
- *   Gregory Nutt <gnutt@nuttx.org>
- *   Ken Pettit <pettitkd@gmail.com>
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -231,11 +203,12 @@ struct sst26_dev_s
 {
   struct mtd_dev_s mtd;      /* MTD interface */
   FAR struct spi_dev_s *dev; /* Saved SPI interface instance */
-  bool     lastwaswrite;
+  uint32_t npages;
+  uint16_t nsectors;
+  uint16_t devid;            /* SPI device ID to manage CS lines in board */
   uint8_t  sectorshift;
   uint8_t  pageshift;
-  uint16_t nsectors;
-  uint32_t npages;
+  bool     lastwaswrite;
 };
 
 /****************************************************************************
@@ -343,7 +316,7 @@ static inline int sst26_readid(struct sst26_dev_s *priv)
   /* Lock the SPI bus, configure the bus, and select this FLASH part. */
 
   sst26_lock(priv->dev);
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), true);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), true);
 
   /* Send the "Read ID (RDID)" command and read the first three ID bytes */
 
@@ -354,7 +327,7 @@ static inline int sst26_readid(struct sst26_dev_s *priv)
 
   /* De-select the FLASH and unlock the bus */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), false);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), false);
   sst26_unlock(priv->dev);
 
   sstinfo("manufacturer: %02x memory: %02x capacity: %02x\n",
@@ -415,7 +388,7 @@ static void sst26_waitwritecomplete(struct sst26_dev_s *priv)
     {
       /* Select this FLASH part */
 
-      SPI_SELECT(priv->dev, SPIDEV_FLASH(0), true);
+      SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), true);
 
       /* Send "Read Status Register (RDSR)" command */
 
@@ -429,7 +402,7 @@ static void sst26_waitwritecomplete(struct sst26_dev_s *priv)
 
       /* Deselect the FLASH */
 
-      SPI_SELECT(priv->dev, SPIDEV_FLASH(0), false);
+      SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), false);
 
       /* Given that writing could take up to few tens of milliseconds,
        * and erasing could take more.  The following short delay in the
@@ -458,7 +431,7 @@ static void sst26_globalunlock(struct sst26_dev_s *priv)
 {
   /* Select this FLASH part */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), true);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), true);
 
   /* Send "Global Unlock (ULBPR)" command */
 
@@ -466,7 +439,7 @@ static void sst26_globalunlock(struct sst26_dev_s *priv)
 
   /* Deselect the FLASH */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), false);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), false);
 
   sstinfo("Device unlocked.\n");
 }
@@ -479,7 +452,7 @@ static void sst26_writeenable(struct sst26_dev_s *priv)
 {
   /* Select this FLASH part */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), true);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), true);
 
   /* Send "Write Enable (WREN)" command */
 
@@ -487,7 +460,7 @@ static void sst26_writeenable(struct sst26_dev_s *priv)
 
   /* Deselect the FLASH */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), false);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), false);
 
   sstinfo("Enabled\n");
 }
@@ -500,7 +473,7 @@ static void sst26_writedisable(struct sst26_dev_s *priv)
 {
   /* Select this FLASH part */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), true);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), true);
 
   /* Send "Write Disable (WRDI)" command */
 
@@ -508,7 +481,7 @@ static void sst26_writedisable(struct sst26_dev_s *priv)
 
   /* Deselect the FLASH */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), false);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), false);
 
   sstinfo("Disabled\n");
 }
@@ -533,7 +506,7 @@ static void sst26_sectorerase(struct sst26_dev_s *priv,
 
   /* Select this FLASH part */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), true);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), true);
 
   /* Send the "Sector Erase (SE)" or "Block Erase (BE)" instruction
    * that was passed in as the erase type.
@@ -552,7 +525,7 @@ static void sst26_sectorerase(struct sst26_dev_s *priv,
 
   /* Deselect the FLASH */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), false);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), false);
 
   sst26_waitwritecomplete(priv);
 
@@ -573,7 +546,7 @@ static inline int sst26_chiperase(struct sst26_dev_s *priv)
 
   /* Select this FLASH part */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), true);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), true);
 
   /* Send the "Chip Erase (CE)" instruction */
 
@@ -581,7 +554,7 @@ static inline int sst26_chiperase(struct sst26_dev_s *priv)
 
   /* Deselect the FLASH */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), false);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), false);
 
   sst26_waitwritecomplete(priv);
 
@@ -606,7 +579,7 @@ static inline void sst26_pagewrite(struct sst26_dev_s *priv,
 
   /* Select this FLASH part */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), true);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), true);
 
   /* Send "Page Program (PP)" command */
 
@@ -624,7 +597,7 @@ static inline void sst26_pagewrite(struct sst26_dev_s *priv,
 
   /* Deselect the FLASH: Chip Select high */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), false);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), false);
 
   sst26_waitwritecomplete(priv);
 
@@ -648,7 +621,7 @@ static inline void sst26_bytewrite(struct sst26_dev_s *priv,
 
   /* Select this FLASH part */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), true);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), true);
 
   /* Send "Page Program (PP)" command */
 
@@ -667,7 +640,7 @@ static inline void sst26_bytewrite(struct sst26_dev_s *priv,
 
   /* Deselect the FLASH: Chip Select high */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), false);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), false);
 
   sst26_waitwritecomplete(priv);
 
@@ -779,7 +752,7 @@ static ssize_t sst26_read(FAR struct mtd_dev_s *dev,
   /* Lock the SPI bus and select this FLASH part */
 
   sst26_lock(priv->dev);
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), true);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), true);
 
   /* Send "Read from Memory " instruction */
 
@@ -801,7 +774,7 @@ static ssize_t sst26_read(FAR struct mtd_dev_s *dev,
 
   /* Deselect the FLASH and unlock the SPI bus */
 
-  SPI_SELECT(priv->dev, SPIDEV_FLASH(0), false);
+  SPI_SELECT(priv->dev, SPIDEV_FLASH(priv->devid), false);
   sst26_unlock(priv->dev);
   sstinfo("return nbytes: %d\n", (int)nbytes);
   return nbytes;
@@ -894,7 +867,7 @@ static int sst26_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
   FAR struct sst26_dev_s *priv = (FAR struct sst26_dev_s *)dev;
   int ret = -EINVAL; /* Assume good command with bad parameters */
 
-  sstinfo("cmd: %d \n", cmd);
+  sstinfo("cmd: %d\n", cmd);
 
   switch (cmd)
     {
@@ -926,6 +899,22 @@ static int sst26_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
         }
         break;
 
+      case BIOC_PARTINFO:
+        {
+          FAR struct partition_info_s *info =
+            (FAR struct partition_info_s *)arg;
+          if (info != NULL)
+            {
+              info->numsectors  = priv->nsectors *
+                                  (priv->sectorshift - priv->pageshift);
+              info->sectorsize  = 1 << priv->pageshift;
+              info->startsector = 0;
+              info->parent[0]   = '\0';
+              ret               = OK;
+            }
+        }
+        break;
+
       case MTDIOC_BULKERASE:
         {
             /* Erase the entire device */
@@ -936,7 +925,6 @@ static int sst26_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
         }
         break;
 
-      case MTDIOC_XIPBASE:
       default:
         ret = -ENOTTY; /* Bad command */
         break;
@@ -960,7 +948,8 @@ static int sst26_ioctl(FAR struct mtd_dev_s *dev, int cmd, unsigned long arg)
  *
  ****************************************************************************/
 
-FAR struct mtd_dev_s *sst26_initialize_spi(FAR struct spi_dev_s *dev)
+FAR struct mtd_dev_s *sst26_initialize_spi(FAR struct spi_dev_s *dev,
+                                           uint16_t spi_devid)
 {
   FAR struct sst26_dev_s *priv;
   int ret;
@@ -991,10 +980,11 @@ FAR struct mtd_dev_s *sst26_initialize_spi(FAR struct spi_dev_s *dev)
       priv->mtd.ioctl  = sst26_ioctl;
       priv->mtd.name   = "sst26";
       priv->dev        = dev;
+      priv->devid      = spi_devid;
 
       /* Deselect the FLASH */
 
-      SPI_SELECT(dev, SPIDEV_FLASH(0), false);
+      SPI_SELECT(dev, SPIDEV_FLASH(priv->devid), false);
 
       /* Identify the FLASH chip and get its capacity */
 

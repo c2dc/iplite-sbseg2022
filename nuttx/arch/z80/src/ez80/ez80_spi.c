@@ -37,10 +37,7 @@
 #include <arch/io.h>
 
 #include "z80_internal.h"
-#include "z80_arch.h"
-
 #include "chip.h"
-
 #include "ez80_spi.h"
 
 /****************************************************************************
@@ -95,7 +92,7 @@ static const struct spi_ops_s g_spiops =
   spi_lock,            /* lock() */
   ez80_spiselect,      /* select(): Provided externally by board logic */
   spi_setfrequency,    /* setfrequency() */
-#ifdef CONFIG_SPI_CS_DELAY_CONTROL
+#ifdef CONFIG_SPI_DELAY_CONTROL
   NULL,                /* setdelay() */
 #endif
   spi_setmode,
@@ -274,19 +271,19 @@ static void spi_setmode(FAR struct spi_dev_s *dev, enum spi_mode_e mode)
 
       switch (mode)
         {
-          case SPIDEV_MODE0: /* CPOL=0 CHPHA=0 */
+          case SPIDEV_MODE0: /* CPOL=0 CPHA=0 */
             modebits = 0;
             break;
 
-          case SPIDEV_MODE1: /* CPOL=0 CHPHA=1 */
+          case SPIDEV_MODE1: /* CPOL=0 CPHA=1 */
             modebits = SPI_CTL_CPHA;
             break;
 
-          case SPIDEV_MODE2: /* CPOL=1 CHPHA=0 */
+          case SPIDEV_MODE2: /* CPOL=1 CPHA=0 */
             modebits = SPI_CTL_CPOL;
             break;
 
-          case SPIDEV_MODE3: /* CPOL=1 CHPHA=1 */
+          case SPIDEV_MODE3: /* CPOL=1 CPHA=1 */
             modebits = (SPI_CTL_CPOL | SPI_CTL_CPHA);
             break;
 
@@ -417,7 +414,7 @@ static uint32_t spi_send(FAR struct spi_dev_s *dev, uint32_t wd)
       return (uint32_t)0xff;
     }
 
-  spiinfo("cmd: %04x resp: %02x\n", wd, response);
+  spiinfo("cmd: %04" PRIx32 " resp: %02x\n", wd, response);
   return (uint32_t)response;
 }
 
@@ -448,7 +445,7 @@ static void spi_exchange(FAR struct spi_dev_s *dev,
                          size_t nwords)
 {
   FAR const uint8_t *inptr = (FAR const uint8_t *)txbuffer;
-  FAR uint8_t *outptr = (FAR const uint8_t *)rxbuffer;
+  FAR uint8_t *outptr = (FAR uint8_t *)rxbuffer;
 
   spiinfo("txbuffer: %p rxbuffer: %p nwords: %lu\n",
           txbuffer, rxbuffer, (unsigned long)nwords);

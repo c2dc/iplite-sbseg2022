@@ -35,7 +35,6 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/drivers/drivers.h>
 
-#include "arm_arch.h"
 #include "hardware/stm32_rng.h"
 #include "arm_internal.h"
 
@@ -47,7 +46,7 @@
  ****************************************************************************/
 
 static int stm32_rng_initialize(void);
-static int stm32_rnginterrupt(int irq, void *context, FAR void *arg);
+static int stm32_rnginterrupt(int irq, void *context, void *arg);
 static void stm32_rngenable(void);
 static void stm32_rngdisable(void);
 static ssize_t stm32_rngread(struct file *filep, char *buffer, size_t);
@@ -154,7 +153,7 @@ static void stm32_rngdisable(void)
  * Name: stm32_rnginterrupt
  ****************************************************************************/
 
-static int stm32_rnginterrupt(int irq, void *context, FAR void *arg)
+static int stm32_rnginterrupt(int irq, void *context, void *arg)
 {
   uint32_t rngsr;
   uint32_t data;

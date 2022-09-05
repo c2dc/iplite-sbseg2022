@@ -24,17 +24,17 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
+#include <debug.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <syslog.h>
 
 #include <nuttx/arch.h>
 #include <nuttx/board.h>
 #include <nuttx/irq.h>
 #include <arch/irq.h>
 
-#include "esp32_cpuint.h"
 #include "esp32_gpio.h"
 
 #include "esp32-devkitc.h"
@@ -102,7 +102,7 @@ uint32_t board_buttons(void)
       b0 = b1;
     }
 
-  iinfo("b=%d n=%d \n", b0, n);
+  iinfo("b=%d n=%d\n", b0, n);
 
   /* Low value means that the button is pressed */
 
@@ -127,7 +127,7 @@ uint32_t board_buttons(void)
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_IRQBUTTONS
-int board_button_irq(int id, xcpt_t irqhandler, FAR void *arg)
+int board_button_irq(int id, xcpt_t irqhandler, void *arg)
 {
   int ret;
   DEBUGASSERT(id == BUTTON_BOOT);

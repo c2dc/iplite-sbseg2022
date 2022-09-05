@@ -29,6 +29,8 @@
 #include <nuttx/board.h>
 #include <nuttx/signal.h>
 #include <arch/io.h>
+#include <assert.h>
+#include <debug.h>
 #include <inttypes.h>
 #include <syscall.h>
 #include <arch/board/board.h>
@@ -97,7 +99,7 @@ static uint64_t *common_handler(int irq, uint64_t *regs)
        * thread at the head of the ready-to-run list.
        */
 
-      (void)group_addrenv(NULL);
+      group_addrenv(NULL);
 #endif
     }
 #endif

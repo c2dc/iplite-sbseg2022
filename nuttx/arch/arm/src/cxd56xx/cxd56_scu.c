@@ -28,18 +28,19 @@
 #include <nuttx/signal.h>
 #include <nuttx/semaphore.h>
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
 #include <arch/chip/scu.h>
 
 #include "chip.h"
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "cxd56_scufifo.h"
 #include "cxd56_clock.h"
 #include "cxd56_adc.h"
@@ -112,7 +113,7 @@
 struct ev_notify_s
 {
   int signo;               /* Signal number */
-  int pid;                 /* Target PID */
+  pid_t pid;               /* Target PID */
   struct scuev_arg_s *arg; /* Event argument */
   struct scufifo_s *fifo;  /* Reverse reference to FIFO */
 };
@@ -120,7 +121,7 @@ struct ev_notify_s
 struct wm_notify_s
 {
   int signo;                 /* Signal number */
-  int pid;                   /* Target PID */
+  pid_t pid;                 /* Target PID */
   struct scutimestamp_s *ts; /* Event argument */
   struct scufifo_s *fifo;    /* Reverse reference to FIFO */
 };
@@ -196,10 +197,10 @@ struct cxd56_scudev_s
   uint8_t oneshot;    /* Bitmap for Oneshots */
 
   sem_t oneshotwait[3]; /* Semaphore for wait oneshot sequence is done */
-#ifndef CONFIG_DISABLE_SIGNAL
+  int oneshoterr[3];    /* error code for oneshot sequencer */
+
   struct ev_notify_s event[3]; /* MATHFUNC event notify */
   struct wm_notify_s wm[14];   /* Watermark notify */
-#endif
   int currentreq;
 };
 
@@ -219,8 +220,8 @@ struct coeff_addr_s
 
 /* SCU hardware resource management *****************************************/
 
-static int findzeroandset(FAR uint8_t *bitmap, int nbits);
-static void bitmapclear(FAR uint8_t *bitmap, int bit);
+static int findzeroandset(uint8_t *bitmap, int nbits);
+static void bitmapclear(uint8_t *bitmap, int bit);
 static inline int8_t deci_alloc(void);
 static inline void deci_free(int8_t sid);
 static inline int8_t mathf_alloc(void);
@@ -231,18 +232,18 @@ static inline int8_t oneshot_alloc(void);
 static inline void oneshot_free(int8_t tid);
 static int seq_semtake(sem_t *id);
 static void seq_semgive(sem_t *id);
-static void seq_fifosetactive(FAR struct seq_s *seq, int fifoid);
-static void seq_fifosetinactive(FAR struct seq_s *seq, int fifoid);
-static int seq_fifoisactive(FAR struct seq_s *seq, int fifoid);
-static int seq_isactive(FAR struct seq_s *seq);
+static void seq_fifosetactive(struct seq_s *seq, int fifoid);
+static void seq_fifosetinactive(struct seq_s *seq, int fifoid);
+static int seq_fifoisactive(struct seq_s *seq, int fifoid);
+static int seq_isactive(struct seq_s *seq);
 
 /* Sequencer control ********************************************************/
 
-static FAR struct seq_s *seq_new(void);
-static FAR struct seq_s *deci_new(void);
+static struct seq_s *seq_new(void);
+static struct seq_s *deci_new(void);
 
 static void seq_inhibitrequest(int req, bool set);
-static void seq_sync(FAR struct seq_s *seq, int req);
+static void seq_sync(struct seq_s *seq, int req);
 static void seq_setproperty(int sid, int slave, int dest,
                             int offset, int len);
 static void seq_setinst(int sid, int offset, int len);
@@ -256,25 +257,24 @@ static void seq_setstartinterval(int sid, int interval);
 static void seq_setstartphase(int sid, int phase);
 static void seq_startseq(int sid);
 static void seq_stopseq(int sid);
-static int seq_setadjustment(FAR struct seq_s *seq,
+static int seq_setadjustment(struct seq_s *seq,
                              struct adjust_xyz_s *adj);
-static int seq_setfilter(FAR struct scufifo_s *fifo, int pos,
+static int seq_setfilter(struct scufifo_s *fifo, int pos,
                          struct iir_filter_s iir[2]);
-static int seq_seteventnotifier(FAR struct scufifo_s *fifo,
+static int seq_seteventnotifier(struct scufifo_s *fifo,
                                 struct scuev_notify_s *ev);
 static void seq_offsetgainenable(int sid, bool enable);
-static int seq_start(FAR struct seq_s *seq, int fifoid);
-static int seq_stop(FAR struct seq_s *seq, int fifoid);
-static int seq_setsamplingrate(FAR struct seq_s *seq, uint8_t samplingrate);
-static int seq_fifoinit(FAR struct seq_s *seq, int fifoid, uint16_t fsize);
-static void seq_fifofree(FAR struct scufifo_s *fifo);
-static inline struct scufifo_s *seq_getfifo(FAR struct seq_s *seq,
+static int seq_start(struct seq_s *seq, int fifoid);
+static int seq_stop(struct seq_s *seq, int fifoid);
+static int seq_setsamplingrate(struct seq_s *seq, uint8_t samplingrate);
+static int seq_fifoinit(struct seq_s *seq, int fifoid, uint16_t fsize);
+static void seq_fifofree(struct scufifo_s *fifo);
+static inline struct scufifo_s *seq_getfifo(struct seq_s *seq,
                                             int fifoid);
 static void seq_setdecimation(int wid, uint8_t ratio, uint8_t leveladj,
                               uint8_t forcethrough);
-static int seq_setwatermark(FAR struct seq_s *seq, int fifoid,
-                            FAR struct scufifo_wm_s *wm);
-#ifndef CONFIG_DISABLE_SIGNAL
+static int seq_setwatermark(struct seq_s *seq, int fifoid,
+                            struct scufifo_wm_s *wm);
 static void convert_firsttimestamp(struct scutimestamp_s *tm,
                                    uint16_t interval, uint16_t sample,
                                    uint16_t adjust);
@@ -282,11 +282,10 @@ static void latest_timestamp(struct scufifo_s *fifo, uint32_t interval,
                              struct scutimestamp_s *tm, uint16_t *samples);
 static void seq_gettimestamp(struct scufifo_s *fifo,
                              struct scutimestamp_s *tm);
-#endif
 
-static int seq_oneshot(int bustype, int slave, FAR uint16_t *inst,
-                       uint32_t nr_insts, FAR uint8_t *buffer, int len);
-static void seq_setfifomode(FAR struct seq_s *seq, int fifoid, int enable);
+static int seq_oneshot(int bustype, int slave, uint16_t *inst,
+                       uint32_t nr_insts, uint8_t *buffer, int len);
+static void seq_setfifomode(struct seq_s *seq, int fifoid, int enable);
 #ifdef CONFIG_CXD56_UDMAC
 static void seq_fifodmadone(DMA_HANDLE handle, uint8_t status, void *arg);
 #endif
@@ -297,20 +296,20 @@ static uint16_t seq_remakeinstruction(int bustype, uint16_t inst);
 static void mathf_enable(int8_t mid, uint8_t wid);
 static void mathf_disable(int8_t mid);
 static inline void mathf_set_coeff(uint32_t caddr,
-                                   FAR struct iir_coeff_s *c);
+                                   struct iir_coeff_s *c);
 static void mathf_setiirfilter(int mid, int n,
-                               FAR struct iir_filter_s *filter);
+                               struct iir_filter_s *filter);
 
 /* Interrupt handlers *******************************************************/
 
-static int seq_scuirqhandler(int irq, FAR void *context, FAR void *arg);
-static void seq_handlefifointr(FAR struct cxd56_scudev_s *priv,
+static int seq_scuirqhandler(int irq, void *context, void *arg);
+static void seq_handlefifointr(struct cxd56_scudev_s *priv,
                                uint32_t intr);
-static void seq_handlemathfintr(FAR struct cxd56_scudev_s *priv,
+static void seq_handlemathfintr(struct cxd56_scudev_s *priv,
                                 uint32_t intr);
-static void seq_handleoneshot(FAR struct cxd56_scudev_s *priv,
+static void seq_handleoneshot(struct cxd56_scudev_s *priv,
                               uint32_t intr);
-static void seq_handleisopdoneintr(FAR struct cxd56_scudev_s *priv,
+static void seq_handleisopdoneintr(struct cxd56_scudev_s *priv,
                                    uint32_t intr);
 
 /****************************************************************************
@@ -382,7 +381,7 @@ static void seq_semgive(sem_t *id)
  * Name: seq_fifosetactive
  ****************************************************************************/
 
-static void seq_fifosetactive(FAR struct seq_s *seq, int fifoid)
+static void seq_fifosetactive(struct seq_s *seq, int fifoid)
 {
   irqstate_t flags = enter_critical_section();
   seq->active |= 1 << fifoid;
@@ -393,7 +392,7 @@ static void seq_fifosetactive(FAR struct seq_s *seq, int fifoid)
  * Name: seq_fifosetinactive
  ****************************************************************************/
 
-static void seq_fifosetinactive(FAR struct seq_s *seq, int fifoid)
+static void seq_fifosetinactive(struct seq_s *seq, int fifoid)
 {
   irqstate_t flags = enter_critical_section();
   seq->active &= ~(1 << fifoid);
@@ -404,7 +403,7 @@ static void seq_fifosetinactive(FAR struct seq_s *seq, int fifoid)
  * Name: seq_fifoisactive
  ****************************************************************************/
 
-static int seq_fifoisactive(FAR struct seq_s *seq, int fifoid)
+static int seq_fifoisactive(struct seq_s *seq, int fifoid)
 {
   irqstate_t flags = enter_critical_section();
   int8_t active = seq->active;
@@ -416,7 +415,7 @@ static int seq_fifoisactive(FAR struct seq_s *seq, int fifoid)
  * Name: seq_isactive
  ****************************************************************************/
 
-static int seq_isactive(FAR struct seq_s *seq)
+static int seq_isactive(struct seq_s *seq)
 {
   irqstate_t flags = enter_critical_section();
   int8_t active = seq->active;
@@ -439,7 +438,7 @@ static int seq_isactive(FAR struct seq_s *seq)
  *
  ****************************************************************************/
 
-static int findzeroandset(FAR uint8_t *bitmap, int nbits)
+static int findzeroandset(uint8_t *bitmap, int nbits)
 {
   int i;
   irqstate_t flags;
@@ -467,7 +466,7 @@ static int findzeroandset(FAR uint8_t *bitmap, int nbits)
  *
  ****************************************************************************/
 
-static void bitmapclear(FAR uint8_t *bitmap, int bit)
+static void bitmapclear(uint8_t *bitmap, int bit)
 {
   irqstate_t flags = enter_critical_section();
   *bitmap &= ~(1 << bit);
@@ -940,8 +939,11 @@ static void seq_setstartphase(int sid, int phase)
 static void seq_startseq(int sid)
 {
   uint32_t val;
+  irqstate_t flags;
+  flags = enter_critical_section();
   val = getreg32(SCU_START_MODE0);
   putreg32(val | (1 << sid), SCU_START_MODE0);
+  leave_critical_section(flags);
 }
 
 /****************************************************************************
@@ -958,8 +960,11 @@ static void seq_startseq(int sid)
 static void seq_stopseq(int sid)
 {
   uint32_t val;
+  irqstate_t flags;
+  flags = enter_critical_section();
   val = getreg32(SCU_START_MODE0);
   putreg32(val & ~(1 << sid), SCU_START_MODE0);
+  leave_critical_section(flags);
 }
 
 /****************************************************************************
@@ -986,8 +991,8 @@ static void seq_stopseq(int sid)
  *
  ****************************************************************************/
 
-static int seq_oneshot(int bustype, int slave, FAR uint16_t *inst,
-                       uint32_t nr_insts, FAR uint8_t *buffer, int len)
+static int seq_oneshot(int bustype, int slave, uint16_t *inst,
+                       uint32_t nr_insts, uint8_t *buffer, int len)
 {
   struct cxd56_scudev_s *priv = &g_scudev;
   irqstate_t flags;
@@ -1069,6 +1074,7 @@ static int seq_oneshot(int bustype, int slave, FAR uint16_t *inst,
   putreg32(1 << (tid + 24), SCU_INT_ENABLE_MAIN);
 
   scuinfo("Sequencer start.\n");
+  priv->oneshoterr[tid] = 0;
 
   /* Start sequencer as one shot mode */
 
@@ -1085,7 +1091,11 @@ static int seq_oneshot(int bustype, int slave, FAR uint16_t *inst,
 
   scuinfo("Sequencer done.\n");
 
-  if (buffer)
+  if (priv->oneshoterr[tid] < 0)
+    {
+      ret = ERROR;
+    }
+  else
     {
       /* Copy sequencer output results to user buffer.
        * XXX: Sequencer output RAM offset is differ from document.
@@ -1150,7 +1160,7 @@ static void seq_offsetgainenable(int sid, bool enable)
  *
  ****************************************************************************/
 
-static int seq_start(FAR struct seq_s *seq, int fifoid)
+static int seq_start(struct seq_s *seq, int fifoid)
 {
   struct scufifo_s *fifo;
   uint32_t interval;
@@ -1243,7 +1253,7 @@ static int seq_start(FAR struct seq_s *seq, int fifoid)
  *
  ****************************************************************************/
 
-static int seq_stop(FAR struct seq_s *seq, int fifoid)
+static int seq_stop(struct seq_s *seq, int fifoid)
 {
   struct scufifo_s *fifo;
   uint32_t val;
@@ -1358,7 +1368,7 @@ static void mathf_disable(int8_t mid)
  *
  ****************************************************************************/
 
-static inline void mathf_set_coeff(uint32_t caddr, FAR struct iir_coeff_s *c)
+static inline void mathf_set_coeff(uint32_t caddr, struct iir_coeff_s *c)
 {
   putreg32(c->h, caddr);
   putreg32((c->l & 0x3) << 30, caddr + 4);
@@ -1378,7 +1388,7 @@ static inline void mathf_set_coeff(uint32_t caddr, FAR struct iir_coeff_s *c)
  ****************************************************************************/
 
 static void mathf_setiirfilter(int mid, int n,
-                               FAR struct iir_filter_s *filter)
+                               struct iir_filter_s *filter)
 {
   const struct coeff_addr_s *caddr;
 
@@ -1411,7 +1421,7 @@ static void mathf_setiirfilter(int mid, int n,
  *
  ****************************************************************************/
 
-static int seq_setsamplingrate(FAR struct seq_s *seq, uint8_t samplingrate)
+static int seq_setsamplingrate(struct seq_s *seq, uint8_t samplingrate)
 {
   DEBUGASSERT(seq);
 
@@ -1437,9 +1447,9 @@ static int seq_setsamplingrate(FAR struct seq_s *seq, uint8_t samplingrate)
  *
  ****************************************************************************/
 
-static void seq_sync(FAR struct seq_s *seq, int req)
+static void seq_sync(struct seq_s *seq, int req)
 {
-  FAR struct cxd56_scudev_s *priv = &g_scudev;
+  struct cxd56_scudev_s *priv = &g_scudev;
 
   seq_semtake(&priv->syncexc);
 
@@ -1473,15 +1483,13 @@ static void seq_sync(FAR struct seq_s *seq, int req)
  *
  ****************************************************************************/
 
-static void seq_handlefifointr(FAR struct cxd56_scudev_s *priv,
+static void seq_handlefifointr(struct cxd56_scudev_s *priv,
                                uint32_t intr)
 {
   uint32_t bit;
   int i;
-#ifndef CONFIG_DISABLE_SIGNAL
   struct wm_notify_s *notify;
   union sigval value;
-#endif
 
   if ((intr & 0x007ffe00) == 0)
     {
@@ -1498,7 +1506,6 @@ static void seq_handlefifointr(FAR struct cxd56_scudev_s *priv,
 
           putreg32(bit, SCU_INT_CLEAR_MAIN);
 
-#ifndef CONFIG_DISABLE_SIGNAL
           notify = &priv->wm[i];
 
           if (notify->ts)
@@ -1510,7 +1517,6 @@ static void seq_handlefifointr(FAR struct cxd56_scudev_s *priv,
 
           value.sival_ptr = notify->ts;
           nxsig_queue(notify->pid, notify->signo, value);
-#endif
         }
     }
 }
@@ -1523,17 +1529,15 @@ static void seq_handlefifointr(FAR struct cxd56_scudev_s *priv,
  *
  ****************************************************************************/
 
-static void seq_handlemathfintr(FAR struct cxd56_scudev_s *priv,
+static void seq_handlemathfintr(struct cxd56_scudev_s *priv,
                                 uint32_t intr)
 {
   int i;
   uint32_t bit;
   uint32_t rise;
   uint32_t fall;
-#ifndef CONFIG_DISABLE_SIGNAL
   struct ev_notify_s *notify;
   int detected = 0;
-#endif
 
   rise = (intr >> 6) & 0x7;
   fall = (intr >> 28) & 0x7;
@@ -1545,16 +1549,14 @@ static void seq_handlemathfintr(FAR struct cxd56_scudev_s *priv,
 
   for (i = 0, bit = 1; i < 3; i++, bit <<= 1)
     {
-#ifndef CONFIG_DISABLE_SIGNAL
       notify = &priv->event[i];
-#endif
+
       /* Detect rise event */
 
       if (rise & bit)
         {
           putreg32(bit << 6, SCU_INT_CLEAR_MAIN);
 
-#ifndef CONFIG_DISABLE_SIGNAL
           /* Get rise event occurred timestamp */
 
           if (notify->arg)
@@ -1567,7 +1569,6 @@ static void seq_handlemathfintr(FAR struct cxd56_scudev_s *priv,
             }
 
           detected = 1;
-#endif
         }
 
       /* Detect fall event */
@@ -1576,7 +1577,6 @@ static void seq_handlemathfintr(FAR struct cxd56_scudev_s *priv,
         {
           putreg32(bit << 28, SCU_INT_CLEAR_MAIN);
 
-#ifndef CONFIG_DISABLE_SIGNAL
           /* Get fall event occurred timestamp */
 
           if (notify->arg)
@@ -1589,10 +1589,8 @@ static void seq_handlemathfintr(FAR struct cxd56_scudev_s *priv,
             }
 
           detected = 1;
-#endif
         }
 
-#ifndef CONFIG_DISABLE_SIGNAL
       if (detected)
         {
           union sigval value;
@@ -1603,7 +1601,6 @@ static void seq_handlemathfintr(FAR struct cxd56_scudev_s *priv,
           nxsig_queue(notify->pid, notify->signo, value);
           detected = 0;
         }
-#endif
     }
 }
 
@@ -1615,7 +1612,7 @@ static void seq_handlemathfintr(FAR struct cxd56_scudev_s *priv,
  *
  ****************************************************************************/
 
-static void seq_handleoneshot(FAR struct cxd56_scudev_s *priv, uint32_t intr)
+static void seq_handleoneshot(struct cxd56_scudev_s *priv, uint32_t intr)
 {
   uint32_t bit;
   int i;
@@ -1644,7 +1641,7 @@ static void seq_handleoneshot(FAR struct cxd56_scudev_s *priv, uint32_t intr)
  *
  ****************************************************************************/
 
-static void seq_handleisopdoneintr(FAR struct cxd56_scudev_s *priv,
+static void seq_handleisopdoneintr(struct cxd56_scudev_s *priv,
                                    uint32_t intr)
 {
   /* Detect ISOP3 as done or stop. */
@@ -1670,13 +1667,15 @@ static void seq_handleisopdoneintr(FAR struct cxd56_scudev_s *priv,
  *
  ****************************************************************************/
 
-static int seq_scuirqhandler(int irq, FAR void *context, FAR void *arg)
+static int seq_scuirqhandler(int irq, void *context, void *arg)
 {
-  FAR struct cxd56_scudev_s *priv = arg;
+  struct cxd56_scudev_s *priv = arg;
   uint32_t intr;
   uint32_t ierr0;
   uint32_t ierr1;
   uint32_t ierr2;
+  uint32_t out;
+  int tid;
   int i;
 
   intr = getreg32(SCU_INT_MASKED_STT_MAIN);
@@ -1696,7 +1695,7 @@ static int seq_scuirqhandler(int irq, FAR void *context, FAR void *arg)
 
   if (ierr0 != 0)
     {
-      scuerr("err0: %08x\n", ierr0);
+      scuerr("err0: %08" PRIx32 "\n", ierr0);
       ierr0 = (ierr0 >> 9) & 0x3fff;
       for (i = 0; i < 14; i++)
         {
@@ -1718,7 +1717,7 @@ static int seq_scuirqhandler(int irq, FAR void *context, FAR void *arg)
 
   if (ierr1 != 0)
     {
-      scuerr("err1: %08x\n", ierr1);
+      scuerr("err1: %08" PRIx32 "\n", ierr1);
       ierr1 = (ierr1 >> 9) & 0x3fff;
       for (i = 0; i < 14; i++)
         {
@@ -1736,17 +1735,31 @@ static int seq_scuirqhandler(int irq, FAR void *context, FAR void *arg)
 
   if (ierr2 != 0)
     {
-      scuerr("err2: %08x\n", ierr2);
-      ierr2 &= 0x03ff;
+      scuerr("err2: %08" PRIx32 "\n", ierr2);
+
       for (i = 0; i < 10; i++)
         {
-          if (ierr2 & (1 << i))
+          if (ierr2 & (0x00010001 << i))
             {
               seq_stopseq(i);
+
+              /* Get sequencer output selector */
+
+              out = (getreg32(SCUSEQ_PROPERTY(i)) >> 12) & 0x3;
+
+              if (0 < out)
+                {
+                  /* Set error code to oneshot sequencer id */
+
+                  tid = out - 1;
+
+                  priv->oneshoterr[tid] = -EIO;
+                  seq_semgive(&priv->oneshotwait[tid]);
+                }
             }
         }
 
-      putreg32(0x03ff, SCU_INT_CLEAR_ERR_2);
+      putreg32(ierr2, SCU_INT_CLEAR_ERR_2);
     }
 
   return 0;
@@ -1763,9 +1776,9 @@ static int seq_scuirqhandler(int irq, FAR void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static FAR struct seq_s *seq_new(void)
+static struct seq_s *seq_new(void)
 {
-  FAR struct seq_s *seq;
+  struct seq_s *seq;
   int sid;
   irqstate_t flags;
 
@@ -1781,7 +1794,7 @@ static FAR struct seq_s *seq_new(void)
 
   leave_critical_section(flags);
 
-  seq = (FAR struct seq_s *)kmm_malloc(sizeof(struct seq_s));
+  seq = (struct seq_s *)kmm_malloc(sizeof(struct seq_s));
   if (!seq)
     {
       seq_free(sid);
@@ -1806,9 +1819,9 @@ static FAR struct seq_s *seq_new(void)
  *
  ****************************************************************************/
 
-static FAR struct seq_s *deci_new(void)
+static struct seq_s *deci_new(void)
 {
-  FAR struct decimator_s *deci;
+  struct decimator_s *deci;
   int sid;
   irqstate_t flags;
 
@@ -1824,7 +1837,7 @@ static FAR struct seq_s *deci_new(void)
 
   leave_critical_section(flags);
 
-  deci = (FAR struct decimator_s *)kmm_malloc(sizeof(struct decimator_s));
+  deci = (struct decimator_s *)kmm_malloc(sizeof(struct decimator_s));
   if (!deci)
     {
       deci_free(sid);
@@ -1851,10 +1864,10 @@ static FAR struct seq_s *deci_new(void)
  *
  ****************************************************************************/
 
-static int seq_fifoinit(FAR struct seq_s *seq, int fifoid, uint16_t fsize)
+static int seq_fifoinit(struct seq_s *seq, int fifoid, uint16_t fsize)
 {
-  FAR struct scufifo_s *fifo;
-  FAR struct decimator_s *deci = (FAR struct decimator_s *)seq;
+  struct scufifo_s *fifo;
+  struct decimator_s *deci = (struct decimator_s *)seq;
   int wid;
   int rid;
   uint32_t val;
@@ -1882,7 +1895,7 @@ static int seq_fifoinit(FAR struct seq_s *seq, int fifoid, uint16_t fsize)
         }
     }
 
-  fifo = (FAR struct scufifo_s *)kmm_malloc(sizeof(struct scufifo_s));
+  fifo = (struct scufifo_s *)kmm_malloc(sizeof(struct scufifo_s));
   if (!fifo)
     {
       return -ENOMEM;
@@ -2003,7 +2016,7 @@ static int seq_fifoinit(FAR struct seq_s *seq, int fifoid, uint16_t fsize)
 
   if (seq->type & SEQ_TYPE_DECI)
     {
-      FAR struct decimation_fifo_s *dec = &deci->dfifo[fifoid];
+      struct decimation_fifo_s *dec = &deci->dfifo[fifoid];
       dec->fifo = fifo;
       dec->ratio = 0;
       dec->leveladj = 0;
@@ -2038,7 +2051,7 @@ static int seq_fifoinit(FAR struct seq_s *seq, int fifoid, uint16_t fsize)
  *
  ****************************************************************************/
 
-static void seq_fifofree(FAR struct scufifo_s *fifo)
+static void seq_fifofree(struct scufifo_s *fifo)
 {
   int wid;
   int rid;
@@ -2101,7 +2114,7 @@ static void seq_fifofree(FAR struct scufifo_s *fifo)
  *
  ****************************************************************************/
 
-static inline struct scufifo_s *seq_getfifo(FAR struct seq_s *seq,
+static inline struct scufifo_s *seq_getfifo(struct seq_s *seq,
                                             int fifoid)
 {
   DEBUGASSERT(fifoid >= 0 && fifoid < 3);
@@ -2129,8 +2142,8 @@ static inline struct scufifo_s *seq_getfifo(FAR struct seq_s *seq,
  *
  ****************************************************************************/
 
-static int seq_setadjustment(FAR struct seq_s *seq,
-                             FAR struct adjust_xyz_s *adj)
+static int seq_setadjustment(struct seq_s *seq,
+                             struct adjust_xyz_s *adj)
 {
   int sid;
   uint32_t val;
@@ -2173,8 +2186,8 @@ static int seq_setadjustment(FAR struct seq_s *seq,
  *
  ****************************************************************************/
 
-static int seq_setfilter(FAR struct scufifo_s *fifo, int pos,
-                         FAR struct iir_filter_s iir[2])
+static int seq_setfilter(struct scufifo_s *fifo, int pos,
+                         struct iir_filter_s iir[2])
 {
   int mid;
 
@@ -2220,8 +2233,8 @@ static int seq_setfilter(FAR struct scufifo_s *fifo, int pos,
  *
  ****************************************************************************/
 
-static int seq_seteventnotifier(FAR struct scufifo_s *fifo,
-                                FAR struct scuev_notify_s *ev)
+static int seq_seteventnotifier(struct scufifo_s *fifo,
+                                struct scuev_notify_s *ev)
 {
   struct cxd56_scudev_s *priv = &g_scudev;
   uint32_t val;
@@ -2232,9 +2245,7 @@ static int seq_seteventnotifier(FAR struct scufifo_s *fifo,
   int riseint;
   int fallint;
   int mid;
-#ifndef CONFIG_DISABLE_SIGNAL
   irqstate_t flags;
-#endif
 
   DEBUGASSERT(fifo && ev);
 
@@ -2247,7 +2258,6 @@ static int seq_seteventnotifier(FAR struct scufifo_s *fifo,
 
   mid = fifo->mid;
 
-#ifndef CONFIG_DISABLE_SIGNAL
   /* Save signal number and target PID */
 
   flags = enter_critical_section();
@@ -2256,7 +2266,6 @@ static int seq_seteventnotifier(FAR struct scufifo_s *fifo,
   priv->event[mid].arg = ev->arg;
   priv->event[mid].fifo = fifo;
   leave_critical_section(flags);
-#endif
 
   thresh = count0 = count1 = delaysample = 0;
   riseint = fallint = 0;
@@ -2306,8 +2315,6 @@ static int seq_seteventnotifier(FAR struct scufifo_s *fifo,
   return OK;
 }
 
-#ifndef CONFIG_DISABLE_SIGNAL
-
 /****************************************************************************
  * Name: seq_setwatermark
  *
@@ -2316,10 +2323,10 @@ static int seq_seteventnotifier(FAR struct scufifo_s *fifo,
  *
  ****************************************************************************/
 
-static int seq_setwatermark(FAR struct seq_s *seq, int fifoid,
-                            FAR struct scufifo_wm_s *wm)
+static int seq_setwatermark(struct seq_s *seq, int fifoid,
+                            struct scufifo_wm_s *wm)
 {
-  FAR struct cxd56_scudev_s *priv = &g_scudev;
+  struct cxd56_scudev_s *priv = &g_scudev;
   struct scufifo_s *fifo = seq_getfifo(seq, fifoid);
   struct wm_notify_s *notify;
   int rid;
@@ -2481,9 +2488,6 @@ static void seq_gettimestamp(struct scufifo_s *fifo,
 
   convert_firsttimestamp(tm, interval, sample, adjust);
 }
-#else
-#define seq_setwatermark(seq, fifoid, wm) (-ENOSYS)
-#endif
 
 /****************************************************************************
  * Name: seq_setfifomode
@@ -2493,27 +2497,21 @@ static void seq_gettimestamp(struct scufifo_s *fifo,
  *
  ****************************************************************************/
 
-static void seq_setfifomode(FAR struct seq_s *seq, int fifoid, int enable)
+static void seq_setfifomode(struct seq_s *seq, int fifoid, int enable)
 {
-  FAR struct scufifo_s *fifo = seq_getfifo(seq, fifoid);
+  struct scufifo_s *fifo = seq_getfifo(seq, fifoid);
   uint32_t val;
   irqstate_t flags;
-#ifndef CONFIG_DISABLE_SIGNAL
-  FAR struct cxd56_scudev_s *priv = &g_scudev;
-  FAR struct wm_notify_s *notify = &priv->wm[fifo->rid];
+  struct cxd56_scudev_s *priv = &g_scudev;
+  struct wm_notify_s *notify = &priv->wm[fifo->rid];
   bool iswtmk = false;
-#endif
-
-  DEBUGASSERT(fifo);
 
   scuinfo("FIFO mode %d wid %d\n", enable, fifo->wid);
 
-#ifndef CONFIG_DISABLE_SIGNAL
   if (notify->ts)
     {
       iswtmk = true;
     }
-#endif
 
   flags = enter_critical_section();
 
@@ -2535,15 +2533,12 @@ static void seq_setfifomode(FAR struct seq_s *seq, int fifoid, int enable)
       val = 0x1 << (fifo->rid + 9);
       putreg32(val, SCU_INT_DISABLE_ERR_0);
 
-#ifndef CONFIG_DISABLE_SIGNAL
-
       /* disable almostfull interrupt */
 
       if (iswtmk)
         {
           putreg32(val, SCU_INT_DISABLE_MAIN);
         }
-#endif
     }
   else
     {
@@ -2557,8 +2552,6 @@ static void seq_setfifomode(FAR struct seq_s *seq, int fifoid, int enable)
       val = 0x1 << (fifo->rid + 9);
       putreg32(val, SCU_INT_ENABLE_ERR_0);
 
-#ifndef CONFIG_DISABLE_SIGNAL
-
       /* enable almostfull interrupt */
 
       if (iswtmk)
@@ -2566,7 +2559,6 @@ static void seq_setfifomode(FAR struct seq_s *seq, int fifoid, int enable)
           val = 0x1 << (fifo->rid + 9);
           putreg32(val, SCU_INT_ENABLE_MAIN);
         }
-#endif
     }
 
   leave_critical_section(flags);
@@ -2691,8 +2683,8 @@ static void scu_hwinit(void)
  * Name: scu_spitransfer
  ****************************************************************************/
 
-int scu_spitransfer(int slavesel, FAR uint16_t *inst, uint32_t nr_insts,
-                    FAR uint8_t *buffer, int len)
+int scu_spitransfer(int slavesel, uint16_t *inst, uint32_t nr_insts,
+                    uint8_t *buffer, int len)
 {
   return seq_oneshot(SCU_BUS_SPI, slavesel, inst, nr_insts, buffer, len);
 }
@@ -2701,8 +2693,8 @@ int scu_spitransfer(int slavesel, FAR uint16_t *inst, uint32_t nr_insts,
  * Name: scu_i2ctransfer
  ****************************************************************************/
 
-int scu_i2ctransfer(int port, int slave, FAR uint16_t *inst,
-                    uint32_t nr_insts, FAR uint8_t *buffer, int len)
+int scu_i2ctransfer(int port, int slave, uint16_t *inst,
+                    uint32_t nr_insts, uint8_t *buffer, int len)
 {
   int bustype;
 
@@ -2736,9 +2728,9 @@ int scu_i2ctransfer(int port, int slave, FAR uint16_t *inst,
  *
  ****************************************************************************/
 
-FAR struct seq_s *seq_open(int type, int bustype)
+struct seq_s *seq_open(int type, int bustype)
 {
-  FAR struct seq_s *seq;
+  struct seq_s *seq;
 
   /* Check bustype is valid */
 
@@ -2806,7 +2798,7 @@ FAR struct seq_s *seq_open(int type, int bustype)
  *
  ****************************************************************************/
 
-int seq_setinstruction(FAR struct seq_s *seq, const uint16_t *inst,
+int seq_setinstruction(struct seq_s *seq, const uint16_t *inst,
                        uint16_t nr_insts)
 {
   int istart;
@@ -2854,7 +2846,7 @@ int seq_setinstruction(FAR struct seq_s *seq, const uint16_t *inst,
  *
  ****************************************************************************/
 
-void seq_setsample(FAR struct seq_s *seq, uint8_t sample, uint8_t offset,
+void seq_setsample(struct seq_s *seq, uint8_t sample, uint8_t offset,
                    uint8_t elemsize, bool swapbyte)
 {
   DEBUGASSERT(seq);
@@ -2876,7 +2868,7 @@ void seq_setsample(FAR struct seq_s *seq, uint8_t sample, uint8_t offset,
  *
  ****************************************************************************/
 
-void seq_setaddress(FAR struct seq_s *seq, uint32_t slave_addr)
+void seq_setaddress(struct seq_s *seq, uint32_t slave_addr)
 {
   seq_setproperty(seq->id, slave_addr, 0, 0, 0);
 }
@@ -2901,7 +2893,7 @@ static void seq_fifodmadone(DMA_HANDLE handle, uint8_t status, void *arg)
  * Name: seq_read8
  ****************************************************************************/
 
-static inline void seq_read8(uint32_t addr, FAR uint8_t *buffer, int length)
+static inline void seq_read8(uint32_t addr, uint8_t *buffer, int length)
 {
   int i;
 
@@ -2916,7 +2908,7 @@ static inline void seq_read8(uint32_t addr, FAR uint8_t *buffer, int length)
  ****************************************************************************/
 
 static inline void seq_read16(uint32_t addr,
-                              FAR uint16_t *buffer,
+                              uint16_t *buffer,
                               int length)
 {
   int i;
@@ -2932,7 +2924,7 @@ static inline void seq_read16(uint32_t addr,
  ****************************************************************************/
 
 static inline void seq_read32(uint32_t addr,
-                              FAR uint32_t *buffer,
+                              uint32_t *buffer,
                               int length)
 {
   int i;
@@ -2961,7 +2953,7 @@ static inline void seq_read32(uint32_t addr,
  *
  ****************************************************************************/
 
-int seq_read(FAR struct seq_s *seq, int fifoid, FAR char *buffer, int length)
+int seq_read(struct seq_s *seq, int fifoid, char *buffer, int length)
 {
   struct scufifo_s *fifo;
   uint32_t outlet;
@@ -2996,7 +2988,7 @@ int seq_read(FAR struct seq_s *seq, int fifoid, FAR char *buffer, int length)
   scuinfo("Available %d samples\n", avail);
 #ifdef CONFIG_CXD56_SCU_DEBUG
   status = getreg32(SCUFIFO_R_STATUS1(fifo->rid));
-  scuinfo("Status: %08x\n", status);
+  scuinfo("Status: %08" PRIx32 "\n", status);
 #endif
   avail *= seq->sample;
   length = MIN(avail, length);
@@ -3077,7 +3069,7 @@ int seq_read(FAR struct seq_s *seq, int fifoid, FAR char *buffer, int length)
     {
       if (buffer != NULL)
         {
-          seq_read8(outlet, (FAR uint8_t *)buffer, length);
+          seq_read8(outlet, (uint8_t *)buffer, length);
         }
       else
         {
@@ -3091,7 +3083,7 @@ int seq_read(FAR struct seq_s *seq, int fifoid, FAR char *buffer, int length)
     {
       if (buffer != NULL)
         {
-          seq_read16(outlet, (FAR uint16_t *)buffer, length);
+          seq_read16(outlet, (uint16_t *)buffer, length);
         }
       else
         {
@@ -3105,7 +3097,7 @@ int seq_read(FAR struct seq_s *seq, int fifoid, FAR char *buffer, int length)
     {
       if (buffer != NULL)
         {
-          seq_read32(outlet, (FAR uint32_t *)buffer, length);
+          seq_read32(outlet, (uint32_t *)buffer, length);
         }
       else
         {
@@ -3139,7 +3131,7 @@ int seq_read(FAR struct seq_s *seq, int fifoid, FAR char *buffer, int length)
  *
  ****************************************************************************/
 
-int seq_ioctl(FAR struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
+int seq_ioctl(struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
 {
   int ret = OK;
 
@@ -3148,7 +3140,7 @@ int seq_ioctl(FAR struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
       return -EINVAL;
     }
 
-  scuinfo("cmd = %04x, arg = %08x\n", cmd, arg);
+  scuinfo("cmd = %04x, arg = %08" PRIx32 "\n", cmd, arg);
 
   switch (cmd)
     {
@@ -3165,7 +3157,7 @@ int seq_ioctl(FAR struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
       case SCUIOC_FREEFIFO:
         {
           struct decimator_s *deci = (struct decimator_s *)seq;
-          FAR struct scufifo_s *fifo;
+          struct scufifo_s *fifo;
 
           /* Check sequencer already stopped. */
 
@@ -3219,8 +3211,8 @@ int seq_ioctl(FAR struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
         {
           if (arg)
             {
-              FAR struct adjust_xyz_s *p =
-                (FAR struct adjust_xyz_s *)(uintptr_t)arg;
+              struct adjust_xyz_s *p =
+                (struct adjust_xyz_s *)(uintptr_t)arg;
               ret = seq_setadjustment(seq, p);
               if (!ret)
                 {
@@ -3252,9 +3244,9 @@ int seq_ioctl(FAR struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
 
       case SCUIOC_SETFILTER:
         {
-          FAR struct math_filter_s *f =
-            (FAR struct math_filter_s *)(uintptr_t)arg;
-          FAR struct scufifo_s *fifo = seq_getfifo(seq, fifoid);
+          struct math_filter_s *f =
+            (struct math_filter_s *)(uintptr_t)arg;
+          struct scufifo_s *fifo = seq_getfifo(seq, fifoid);
 
           if (seq_fifoisactive(seq, fifoid))
             {
@@ -3264,7 +3256,7 @@ int seq_ioctl(FAR struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
 
           if (seq->type & SEQ_TYPE_DECI)
             {
-              FAR struct decimator_s *dec = (struct decimator_s *)seq;
+              struct decimator_s *dec = (struct decimator_s *)seq;
               fifo = dec->dfifo[fifoid].fifo;
             }
 
@@ -3279,9 +3271,9 @@ int seq_ioctl(FAR struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
 
       case SCUIOC_SETNOTIFY:
         {
-          FAR struct scuev_notify_s *en =
-            (FAR struct scuev_notify_s *)(uintptr_t)arg;
-          FAR struct scufifo_s *fifo = seq_getfifo(seq, fifoid);
+          struct scuev_notify_s *en =
+            (struct scuev_notify_s *)(uintptr_t)arg;
+          struct scufifo_s *fifo = seq_getfifo(seq, fifoid);
 
           if (seq_fifoisactive(seq, fifoid))
             {
@@ -3291,7 +3283,7 @@ int seq_ioctl(FAR struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
 
           if (seq->type & SEQ_TYPE_DECI)
             {
-              FAR struct decimator_s *dec = (struct decimator_s *)seq;
+              struct decimator_s *dec = (struct decimator_s *)seq;
               fifo = dec->dfifo[fifoid].fifo;
             }
 
@@ -3317,10 +3309,10 @@ int seq_ioctl(FAR struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
 
       case SCUIOC_SETDECIMATION:
         {
-          FAR struct decimation_s *d =
-            (FAR struct decimation_s *)(uintptr_t)arg;
-          FAR struct decimator_s *deci = (FAR struct decimator_s *)seq;
-          FAR struct decimation_fifo_s *dfifo = &deci->dfifo[fifoid];
+          struct decimation_s *d =
+            (struct decimation_s *)(uintptr_t)arg;
+          struct decimator_s *deci = (struct decimator_s *)seq;
+          struct decimation_fifo_s *dfifo = &deci->dfifo[fifoid];
 
           if (!(seq->type & SEQ_TYPE_DECI))
             {
@@ -3346,8 +3338,8 @@ int seq_ioctl(FAR struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
 
       case SCUIOC_SETWATERMARK:
         {
-          FAR struct scufifo_wm_s *wm =
-            (FAR struct scufifo_wm_s *)(uintptr_t)arg;
+          struct scufifo_wm_s *wm =
+            (struct scufifo_wm_s *)(uintptr_t)arg;
 
           ret = seq_setwatermark(seq, fifoid, wm);
         }
@@ -3405,7 +3397,7 @@ int seq_ioctl(FAR struct seq_s *seq, int fifoid, int cmd, unsigned long arg)
  *
  ****************************************************************************/
 
-void seq_close(FAR struct seq_s *seq)
+void seq_close(struct seq_s *seq)
 {
   irqstate_t flags;
 
@@ -3413,7 +3405,7 @@ void seq_close(FAR struct seq_s *seq)
 
   if (seq->type & SEQ_TYPE_DECI)
     {
-      FAR struct decimator_s *deci = (FAR struct decimator_s *)seq;
+      struct decimator_s *deci = (struct decimator_s *)seq;
       int i;
 
       flags = enter_critical_section();
@@ -3498,7 +3490,11 @@ void scu_initialize(void)
   /* Enable error interrupt  */
 
   putreg32(0x007ffe00, SCU_INT_ENABLE_ERR_0);
-  putreg32(0x03ff, SCU_INT_ENABLE_ERR_2);
+  putreg32(0x03ff03ff, SCU_INT_ENABLE_ERR_2);
+
+  /* Set the number of TxAbort repeat times */
+
+  putreg32(5, SCUSEQ_REPEAT_TXABORT);
 
   /* Enable SCU IRQ */
 

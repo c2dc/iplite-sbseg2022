@@ -29,9 +29,7 @@
 #include <nuttx/board.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "nrf52832-dk.h"
 
 /****************************************************************************
@@ -76,6 +74,6 @@ void board_late_initialize(void)
 {
   /* Perform board-specific initialization */
 
-  (void)nrf52_bringup();
+  nrf52_bringup();
 }
 #endif

@@ -1,35 +1,20 @@
 /****************************************************************************
  * include/nuttx/fs/procfs.h
  *
- *   Copyright (C) 2013 Gregory Nutt. All rights reserved.
- *   Author: Ken Pettit <pettitkd@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -88,9 +73,9 @@ struct procfs_operations
   /* Directory operations */
 
   int     (*opendir)(FAR const char *relpath,
-                     FAR struct fs_dirent_s *dir);
+                     FAR struct fs_dirent_s **dir);
   int     (*closedir)(FAR struct fs_dirent_s *dir);
-  int     (*readdir)(FAR struct fs_dirent_s *dir);
+  int     (*readdir)(FAR struct fs_dirent_s *dir, FAR struct dirent *entry);
   int     (*rewinddir)(FAR struct fs_dirent_s *dir);
 
   /* Operations on paths */
@@ -134,6 +119,7 @@ struct procfs_file_s
 
 struct procfs_dir_priv_s
 {
+  struct fs_dirent_s dir;                       /* VFS directory structure */
   uint8_t level;                                /* Directory level.  Currently 0 or 1 */
   uint16_t index;                               /* Index to the next directory entry */
   uint16_t nentries;                            /* Number of directory entries */
@@ -142,13 +128,20 @@ struct procfs_dir_priv_s
 
 /* An entry for procfs_register_meminfo */
 
+struct mm_heap_s;
 struct procfs_meminfo_entry_s
 {
   FAR const char *name;
-  CODE void (*mallinfo)(FAR void *user_data, FAR struct mallinfo *);
-  FAR void *user_data;
-
+  FAR struct mm_heap_s *heap;
   struct procfs_meminfo_entry_s *next;
+#if CONFIG_MM_BACKTRACE >= 0
+
+  /* This is dynamic control flag whether to turn on backtrace in the heap,
+   * you can set it by /proc/memdump.
+   */
+
+  bool backtrace;
+#endif
 };
 
 /****************************************************************************
@@ -210,6 +203,26 @@ size_t procfs_memcpy(FAR const char *src, size_t srclen,
                      off_t *offset);
 
 /****************************************************************************
+ * Name: procfs_snprintf
+ *
+ * Description:
+ *   This function is same with snprintf, except return values.
+ *   If buf has no enough space and output was truncated due to size limit,
+ *   snprintf:        return formatted string len.
+ *   procfs_snprintf: return string len which has written to buf.
+ *
+ * Input Parameters:
+ *   Same with snprintf
+ *
+ * Returned Value:
+ *   See Description.
+ *
+ ****************************************************************************/
+
+int procfs_snprintf(FAR char *buf, size_t size,
+                    FAR const IPTR char *format, ...) printflike(3, 4);
+
+/****************************************************************************
  * Name: procfs_register
  *
  * Description:
@@ -243,6 +256,19 @@ int procfs_register(FAR const struct procfs_entry_s *entry);
  ****************************************************************************/
 
 void procfs_register_meminfo(FAR struct procfs_meminfo_entry_s *entry);
+
+/****************************************************************************
+ * Name: procfs_unregister_meminfo
+ *
+ * Description:
+ *   Remove a meminfo entry from the procfs file system.
+ *
+ * Input Parameters:
+ *   entry - Describes the entry to be unregistered.
+ *
+ ****************************************************************************/
+
+void procfs_unregister_meminfo(FAR struct procfs_meminfo_entry_s *entry);
 
 #undef EXTERN
 #ifdef __cplusplus

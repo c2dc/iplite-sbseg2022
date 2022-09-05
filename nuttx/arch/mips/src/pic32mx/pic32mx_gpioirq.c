@@ -31,7 +31,7 @@
 #include <nuttx/arch.h>
 #include <arch/board/board.h>
 
-#include "mips_arch.h"
+#include "mips_internal.h"
 #include "pic32mx_gpio.h"
 #include "pic32mx.h"
 
@@ -84,7 +84,7 @@ static inline bool pic32mx_pullup(uint16_t pinset)
  *
  ****************************************************************************/
 
-static int pic32mx_cninterrupt(int irq, FAR void *context)
+static int pic32mx_cninterrupt(int irq, void *context)
 {
   int status;
   int ret = OK;

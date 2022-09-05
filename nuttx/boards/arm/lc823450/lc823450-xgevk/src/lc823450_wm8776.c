@@ -36,7 +36,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "lc823450_i2c.h"
 #include "lc823450_i2s.h"
 #include "lc823450-xgevk.h"
@@ -68,14 +68,14 @@ static struct wm8776_lower_s g_wm8776info =
 
 int lc823450_wm8776initialize(int minor)
 {
-  FAR struct audio_lowerhalf_s *wm8776;
-  FAR struct audio_lowerhalf_s *pcm;
-  FAR struct i2c_master_s *i2c;
-  FAR struct i2s_dev_s *i2s;
+  struct audio_lowerhalf_s *wm8776;
+  struct audio_lowerhalf_s *pcm;
+  struct i2c_master_s *i2c;
+  struct i2s_dev_s *i2s;
   char devname[12];
   int ret;
 
-  ainfo("Initializing WM8776 \n");
+  ainfo("Initializing WM8776\n");
 
   /* Initialize I2C */
 

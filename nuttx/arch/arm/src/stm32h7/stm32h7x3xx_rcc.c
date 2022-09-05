@@ -98,6 +98,10 @@
 #  define USE_PLL3
 #endif
 
+#if defined(STM32_BOARD_USEHSI) && !defined(STM32_BOARD_HSIDIV)
+#error When HSI is used, you have to define STM32_BOARD_HSIDIV in board/include/board.h
+#endif
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -207,7 +211,7 @@ static inline void rcc_enableahb1(void)
 #endif
 
 #ifdef CONFIG_STM32H7_OTGHS
-#ifdef BOARD_ENABLE_USBOTG_HSULPI
+#  if defined(CONFIG_STM32H7_OTGHS_EXTERNAL_ULPI)
   /* Enable clocking for USB OTG HS and external PHY */
 
   regval |= (RCC_AHB1ENR_OTGHSEN | RCC_AHB1ENR_OTGHSULPIEN);
@@ -247,9 +251,15 @@ static inline void rcc_enableahb2(void)
   regval = getreg32(STM32_RCC_AHB2ENR);
 
 #ifdef CONFIG_STM32H7_SDMMC2
-  /* SDMMC clock enable */
+  /* SDMMC2 clock enable */
 
   regval |= RCC_AHB2ENR_SDMMC2EN;
+#endif
+
+#ifdef CONFIG_STM32H7_RNG
+  /* Random number generator clock enable */
+
+  regval |= RCC_AHB2ENR_RNGEN;
 #endif
 
   putreg32(regval, STM32_RCC_AHB2ENR);   /* Enable peripherals */
@@ -426,13 +436,15 @@ static inline void rcc_enableapb1(void)
   regval |= RCC_APB1LENR_I2C3EN;
 #endif
 
-  /* TODO: ... */
-
   putreg32(regval, STM32_RCC_APB1LENR);   /* Enable APB1L peripherals */
 
   regval = getreg32(STM32_RCC_APB1HENR);
 
-  /* TODO: ... */
+#ifdef CONFIG_STM32H7_FDCAN
+  /* FDCAN clock enable */
+
+  regval |= RCC_APB1HENR_FDCANEN;
+#endif
 
   putreg32(regval, STM32_RCC_APB1HENR);   /* Enable APB1H peripherals */
 }
@@ -471,6 +483,18 @@ static inline void rcc_enableapb2(void)
   /* SPI5 clock enable */
 
   regval |= RCC_APB2ENR_SPI5EN;
+#endif
+
+#ifdef CONFIG_STM32H7_USART1
+  /* USART1 clock enable */
+
+  regval |= RCC_APB2ENR_USART1EN;
+#endif
+
+#ifdef CONFIG_STM32H7_USART6
+  /* USART6 clock enable */
+
+  regval |= RCC_APB2ENR_USART6EN;
 #endif
 
   putreg32(regval, STM32_RCC_APB2ENR);   /* Enable peripherals */
@@ -580,6 +604,11 @@ void stm32_stdclockconfig(void)
 
   regval  = getreg32(STM32_RCC_CR);
   regval |= RCC_CR_HSION;           /* Enable HSI */
+
+  /* Set HSI predivider to board specific value */
+
+  regval |= STM32_BOARD_HSIDIV;
+
   putreg32(regval, STM32_RCC_CR);
 
   /* Wait until the HSI is ready (or until a timeout elapsed) */
@@ -623,7 +652,6 @@ void stm32_stdclockconfig(void)
     }
 #endif
 
-#define CONFIG_STM32H7_HSI48
 #ifdef CONFIG_STM32H7_HSI48
   /* Enable HSI48 */
 
@@ -634,6 +662,20 @@ void stm32_stdclockconfig(void)
   /* Wait until the HSI48 is ready */
 
   while ((getreg32(STM32_RCC_CR) & RCC_CR_HSI48RDY) == 0)
+    {
+    }
+#endif
+
+#ifdef CONFIG_STM32H7_CSI
+  /* Enable CSI */
+
+  regval  = getreg32(STM32_RCC_CR);
+  regval |= RCC_CR_CSION;
+  putreg32(regval, STM32_RCC_CR);
+
+  /* Wait until the CSI is ready */
+
+  while ((getreg32(STM32_RCC_CR) & RCC_CR_CSIRDY) == 0)
     {
     }
 #endif
@@ -861,6 +903,15 @@ void stm32_stdclockconfig(void)
              RCC_CFGR_SWS_PLL1)
         {
         }
+
+      /* Configure SDMMC source clock */
+
+#if defined(STM32_RCC_D1CCIPR_SDMMCSEL)
+      regval = getreg32(STM32_RCC_D1CCIPR);
+      regval &= ~RCC_D1CCIPR_SDMMC_MASK;
+      regval |= STM32_RCC_D1CCIPR_SDMMCSEL;
+      putreg32(regval, STM32_RCC_D1CCIPR);
+#endif
 
       /* Configure I2C source clock */
 

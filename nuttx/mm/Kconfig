@@ -15,7 +15,7 @@ config MM_DEFAULT_MANAGER
 config MM_CUSTOMIZE_MANAGER
 	bool "Customized heap manager"
 	---help---
-		Customized memory manger policy. The build will fail
+		Customized memory manager policy. The build will fail
 		if the MM heap module not defined by customer.
 
 endchoice
@@ -165,6 +165,80 @@ config MM_SHM
 		Build in support for the shared memory interfaces shmget(), shmat(),
 		shmctl(), and shmdt().
 
+config MM_CIRCBUF
+	bool "Circular buffer support"
+	default n
+	---help---
+		Build in support for the circular buffer management.
+
+config MM_MEMPOOL
+	bool "Enable memory buffer pool"
+	default n
+	---help---
+		Memory buffer pool support. Such pools are mostly used
+		for guaranteed, deadlock-free memory allocations.
+
+config FS_PROCFS_EXCLUDE_MEMPOOL
+	bool "Exclude mempool"
+	default n
+	depends on FS_PROCFS
+
+config MM_KASAN
+	bool "Kernel Address Sanitizer"
+	default n
+	---help---
+		KASan is a fast compiler-based tool for detecting memory
+		bugs in native code. After turn on this option, Please
+		add -fsanitize=kernel-address to CFLAGS/CXXFLAGS too.
+
+config MM_KASAN_ALL
+	bool "Enable KASan for the entire image"
+	depends on MM_KASAN
+	default y
+	---help---
+		This option activates address sanitizer for the entire image.
+		If you don't enable this option, you have to explicitly specify
+		"-fsanitize=kernel-address" for the files/directories you want
+		to check. Enabling this option will get image size increased
+		and performance decreased significantly.
+
+config MM_UBSAN
+	bool "Undefined Behavior Sanitizer"
+	default n
+	---help---
+		UBSan is a fast undefined behavior detector. UBSan modifies
+		the program at compile-time to catch various kinds of
+		undefined behavior during program execution
+
+config MM_UBSAN_ALL
+	bool "Enable UBSan for the entire image"
+	depends on MM_UBSAN
+	default y
+	---help---
+		This option activates UBSan instrumentation for the
+		entire image. If you don't enable this option, you have to
+		explicitly specify "-fsanitize=undefined" for
+		the files/directories you want to check. Enabling this option
+		will get image size increased and performance decreased
+		significantly.
+
+config MM_UBSAN_OPTION
+	string "UBSan options"
+	depends on MM_UBSAN
+	default "-fsanitize=undefined"
+	---help---
+		This option activates specified UBSan instrumentation. Please
+		refer to https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html
+		for available options.
+
+config MM_UBSAN_TRAP_ON_ERROR
+	bool "Enable UBSan trap on error to crash immediately"
+	depends on MM_UBSAN
+	default y
+	---help---
+		The undefined instruction trap should cause your program to crash,
+		save the code space significantly.
+
 config MM_FILL_ALLOCATIONS
 	bool "Fill allocations with debug value"
 	default n
@@ -172,10 +246,27 @@ config MM_FILL_ALLOCATIONS
 		Fill all malloc() allocations with 0xAA. This helps
 		detecting uninitialized variable errors.
 
-config MM_CIRCBUF
-	bool "Circular buffer support"
-	default n
+config MM_BACKTRACE
+	int "The depth of backtrace"
+	default -1
 	---help---
-		Build in support for the circular buffer management.
+		Config the depth of backtrace in memory block by specified this
+		config: disable backtrace by -1, only record pid info by zero and
+		enable record backtrace info by 8(fixed depth).
+
+config MM_BACKTRACE_DEFAULT
+	bool "Enable the backtrace record by default"
+	default n
+	depends on MM_BACKTRACE > 0
+
+config MM_DUMP_ON_FAILURE
+	bool "Dump heap info on allocation failure"
+	default n
+	depends on DEBUG_MM
+
+config MM_PANIC_ON_FAILURE
+	bool "Panic on allocation failure"
+	default n
+	depends on DEBUG_MM
 
 source "mm/iob/Kconfig"

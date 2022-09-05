@@ -497,7 +497,7 @@ static inline void rcc_enableapb1(void)
   regval |= RCC_APB1ENR1_I2C2EN;
 #endif
 
-#if defined(CONFIG_STM32_USB)
+#if defined(CONFIG_STM32_USB) || defined(CONFIG_STM32_USBFS)
   regval |= RCC_APB1ENR1_USBEN;
 #endif
 
@@ -952,6 +952,15 @@ static void stm32_stdclockconfig(void)
   regval &= ~(RCC_CFGR_PPRE1_MASK | RCC_CFGR_PPRE2_MASK);
   regval |= (STM32_RCC_CFGR_PPRE1 | STM32_RCC_CFGR_PPRE2);
   putreg32(regval, STM32_RCC_CFGR);
+
+  /* Configure FDCAN source clock */
+
+#if defined(STM32_CCIPR_FDCANSRC)
+  regval = getreg32(STM32_RCC_CCIPR);
+  regval &= ~RCC_CCIPR_FDCANSEL_MASK;
+  regval |= STM32_CCIPR_FDCANSRC;
+  putreg32(regval, STM32_RCC_CCIPR);
+#endif
 }
 
 /****************************************************************************

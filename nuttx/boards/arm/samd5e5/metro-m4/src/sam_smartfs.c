@@ -30,7 +30,7 @@
 #include <errno.h>
 #include <debug.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include <arch/board/board.h>
 
@@ -53,8 +53,8 @@
 
 #ifdef CONFIG_FS_SMARTFS
   int ret;
-  FAR struct mtd_dev_s *mtd;
-  FAR struct mtd_geometry_s geo;
+  struct mtd_dev_s *mtd;
+  struct mtd_geometry_s geo;
 #endif
 
 #if defined(CONFIG_MTD_PARTITION_NAMES)
@@ -100,8 +100,8 @@ int sam_smartfs_initialize(void)
       int erasesize;
       const char *partstring = "256";
       const char *ptr;
-      FAR struct mtd_dev_s *mtd_part;
-      char  partref[4];
+      struct mtd_dev_s *mtd_part;
+      char  partref[16];
 
       /* Now create a partition on the FLASH device */
 
@@ -160,7 +160,7 @@ int sam_smartfs_initialize(void)
                    */
 
             #if defined(CONFIG_MTD_SMART) && defined(CONFIG_FS_SMARTFS)
-                      sprintf(partref, "p%d", partno);
+                      snprintf(partref, sizeof(partref), "p%d", partno);
                       smart_initialize(0, mtd_part, partref);
             #endif
                 }

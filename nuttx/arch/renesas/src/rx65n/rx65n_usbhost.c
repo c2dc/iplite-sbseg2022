@@ -31,6 +31,7 @@
 #include <unistd.h>
 #include <semaphore.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -49,9 +50,7 @@
 
 #include <arch/board/board.h>
 
-#include "up_arch.h"
 #include "up_internal.h"
-
 #include "chip.h"
 #include "rx65n_usbhost.h"
 
@@ -249,12 +248,12 @@ struct rx65n_usbhost_list_s
   /* Variable length buffer data follows */
 };
 
-struct rx65n_usbhost_ed_s  __attribute__ ((aligned (32)));
-struct rx65n_usbhost_gtd_s  __attribute__ ((aligned (32)));
+struct rx65n_usbhost_ed_s  aligned_data(32);
+struct rx65n_usbhost_gtd_s  aligned_data(32);
 
 /* This must be aligned to a 256-byte boundary */
 
-static struct ohci_hcca_s g_hcca        __attribute__ ((aligned (256)));
+static struct ohci_hcca_s g_hcca        aligned_data(256);
 static struct ohci_hcca_s *HCCA;
 
 static struct rx65n_usbhost_gtd_s       *TDTAIL;
@@ -840,7 +839,7 @@ uint16_t hw_usb_hread_devadd (uint16_t devsel)
   if (devadr > USB_MAXDEVADDR)
     {
       uerr("ERROR: device address %d is more than max device \
-            address. \n", devadd);
+            address.\n", devadd);
       return -ENODEV;
     }
   else
@@ -2764,7 +2763,7 @@ void usb_hstd_buf_to_fifo (uint8_t *buffer, size_t buflen, uint16_t pipe,
 
       /* FIFO access error */
 
-      syslog (LOG_INFO, "### FIFO access error \n");
+      syslog (LOG_INFO, "### FIFO access error\n");
       usb_hstd_forced_termination(pipe, (uint16_t) USB_DATA_ERR);
       break;
 
@@ -3926,7 +3925,7 @@ static uint16_t usb_cstd_is_set_frdy (uint16_t pipe, uint16_t fifosel,
 
       buffer = hw_usb_read_syscfg();
       buffer = hw_usb_read_syssts();
-      (void)nxsig_usleep(1);
+      nxsig_usleep(1);
     }
 
   return (RX65N_USB_FIFO_ERROR);
@@ -5035,7 +5034,7 @@ static inline void rx65n_usbhost_edfree(struct rx65n_usbhost_ed_s *ed)
 static struct rx65n_usbhost_gtd_s *rx65n_usbhost_tdalloc(uint8_t ep_num)
 {
   /* Currently each TD would associate with one EP. So the ep_numb is
-   * passed to tdalloc fucntion and it would return the TD with this,
+   * passed to tdalloc function and it would return the TD with this,
    * there is no need to free this
    */
 
@@ -5687,7 +5686,7 @@ static int rx65n_usbhost_enqueuetd(struct rx65n_usbhost_s *priv,
   /* Allocate a TD from the free list */
 
   /* Currently each TD would associate with one EP. So the epnumb
-   * is passed to tdalloc fucntion and it would return the TD with
+   * is passed to tdalloc function and it would return the TD with
    * this, there is no need to free this - there is no need
    */
 
@@ -6214,7 +6213,7 @@ static void rx65n_usbhost_bottomhalf (void *arg)
         {
           /* Yes.. connected. */
 
-          connected_times ++;
+          connected_times++;
           syslog (LOG_INFO, "NuttX: USB Device Connected. %d\n",
                   connected_times);
           priv->connected = true;
@@ -6323,7 +6322,7 @@ static void rx65n_usbhost_bottomhalf (void *arg)
 
   else
     {
-      (void)nxsig_usleep(100);
+      nxsig_usleep(100);
       uwarn("WARNING: un known bottomhalf. Value is %d\n",
          bottom_half_processing);
       syslog (LOG_INFO, "WARNING: un known bottomhalf. Value is %d\n",
@@ -6481,13 +6480,13 @@ static int rx65n_usbhost_rh_enumerate(struct usbhost_connection_s *conn,
 
   /* USB 2.0 spec says at least 50ms delay before port reset */
 
-  (void)nxsig_usleep(100 * 1000);
+  nxsig_usleep(100 * 1000);
 
   /* Put RH port 1 in reset.
    * Currently supporting only single downstream port)
    */
 
-  (void)nxsig_usleep(200 * 1000);
+  nxsig_usleep(200 * 1000);
   return OK;
 }
 
@@ -6729,7 +6728,7 @@ static int rx65n_usbhost_epalloc(struct usbhost_driver_s *drvr,
 
       /* Note down the pipe number for reference */
 
-      ed ->pipenum = pipe_num;
+      ed->pipenum = pipe_num;
 
       /* Get the direction of the endpoint.  For control endpoints, the
        * direction is in the TD.
@@ -7208,7 +7207,7 @@ static int rx65n_usbhost_ctrlout(struct usbhost_driver_s *drvr,
   static int dev_addressed_state = 0;
 
   /* Assumption : This control out is called first time for
-   * set address command. Just reseting the bus after the
+   * set address command. Just resetting the bus after the
    * set address command
    */
 
@@ -7614,7 +7613,7 @@ static ssize_t rx65n_usbhost_transfer(struct usbhost_driver_s *drvr,
 
         case TD_CC_DEVNOTRESPONDING:
           xfrinfo->wdhwait = false;
-          transfer_retry_count ++;
+          transfer_retry_count++;
           nbytes = -EBUSY;
           break;
 

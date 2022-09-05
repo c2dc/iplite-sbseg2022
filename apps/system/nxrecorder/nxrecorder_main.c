@@ -301,8 +301,8 @@ static int nxrecorder_cmd_resume(FAR struct nxrecorder_s *precorder,
 static int nxrecorder_cmd_device(FAR struct nxrecorder_s *precorder,
                                  FAR char *parg)
 {
-  int     ret;
-  char    path[32];
+  int  ret;
+  char path[PATH_MAX];
 
   /* First try to open the file directly */
 
@@ -484,9 +484,9 @@ int main(int argc, FAR char *argv[])
       /* Read a line from the terminal */
 
       len = readline(buffer, sizeof(buffer), stdin, stdout);
-      buffer[len] = '\0';
       if (len > 0)
         {
+          buffer[len] = '\0';
           if (strncmp(buffer, "!", 1) != 0)
             {
               /* nxrecorder command */

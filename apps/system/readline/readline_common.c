@@ -1,36 +1,20 @@
 /****************************************************************************
  * apps/system/readline/readline_common.c
  *
- *   Copyright (C) 2007-2008, 2011-2013, 2015 Gregory Nutt.
- *     All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -83,7 +67,9 @@ struct cmdhist_s
 
 /* <esc>[K is the VT100 command erases to the end of the line. */
 
+#ifdef CONFIG_READLINE_ECHO
 static const char g_erasetoeol[] = VT100_CLEAREOL;
+#endif
 
 #ifdef CONFIG_READLINE_TABCOMPLETION
 /* Prompt string to present at the beginning of the line */
@@ -290,19 +276,19 @@ static void tab_completion(FAR struct rl_common_s *vtbl, char *buf,
 
               if (tmp_name[0] == '\0')
                 {
-                  strncpy(tmp_name, name, sizeof(tmp_name) - 1);
+                  strlcpy(tmp_name, name, sizeof(tmp_name));
                 }
 
               RL_PUTC(vtbl, ' ');
               RL_PUTC(vtbl, ' ');
 
-              for (j = 0; j < strlen(name); j++)
+              for (j = 0; j < (int)strlen(name); j++)
                 {
                   /* Removing characters that aren't common to all the
                    * matches.
                    */
 
-                  if (j < sizeof(tmp_name) && name[j] != tmp_name[j])
+                  if (j < (int)sizeof(tmp_name) && name[j] != tmp_name[j])
                     {
                       tmp_name[j] = '\0';
                     }
@@ -325,7 +311,7 @@ static void tab_completion(FAR struct rl_common_s *vtbl, char *buf,
 
               if (tmp_name[0] == '\0')
                 {
-                  strncpy(tmp_name, name, sizeof(tmp_name) - 1);
+                  strlcpy(tmp_name, name, sizeof(tmp_name));
                 }
 
               RL_PUTC(vtbl, ' ');
@@ -357,7 +343,7 @@ static void tab_completion(FAR struct rl_common_s *vtbl, char *buf,
 
           if (g_readline_prompt != NULL)
             {
-              for (i = 0; i < strlen(g_readline_prompt); i++)
+              for (i = 0; i < (int)strlen(g_readline_prompt); i++)
                 {
                   RL_PUTC(vtbl, g_readline_prompt[i]);
                 }
@@ -617,6 +603,8 @@ ssize_t readline_common(FAR struct rl_common_s *vtbl, FAR char *buf,
                           buf[nch++] = g_cmdhist.buf[idx][i];
                           RL_PUTC(vtbl, g_cmdhist.buf[idx][i]);
                         }
+
+                      buf[nch] = '\0';
                     }
                 }
 #endif /* CONFIG_READLINE_CMD_HISTORY */
@@ -698,7 +686,7 @@ ssize_t readline_common(FAR struct rl_common_s *vtbl, FAR char *buf,
                * buffer, don't save it again.
                */
 
-              if (strncmp(buf, g_cmdhist.buf[g_cmdhist.head], nch) != 0)
+              if (strncmp(buf, g_cmdhist.buf[g_cmdhist.head], nch + 1) != 0)
                 {
                   g_cmdhist.head = (g_cmdhist.head + 1) % RL_CMDHIST_LEN;
 
@@ -708,13 +696,14 @@ ssize_t readline_common(FAR struct rl_common_s *vtbl, FAR char *buf,
                     }
 
                   g_cmdhist.buf[g_cmdhist.head][i] = '\0';
-                  g_cmdhist.offset = 1;
 
                   if (g_cmdhist.len < RL_CMDHIST_LEN)
                     {
                       g_cmdhist.len++;
                     }
                 }
+
+              g_cmdhist.offset = 1;
             }
 #endif /* CONFIG_READLINE_CMD_HISTORY */
 

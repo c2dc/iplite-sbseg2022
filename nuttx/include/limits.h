@@ -60,7 +60,7 @@
  * the correct value.
  */
 
-#define MB_LEN_MAX            1
+#define MB_LEN_MAX            4
 
 /* Configurable limits required by POSIX ****************************************
  *
@@ -201,8 +201,13 @@
 #define MAX_CANON      _POSIX_MAX_CANON
 #define MAX_INPUT      _POSIX_MAX_INPUT
 #define NAME_MAX       _POSIX_NAME_MAX
+#define TTY_NAME_MAX   _POSIX_NAME_MAX
 #define NGROUPS_MAX    _POSIX_NGROUPS_MAX
-#define OPEN_MAX       _POSIX_OPEN_MAX
+#if CONFIG_LIBC_OPEN_MAX < _POSIX_OPEN_MAX
+#  define OPEN_MAX     _POSIX_OPEN_MAX
+#else
+#  define OPEN_MAX     CONFIG_LIBC_OPEN_MAX
+#endif
 #define PATH_MAX       _POSIX_PATH_MAX
 #define PIPE_BUF       _POSIX_PIPE_BUF
 #define SIZE_MAX       _POSIX_SIZE_MAX
@@ -276,10 +281,10 @@
 #define NL_TEXTMAX _POSIX2_LINE_MAX
 
 /* NZERO
- *   Default process priority. Minimum Acceptable Value: 20
+ *   Default process priority. Minimum Acceptable Value: 128
  */
 
-#define NZERO 20
+#define NZERO 128
 
 /* Required for asynchronous I/O */
 
@@ -301,5 +306,7 @@
 /* There really is no upper limit on the number of vectors */
 
 #define IOV_MAX        INT_MAX
+
+#define HOST_NAME_MAX  32
 
 #endif /* __INCLUDE_LIMITS_H */

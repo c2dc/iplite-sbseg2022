@@ -1,38 +1,20 @@
 /****************************************************************************
  * arch/arm/src/stm32h7/stm32_pwm.h
  *
- *   Copyright (C) 2011, 2015 Gregory Nutt. All rights reserved.
- *   Copyright (C) 2015 Omni Hoverboards Inc. All rights reserved.
- *   Authors: Gregory Nutt <gnutt@nuttx.org>
- *            Paul Alexander Patience <paul-a.patience@polymtl.ca>
- *            Mateusz Szafoni <raiden00@railab.me>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -813,39 +795,39 @@
  */
 
 #define PWM_SETUP(dev)                                                             \
-        (dev)->ops->setup((FAR struct pwm_lowerhalf_s *)dev)
+        (dev)->ops->setup((struct pwm_lowerhalf_s *)dev)
 #define PWM_SHUTDOWN(dev)                                                          \
-        (dev)->ops->shutdown((FAR struct pwm_lowerhalf_s *)dev)
+        (dev)->ops->shutdown((struct pwm_lowerhalf_s *)dev)
 #define PWM_CCR_UPDATE(dev, index, ccr)                                            \
-        (dev)->llops->ccr_update((FAR struct pwm_lowerhalf_s *)dev, index, ccr)
+        (dev)->llops->ccr_update((struct pwm_lowerhalf_s *)dev, index, ccr)
 #define PWM_MODE_UPDATE(dev, index, mode)                                          \
-        (dev)->llops->mode_update((FAR struct pwm_lowerhalf_s *)dev, index, mode)
+        (dev)->llops->mode_update((struct pwm_lowerhalf_s *)dev, index, mode)
 #define PWM_CCR_GET(dev, index)                                                    \
-        (dev)->llops->ccr_get((FAR struct pwm_lowerhalf_s *)dev, index)
+        (dev)->llops->ccr_get((struct pwm_lowerhalf_s *)dev, index)
 #define PWM_ARR_UPDATE(dev, arr)                                                   \
-        (dev)->llops->arr_update((FAR struct pwm_lowerhalf_s *)dev, arr)
+        (dev)->llops->arr_update((struct pwm_lowerhalf_s *)dev, arr)
 #define PWM_ARR_GET(dev)                                                           \
-        (dev)->llops->arr_get((FAR struct pwm_lowerhalf_s *)dev)
+        (dev)->llops->arr_get((struct pwm_lowerhalf_s *)dev)
 #define PWM_OUTPUTS_ENABLE(dev, out, state)                                        \
-        (dev)->llops->outputs_enable((FAR struct pwm_lowerhalf_s *)dev, out, state)
+        (dev)->llops->outputs_enable((struct pwm_lowerhalf_s *)dev, out, state)
 #define PWM_SOFT_UPDATE(dev)                                                       \
-        (dev)->llops->soft_update((FAR struct pwm_lowerhalf_s *)dev)
+        (dev)->llops->soft_update((struct pwm_lowerhalf_s *)dev)
 #define PWM_CONFIGURE(dev)                                                         \
-        (dev)->llops->configure((FAR struct pwm_lowerhalf_s *)dev)
+        (dev)->llops->configure((struct pwm_lowerhalf_s *)dev)
 #define PWM_SOFT_BREAK(dev, state)                                                 \
-        (dev)->llops->soft_break((FAR struct pwm_lowerhalf_s *)dev, state)
+        (dev)->llops->soft_break((struct pwm_lowerhalf_s *)dev, state)
 #define PWM_FREQ_UPDATE(dev, freq)                                                 \
-        (dev)->llops->freq_update((FAR struct pwm_lowerhalf_s *)dev, freq)
+        (dev)->llops->freq_update((struct pwm_lowerhalf_s *)dev, freq)
 #define PWM_TIM_ENABLE(dev, state)                                                 \
-        (dev)->llops->tim_enable((FAR struct pwm_lowerhalf_s *)dev, state)
+        (dev)->llops->tim_enable((struct pwm_lowerhalf_s *)dev, state)
 #ifdef CONFIG_DEBUG_PWM_INFO
 #  define PWM_DUMP_REGS(dev, msg)                                 \
-  (dev)->llops->dump_regs((FAR struct pwm_lowerhalf_s *)dev, msg)
+  (dev)->llops->dump_regs((struct pwm_lowerhalf_s *)dev, msg)
 #else
 #  define PWM_DUMP_REGS(dev, msg)
 #endif
 #define PWM_DT_UPDATE(dev, dt)                                                     \
-        (dev)->llops->dt_update((FAR struct pwm_lowerhalf_s *)dev, dt)
+        (dev)->llops->dt_update((struct pwm_lowerhalf_s *)dev, dt)
 
 #endif
 
@@ -953,11 +935,11 @@ struct stm32_pwm_dev_s
    * callback structure to be consistent with upper-half PWM driver.
    */
 
-  FAR const struct pwm_ops_s *ops;
+  const struct pwm_ops_s *ops;
 
   /* Publicly visible portion of the "lower-half" PWM driver structure */
 
-  FAR const struct stm32_pwm_ops_s *llops;
+  const struct stm32_pwm_ops_s *llops;
 
   /* Require cast-compatibility with private "lower-half" PWM structure */
 };
@@ -969,61 +951,61 @@ struct stm32_pwm_ops_s
 {
   /* Update CCR register */
 
-  int (*ccr_update)(FAR struct pwm_lowerhalf_s *dev,
+  int (*ccr_update)(struct pwm_lowerhalf_s *dev,
                     uint8_t index, uint32_t ccr);
 
   /* Update PWM mode */
 
-  int (*mode_update)(FAR struct pwm_lowerhalf_s *dev,
+  int (*mode_update)(struct pwm_lowerhalf_s *dev,
                      uint8_t index, uint32_t mode);
 
   /* Get CCR register */
 
-  uint32_t (*ccr_get)(FAR struct pwm_lowerhalf_s *dev, uint8_t index);
+  uint32_t (*ccr_get)(struct pwm_lowerhalf_s *dev, uint8_t index);
 
   /* Update ARR register */
 
-  int (*arr_update)(FAR struct pwm_lowerhalf_s *dev, uint32_t arr);
+  int (*arr_update)(struct pwm_lowerhalf_s *dev, uint32_t arr);
 
   /* Get ARR register */
 
-  uint32_t (*arr_get)(FAR struct pwm_lowerhalf_s *dev);
+  uint32_t (*arr_get)(struct pwm_lowerhalf_s *dev);
 
   /* Enable outputs */
 
-  int (*outputs_enable)(FAR struct pwm_lowerhalf_s *dev, uint16_t outputs,
+  int (*outputs_enable)(struct pwm_lowerhalf_s *dev, uint16_t outputs,
                         bool state);
 
   /* Software update */
 
-  int (*soft_update)(FAR struct pwm_lowerhalf_s *dev);
+  int (*soft_update)(struct pwm_lowerhalf_s *dev);
 
   /* PWM configure */
 
-  int (*configure)(FAR struct pwm_lowerhalf_s *dev);
+  int (*configure)(struct pwm_lowerhalf_s *dev);
 
   /* Software break */
 
-  int (*soft_break)(FAR struct pwm_lowerhalf_s *dev, bool state);
+  int (*soft_break)(struct pwm_lowerhalf_s *dev, bool state);
 
   /* Update frequency */
 
-  int (*freq_update)(FAR struct pwm_lowerhalf_s *dev, uint32_t frequency);
+  int (*freq_update)(struct pwm_lowerhalf_s *dev, uint32_t frequency);
 
   /* Enable timer counter */
 
-  int (*tim_enable)(FAR struct pwm_lowerhalf_s *dev, bool state);
+  int (*tim_enable)(struct pwm_lowerhalf_s *dev, bool state);
 
 #ifdef CONFIG_DEBUG_PWM_INFO
   /* Dump timer registers */
 
-  void (*dump_regs)(FAR struct pwm_lowerhalf_s *dev, FAR const char *msg);
+  void (*dump_regs)(struct pwm_lowerhalf_s *dev, const char *msg);
 #endif
 
 #ifdef HAVE_PWM_COMPLEMENTARY
   /* Deadtime update */
 
-  int (*dt_update)(FAR struct pwm_lowerhalf_s *dev, uint8_t dt);
+  int (*dt_update)(struct pwm_lowerhalf_s *dev, uint8_t dt);
 #endif
 };
 
@@ -1065,7 +1047,7 @@ extern "C"
  *
  ****************************************************************************/
 
-FAR struct pwm_lowerhalf_s *stm32_pwminitialize(int timer);
+struct pwm_lowerhalf_s *stm32_pwminitialize(int timer);
 
 #undef EXTERN
 #if defined(__cplusplus)

@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -42,9 +43,7 @@
 
 #include <arch/irq.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "sam_periphclks.h"
 #include "hardware/sam_udp.h"
 #include "sam_udp.h"
@@ -376,7 +375,7 @@ static void   sam_ep0_setup(struct sam_usbdev_s *priv);
 static void   sam_ep_bankinterrupt(struct sam_usbdev_s *priv,
                 struct sam_ep_s *privep, uint32_t csr, int bank);
 static void   sam_ep_interrupt(struct sam_usbdev_s *priv, int epno);
-static int    sam_udp_interrupt(int irq, void *context, FAR void *arg);
+static int    sam_udp_interrupt(int irq, void *context, void *arg);
 
 /* Endpoint helpers *********************************************************/
 
@@ -422,7 +421,7 @@ static void   sam_freeep(struct usbdev_s *dev, struct usbdev_ep_s *ep);
 static int    sam_getframe(struct usbdev_s *dev);
 static int    sam_wakeup(struct usbdev_s *dev);
 static int    sam_selfpowered(struct usbdev_s *dev, bool selfpowered);
-static int    sam_pullup(FAR struct usbdev_s *dev,  bool enable);
+static int    sam_pullup(struct usbdev_s *dev,  bool enable);
 
 /* Initialization/Reset *****************************************************/
 
@@ -2235,7 +2234,7 @@ static void sam_ep_interrupt(struct sam_usbdev_s *priv, int epno)
  *
  ****************************************************************************/
 
-static int sam_udp_interrupt(int irq, void *context, FAR void *arg)
+static int sam_udp_interrupt(int irq, void *context, void *arg)
 {
   /* For now there is only one USB controller, but we will always refer to
    * it using a pointer to make any future ports to multiple UDP controllers
@@ -3593,7 +3592,7 @@ static int sam_selfpowered(struct usbdev_s *dev, bool selfpowered)
  *
  ****************************************************************************/
 
-static int sam_pullup(FAR struct usbdev_s *dev, bool enable)
+static int sam_pullup(struct usbdev_s *dev, bool enable)
 {
   struct sam_usbdev_s *priv = (struct sam_usbdev_s *)dev;
   uint32_t regval;

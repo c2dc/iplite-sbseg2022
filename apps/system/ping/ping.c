@@ -1,35 +1,20 @@
 /****************************************************************************
  * apps/system/ping/ping.c
  *
- *   Copyright (C) 2017-2018 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -38,12 +23,15 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include <nuttx/clock.h>
 
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
+#include <limits.h>
+#include <fixedmath.h>
 
 #include "netutils/icmp_ping.h"
 
@@ -55,6 +43,19 @@
 
 #define ICMP_NPINGS        10    /* Default number of pings */
 #define ICMP_POLL_DELAY    1000  /* 1 second in milliseconds */
+
+/****************************************************************************
+ * Private Types
+ ****************************************************************************/
+
+struct ping_priv_s
+{
+  int code;                      /* Notice code ICMP_I/E/W_XXX */
+  long tmin;                     /* Minimum round trip time */
+  long tmax;                     /* Maximum round trip time */
+  long long tsum;                /* Sum of all times, for doing average */
+  long long tsum2;               /* Sum2 is the sum of the squares of sum ,for doing mean deviation */
+};
 
 /****************************************************************************
  * Private Functions
@@ -105,6 +106,13 @@ static void show_usage(FAR const char *progname, int exitcode)
 
 static void ping_result(FAR const struct ping_result_s *result)
 {
+  FAR struct ping_priv_s *priv = result->info->priv;
+
+  if (result->code < 0)
+    {
+      priv->code = result->code;
+    }
+
   switch (result->code)
     {
       case ICMP_E_HOSTIP:
@@ -117,7 +125,7 @@ static void ping_result(FAR const struct ping_result_s *result)
         break;
 
       case ICMP_E_SOCKET:
-        fprintf(stderr, "ERROR: socket() failed: %d\n", result->extra);
+        fprintf(stderr, "ERROR: socket() failed: %ld\n", result->extra);
         break;
 
       case ICMP_I_BEGIN:
@@ -130,21 +138,21 @@ static void ping_result(FAR const struct ping_result_s *result)
         break;
 
       case ICMP_E_SENDTO:
-        fprintf(stderr, "ERROR: sendto failed at seqno %u: %d\n",
+        fprintf(stderr, "ERROR: sendto failed at seqno %u: %ld\n",
                 result->seqno, result->extra);
         break;
 
       case ICMP_E_SENDSMALL:
-        fprintf(stderr, "ERROR: sendto returned %d, expected %u\n",
+        fprintf(stderr, "ERROR: sendto returned %ld, expected %u\n",
                 result->extra, result->outsize);
         break;
 
       case ICMP_E_POLL:
-        fprintf(stderr, "ERROR: poll failed: %d\n", result->extra);
+        fprintf(stderr, "ERROR: poll failed: %ld\n", result->extra);
         break;
 
       case ICMP_W_TIMEOUT:
-        printf("No response from %u.%u.%u.%u: icmp_seq=%u time=%d ms\n",
+        printf("No response from %u.%u.%u.%u: icmp_seq=%u time=%ld ms\n",
                (unsigned int)(result->dest.s_addr) & 0xff,
                (unsigned int)(result->dest.s_addr >> 8) & 0xff,
                (unsigned int)(result->dest.s_addr >> 16) & 0xff,
@@ -153,23 +161,23 @@ static void ping_result(FAR const struct ping_result_s *result)
         break;
 
       case ICMP_E_RECVFROM:
-        fprintf(stderr, "ERROR: recvfrom failed: %d\n", result->extra);
+        fprintf(stderr, "ERROR: recvfrom failed: %ld\n", result->extra);
         break;
 
       case ICMP_E_RECVSMALL:
-        fprintf(stderr, "ERROR: short ICMP packet: %d\n", result->extra);
+        fprintf(stderr, "ERROR: short ICMP packet: %ld\n", result->extra);
         break;
 
       case ICMP_W_IDDIFF:
         fprintf(stderr,
-                "WARNING: Ignoring ICMP reply with ID %d.  "
+                "WARNING: Ignoring ICMP reply with ID %ld.  "
                 "Expected %u\n",
                 result->extra, result->id);
         break;
 
       case ICMP_W_SEQNOBIG:
         fprintf(stderr,
-                "WARNING: Ignoring ICMP reply to sequence %d.  "
+                "WARNING: Ignoring ICMP reply to sequence %ld.  "
                 "Expected <= %u\n",
                 result->extra, result->seqno);
         break;
@@ -179,19 +187,32 @@ static void ping_result(FAR const struct ping_result_s *result)
         break;
 
       case ICMP_I_ROUNDTRIP:
-        printf("%u bytes from %u.%u.%u.%u: icmp_seq=%u time=%d ms\n",
+        priv->tsum += result->extra;
+        priv->tsum2 += (long long)result->extra * result->extra;
+        if (result->extra < priv->tmin)
+          {
+            priv->tmin = result->extra;
+          }
+
+        if (result->extra > priv->tmax)
+          {
+            priv->tmax = result->extra;
+          }
+
+        printf("%u bytes from %u.%u.%u.%u: icmp_seq=%u time=%ld.%ld ms\n",
                result->info->datalen,
                (unsigned int)(result->dest.s_addr) & 0xff,
                (unsigned int)(result->dest.s_addr >> 8) & 0xff,
                (unsigned int)(result->dest.s_addr >> 16) & 0xff,
                (unsigned int)(result->dest.s_addr >> 24) & 0xff,
-               result->seqno, result->extra);
+               result->seqno, result->extra / USEC_PER_MSEC,
+               result->extra % USEC_PER_MSEC / MSEC_PER_DSEC);
         break;
 
       case ICMP_W_RECVBIG:
         fprintf(stderr,
                 "WARNING: Ignoring ICMP reply with different payload "
-                "size: %d vs %u\n",
+                "size: %ld vs %u\n",
                 result->extra, result->outsize);
         break;
 
@@ -200,7 +221,7 @@ static void ping_result(FAR const struct ping_result_s *result)
         break;
 
       case ICMP_W_TYPE:
-        fprintf(stderr, "WARNING: ICMP packet with unknown type: %d\n",
+        fprintf(stderr, "WARNING: ICMP packet with unknown type: %ld\n",
                 result->extra);
         break;
 
@@ -216,8 +237,32 @@ static void ping_result(FAR const struct ping_result_s *result)
                    result->nrequests;
 
             printf("%u packets transmitted, %u received, %u%% packet loss, "
-                   "time %d ms\n",
-                   result->nrequests, result->nreplies, tmp, result->extra);
+                   "time %ld ms\n",
+                   result->nrequests, result->nreplies, tmp,
+                   result->extra / USEC_PER_MSEC);
+            if (result->nreplies > 0)
+              {
+                long avg = 0;
+                long long tempnum = 0;
+                long tmdev = 0;
+
+                if (priv->tsum > 0)
+                  {
+                    avg = priv->tsum / result->nreplies;
+                    tempnum = priv->tsum2 / result->nreplies -
+                              (long long)avg * avg;
+                    tmdev = ub16toi(ub32sqrtub16(uitoub32(tempnum)));
+                  }
+
+                printf("rtt min/avg/max/mdev = %ld.%03ld/%ld.%03ld/"
+                       "%ld.%03ld/%ld.%03ld ms\n",
+                       priv->tmin / USEC_PER_MSEC,
+                       priv->tmin % USEC_PER_MSEC,
+                       avg / USEC_PER_MSEC, avg % USEC_PER_MSEC,
+                       priv->tmax / USEC_PER_MSEC,
+                       priv->tmax % USEC_PER_MSEC,
+                       tmdev / USEC_PER_MSEC, tmdev % USEC_PER_MSEC);
+              }
           }
         break;
     }
@@ -230,6 +275,7 @@ static void ping_result(FAR const struct ping_result_s *result)
 int main(int argc, FAR char *argv[])
 {
   struct ping_info_s info;
+  struct ping_priv_s priv;
   FAR char *endptr;
   int exitcode;
   int option;
@@ -239,6 +285,12 @@ int main(int argc, FAR char *argv[])
   info.delay     = ICMP_POLL_DELAY;
   info.timeout   = ICMP_POLL_DELAY;
   info.callback  = ping_result;
+  info.priv      = &priv;
+  priv.code      = ICMP_I_OK;
+  priv.tmin      = LONG_MAX;
+  priv.tmax      = 0;
+  priv.tsum      = 0;
+  priv.tsum2     = 0;
 
   /* Parse command line options */
 
@@ -329,7 +381,7 @@ int main(int argc, FAR char *argv[])
 
   info.hostname = argv[optind];
   icmp_ping(&info);
-  return EXIT_SUCCESS;
+  return priv.code < 0 ? EXIT_FAILURE: EXIT_SUCCESS;
 
 errout_with_usage:
   optind = 0;

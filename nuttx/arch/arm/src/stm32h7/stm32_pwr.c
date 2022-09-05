@@ -27,10 +27,11 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 
 #include "barriers.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32_pwr.h"
 #include "stm32_gpio.h"
 

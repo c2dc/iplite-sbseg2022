@@ -29,7 +29,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "nvic.h"
 
 /****************************************************************************
@@ -53,7 +53,7 @@ void up_systemreset(void)
    */
 
   regval  = getreg32(NVIC_AIRCR) & NVIC_AIRCR_PRIGROUP_MASK;
-  regval |= ((0x5fa << NVIC_AIRCR_VECTKEY_SHIFT) | NVIC_AIRCR_SYSRESETREQ);
+  regval |= (NVIC_AIRCR_VECTKEY | NVIC_AIRCR_SYSRESETREQ);
   putreg32(regval, NVIC_AIRCR);
 
   /* Ensure completion of memory accesses */

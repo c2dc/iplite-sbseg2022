@@ -53,7 +53,6 @@ P.S. In some distros, `grub-mkrescue` is called `grub2-mkrescue`
 grub-mkrescue -o boot.iso iso
 ```
 
-
 QEMU/KVM
 ====
 
@@ -98,10 +97,10 @@ Here are some links (which will probably be mostly outdated by the time your rea
   Home Page:     http://bochs.sourceforge.net
 
 The bochs can be build from source.
-Unlike qemu, it do not rely on KVM to support modern hardware features, therefor it can
-also be used under windows.
+Unlike qemu, it does not rely on KVM to support modern hardware features, therefore it can
+also be used under Windows.
 When building bochs, remember to enable x86-64 support with "--enable-x86-64".
-If you also want the support of SIMD instruction, enable them with "--enable-avx --enable-evex".
+If you also want support for SIMD instructions, enable them with "--enable-avx --enable-evex".
 
 Running Bochs
 ------------
@@ -131,7 +130,6 @@ Running Bochs
   The emulator will drop into debugger mode.
   Enter 'c' to start the emulation.
   COM port output will be in the com1.out file.
-
 
 Real machine
 ============

@@ -37,7 +37,7 @@
 
 #include <nuttx/mqueue.h>
 
-#if CONFIG_MQ_MAXMSGSIZE > 0
+#if defined(CONFIG_MQ_MAXMSGSIZE) && CONFIG_MQ_MAXMSGSIZE > 0
 
 /********************************************************************************
  * Pre-processor Definitions
@@ -62,15 +62,15 @@ enum mqalloc_e
 
 struct mqueue_msg_s
 {
-  FAR struct mqueue_msg_s *next;  /* Forward link to next message */
-  uint8_t type;                   /* (Used to manage allocations) */
-  uint8_t priority;               /* priority of message */
+  struct list_node node;   /* Link node to message */
+  uint8_t type;            /* (Used to manage allocations) */
+  uint8_t priority;        /* Priority of message */
 #if MQ_MAX_BYTES < 256
-  uint8_t msglen;                 /* Message data length */
+  uint8_t msglen;          /* Message data length */
 #else
-  uint16_t msglen;                /* Message data length */
+  uint16_t msglen;         /* Message data length */
 #endif
-  char mail[MQ_MAX_BYTES];        /* Message data */
+  char mail[MQ_MAX_BYTES]; /* Message data */
 };
 
 /********************************************************************************
@@ -89,13 +89,13 @@ extern "C"
  * The number of messages in this list is a system configuration item.
  */
 
-EXTERN sq_queue_t  g_msgfree;
+EXTERN struct list_node g_msgfree;
 
-/* The g_msgfreeInt is a list of messages that are reserved for use by
+/* The g_msgfreeirq is a list of messages that are reserved for use by
  * interrupt handlers.
  */
 
-EXTERN sq_queue_t  g_msgfreeirq;
+EXTERN struct list_node g_msgfreeirq;
 
 /********************************************************************************
  * Public Function Prototypes
@@ -106,7 +106,7 @@ struct task_group_s; /* Forward reference */
 
 /* Functions defined in mq_initialize.c *****************************************/
 
-void weak_function nxmq_initialize(void);
+void nxmq_initialize(void);
 void nxmq_free_msg(FAR struct mqueue_msg_s *mqmsg);
 
 /* mq_waitirq.c *****************************************************************/
@@ -115,18 +115,25 @@ void nxmq_wait_irq(FAR struct tcb_s *wtcb, int errcode);
 
 /* mq_rcvinternal.c *************************************************************/
 
-int nxmq_verify_receive(FAR struct mqueue_inode_s *msgq,
-                        int oflags, FAR char *msg, size_t msglen);
+#ifdef CONFIG_DEBUG_FEATURES
+int nxmq_verify_receive(FAR struct file *mq, FAR char *msg, size_t msglen);
+#else
+# define nxmq_verify_receive(msgq, msg, msglen) OK
+#endif
 int nxmq_wait_receive(FAR struct mqueue_inode_s *msgq,
                       int oflags, FAR struct mqueue_msg_s **rcvmsg);
 ssize_t nxmq_do_receive(FAR struct mqueue_inode_s *msgq,
                         FAR struct mqueue_msg_s *mqmsg,
-                        FAR char *ubuffer, unsigned int *prio);
+                        FAR char *ubuffer, FAR unsigned int *prio);
 
 /* mq_sndinternal.c *************************************************************/
 
-int nxmq_verify_send(FAR struct mqueue_inode_s *msgq, int oflags,
-                     FAR const char *msg, size_t msglen, unsigned int prio);
+#ifdef CONFIG_DEBUG_FEATURES
+int nxmq_verify_send(FAR struct file *mq, FAR const char *msg,
+                     size_t msglen, unsigned int prio);
+#else
+# define nxmq_verify_send(mq, msg, msglen, prio) OK
+#endif
 FAR struct mqueue_msg_s *nxmq_alloc_msg(void);
 int nxmq_wait_send(FAR struct mqueue_inode_s *msgq, int oflags);
 int nxmq_do_send(FAR struct mqueue_inode_s *msgq,
@@ -142,5 +149,5 @@ void nxmq_recover(FAR struct tcb_s *tcb);
 }
 #endif
 
-#endif /* CONFIG_MQ_MAXMSGSIZE > 0 */
+#endif /* defined(CONFIG_MQ_MAXMSGSIZE) && CONFIG_MQ_MAXMSGSIZE > 0 */
 #endif /* __SCHED_MQUEUE_MQUEUE_H */

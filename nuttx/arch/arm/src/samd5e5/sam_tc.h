@@ -1,10 +1,6 @@
 /****************************************************************************
  * arch/arm/src/samd5e5/sam_tc.h
  *
- *   Copyright 2020 Falker Automacao Agricola LTDA.
- *   Author: Leomar Mateus Radke <leomar@falker.com.br>
- *   Author: Ricardo Wartchow <wartchow@gmail.com>
- *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.  The
@@ -231,7 +227,7 @@ tc_handler_t sam_tc_attach(TC_HANDLE handle, tc_handler_t handler,
  * Name: sam_tc_getpending
  *
  * Description:
- *   Return the current contents of the interrutp status register, clearing
+ *   Return the current contents of the interrupt status register, clearing
  *   all pending interrupts.
  *
  * Input Parameters:

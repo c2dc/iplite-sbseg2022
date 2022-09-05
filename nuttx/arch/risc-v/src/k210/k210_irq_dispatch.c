@@ -29,43 +29,34 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
-#include <nuttx/board.h>
-#include <arch/board/board.h>
+#include <sys/types.h>
 
-#include "riscv_arch.h"
 #include "riscv_internal.h"
-
 #include "group/group.h"
 
+#include "k210_memorymap.h"
+
 /****************************************************************************
- * Public Data
+ * Pre-processor Definitions
  ****************************************************************************/
 
-extern void up_fault(int irq, uint64_t *regs);
+#define RV_IRQ_MASK 59
 
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
 
 /****************************************************************************
- * k210_dispatch_irq
+ * riscv_dispatch_irq
  ****************************************************************************/
 
-void *k210_dispatch_irq(uint64_t vector, uint64_t *regs)
+void *riscv_dispatch_irq(uintptr_t vector, uintptr_t *regs)
 {
-  uint32_t  irq = (vector >> (27 + 32)) | (vector & 0xf);
-  uint64_t *mepc = regs;
-
-  /* Check if fault happened */
-
-  if (vector < K210_IRQ_ECALLU)
-    {
-      up_fault((int)irq, regs);
-    }
+  int irq = (vector >> RV_IRQ_MASK) | (vector & 0xf);
 
   /* Firstly, check if the irq is machine external interrupt */
 
-  if (K210_IRQ_MEXT == irq)
+  if (RISCV_IRQ_MEXT == irq)
     {
       uint32_t val = getreg32(K210_PLIC_CLAIM);
 
@@ -74,54 +65,25 @@ void *k210_dispatch_irq(uint64_t vector, uint64_t *regs)
       irq += val;
     }
 
-  /* NOTE: In case of ecall, we need to adjust mepc in the context */
-
-  if (K210_IRQ_ECALLM == irq || K210_IRQ_ECALLU == irq)
-    {
-      *mepc += 4;
-    }
-
   /* Acknowledge the interrupt */
 
   riscv_ack_irq(irq);
 
-#ifdef CONFIG_SUPPRESS_INTERRUPTS
-  PANIC();
-#else
-  /* Current regs non-zero indicates that we are processing an interrupt;
-   * CURRENT_REGS is also used to manage interrupt level context switches.
-   *
-   * Nested interrupts are not supported
-   */
-
-  ASSERT(CURRENT_REGS == NULL);
-  CURRENT_REGS = regs;
-
   /* MEXT means no interrupt */
 
-  if (K210_IRQ_MEXT != irq)
+  if (RISCV_IRQ_MEXT != irq)
     {
       /* Deliver the IRQ */
 
-      irq_dispatch(irq, regs);
+      regs = riscv_doirq(irq, regs);
     }
 
-  if (K210_IRQ_MEXT <= irq)
+  if (RISCV_IRQ_MEXT <= irq)
     {
       /* Then write PLIC_CLAIM to clear pending in PLIC */
 
-      putreg32(irq - K210_IRQ_MEXT, K210_PLIC_CLAIM);
+      putreg32(irq - RISCV_IRQ_MEXT, K210_PLIC_CLAIM);
     }
-#endif
-
-  /* If a context switch occurred while processing the interrupt then
-   * CURRENT_REGS may have change value.  If we return any value different
-   * from the input regs, then the lower level will know that a context
-   * switch occurred during interrupt processing.
-   */
-
-  regs = (uint64_t *)CURRENT_REGS;
-  CURRENT_REGS = NULL;
 
   return regs;
 }

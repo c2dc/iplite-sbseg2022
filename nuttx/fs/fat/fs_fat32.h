@@ -33,7 +33,6 @@
 #include <time.h>
 
 #include <nuttx/kmalloc.h>
-#include <nuttx/fs/dirent.h>
 #include <nuttx/semaphore.h>
 
 /****************************************************************************
@@ -653,19 +652,20 @@
 # define DIR_PUTFILESIZE(p,v)      fat_putuint32(UBYTE_PTR(p,DIR_FILESIZE),v)
 
 # ifdef CONFIG_FAT_LFN
-#  define LDIR_PUTWCHAR1(p)        fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR1_5),v)
-#  define LDIR_PUTWCHAR2(p)        fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR1_5+2),v)
-#  define LDIR_PUTWCHAR3(p)        fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR1_5+4),v)
-#  define LDIR_PUTWCHAR4(p)        fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR1_5+6),v)
-#  define LDIR_PUTWCHAR5(p)        fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR1_5+8),v)
-#  define LDIR_PUTWCHAR6(p)        fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11),v)
-#  define LDIR_PUTWCHAR7(p)        fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11+2),v)
-#  define LDIR_PUTWCHAR8(p)        fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11+4),v)
-#  define LDIR_PUTWCHAR9(p)        fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11+6),v)
-#  define LDIR_PUTWCHAR10(p)       fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11+8),v)
-#  define LDIR_PUTWCHAR11(p)       fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11+10),v)
-#  define LDIR_PUTWCHAR12(p)       fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR12_13),v)
-#  define LDIR_PUTWCHAR13(p)       fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR12_13+2),v)
+#  define LDIR_PUTWCHAR1(p,v)      fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR1_5),v)
+#  define LDIR_PUTWCHAR2(p,v)      fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR1_5+2),v)
+#  define LDIR_PUTWCHAR3(p,v)      fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR1_5+4),v)
+#  define LDIR_PUTWCHAR4(p,v)      fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR1_5+6),v)
+#  define LDIR_PUTWCHAR5(p,v)      fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR1_5+8),v)
+#  define LDIR_PUTWCHAR6(p,v)      fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11),v)
+#  define LDIR_PUTWCHAR7(p,v)      fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11+2),v)
+#  define LDIR_PUTWCHAR8(p,v)      fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11+4),v)
+#  define LDIR_PUTWCHAR9(p,v)      fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11+6),v)
+#  define LDIR_PUTWCHAR10(p,v)     fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11+8),v)
+#  define LDIR_PUTWCHAR11(p,v)     fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR6_11+10),v)
+#  define LDIR_PUTWCHAR12(p,v)     fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR12_13),v)
+#  define LDIR_PUTWCHAR13(p,v)     fat_putuint16(UBYTE_PTR(p,LDIR_WCHAR12_13+2),v)
+#  define LDIR_PUTFSTCLUSTLO(p,v)  fat_putuint16(UBYTE_PTR(p,LDIR_FSTCLUSTLO),v)
 # endif
 
 # define FSI_PUTLEADSIG(p,v)       fat_putuint32(UBYTE_PTR(p,FSI_LEADSIG),v)
@@ -808,6 +808,7 @@
 #  define LDIR_PUTWCHAR11(p,v)     UINT16_PUT(p,LDIR_WCHAR6_11+10,v)
 #  define LDIR_PUTWCHAR12(p,v)     UINT16_PUT(p,LDIR_WCHAR12_13,v)
 #  define LDIR_PUTWCHAR13(p,v)     UINT16_PUT(p,LDIR_WCHAR12_13+2,v)
+#  define LDIR_PUTFSTCLUSTLO(p,v)  UINT16_PUT(p,LDIR_FSTCLUSTLO,v)
 # endif
 
 # define FSI_PUTLEADSIG(p,v)       UINT32_PUT(p,FSI_LEADSIG,v)
@@ -945,11 +946,25 @@ struct fat_dirseq_s
 
 #ifdef CONFIG_FAT_LFN
 #  ifdef CONFIG_FAT_LFN_UTF8
-typedef wchar_t lfnchar;
+typedef uint16_t lfnchar;
 #  else
 typedef uint8_t lfnchar;
 #  endif
 #endif
+
+struct fs_fatdir_s
+{
+  off_t        fd_startcluster;    /* Start cluster number of the directory */
+  off_t        fd_currcluster;     /* Current cluster number being read */
+  off_t        fd_currsector;      /* Current sector being read */
+  unsigned int fd_index;           /* Current index of the directory entry to read */
+};
+
+struct fat_dirent_s
+{
+  struct fs_dirent_s base;
+  struct fs_fatdir_s dir;
+};
 
 /* This structure is used internally for describing directory entries */
 
@@ -1052,8 +1067,9 @@ EXTERN int    fat_allocatedirentry(struct fat_mountpt_s *fs,
                                    struct fat_dirinfo_s *dirinfo);
 EXTERN int    fat_freedirentry(struct fat_mountpt_s *fs,
                                struct fat_dirseq_s *seq);
-EXTERN int    fat_dirname2path(struct fat_mountpt_s *fs,
-                               struct fs_dirent_s *dir);
+EXTERN int    fat_dirname2path(FAR struct fat_mountpt_s *fs,
+                               FAR struct fs_dirent_s *dir,
+                               FAR struct dirent *entry);
 
 /* File creation and removal helpers */
 
@@ -1082,8 +1098,9 @@ EXTERN int    fat_ffcacheinvalidate(struct fat_mountpt_s *fs,
 /* FSINFO sector support */
 
 EXTERN int    fat_updatefsinfo(struct fat_mountpt_s *fs);
+EXTERN int    fat_computefreeclusters(struct fat_mountpt_s *fs);
 EXTERN int    fat_nfreeclusters(struct fat_mountpt_s *fs,
-                                off_t *pfreeclusters);
+                                fsblkcnt_t *pfreeclusters);
 EXTERN int    fat_currentsector(struct fat_mountpt_s *fs,
                                 struct fat_file_s *ff, off_t position);
 

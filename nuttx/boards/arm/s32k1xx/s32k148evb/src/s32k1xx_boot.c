@@ -23,11 +23,9 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
-
-#include <debug.h>
-
+#include <nuttx/arch.h>
 #include <nuttx/board.h>
-
+#include <arch/board/board.h>
 #include "s32k148evb.h"
 
 /****************************************************************************
@@ -47,16 +45,12 @@
 
 void s32k1xx_board_initialize(void)
 {
-#ifdef CONFIG_S32K1XX_SPI
-  /* Configure SPI chip selects if 1) SPI is not disabled, and 2) the weak
-   * function s32k1xx_spidev_initialize() has been brought into the link.
-   */
-
-  s32k1xx_spidev_initialize();
+#ifdef CONFIG_SEGGER_SYSVIEW
+  up_perf_init((void *)S32K148EVB_RUN_SYSCLK_FREQUENCY);
 #endif
 
 #ifdef CONFIG_ARCH_LEDS
-  /* Configure on-board LEDs if LED support has been selected. */
+  /* Configure on-board LEDs if LED support has been selected */
 
   board_autoled_initialize();
 #endif

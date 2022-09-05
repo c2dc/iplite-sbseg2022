@@ -25,34 +25,23 @@ include $(TOPDIR)/arch/arm/src/armv7-m/Toolchain.defs
 
 # Setup for the kind of memory that we are executing from
 
-LDSCRIPT = ramconfig.ld
-
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  ARCHSCRIPT = -T "${shell cygpath -w $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)}"
+ifeq ($(CONFIG_CXD56_USE_SYSBUS),y)
+  LDSCRIPT = ramconfig-new.ld
 else
-  ARCHSCRIPT = -T$(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)
+  LDSCRIPT = ramconfig.ld
 endif
+
+ARCHSCRIPT += $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT)
 
 MKNXFLAT = mknxflat
 LDNXFLAT = ldnxflat
 
-ifeq ($(CONFIG_DEBUG_SYMBOLS),y)
-  ARCHOPTIMIZATION = -g
-endif
-
-ifneq ($(CONFIG_DEBUG_NOOPT),y)
-  ARCHOPTIMIZATION += $(MAXOPTIMIZATION) -fno-strict-aliasing -fno-strength-reduce -fomit-frame-pointer
-endif
-
-ARCHCFLAGS = -fno-builtin -mabi=aapcs -ffunction-sections -fdata-sections
-ARCHCXXFLAGS = -fno-builtin -fno-exceptions -fno-rtti -std=c++98
-ARCHWARNINGS = -Wall -Wstrict-prototypes -Wshadow -Wundef
-ARCHWARNINGSXX = -Wall -Wshadow -Wundef
+ARCHCFLAGS += -mabi=aapcs
 ARCHPICFLAGS = -fpic -msingle-pic-base -mpic-register=r10
 
-CFLAGS := $(ARCHCFLAGS) $(ARCHWARNINGS) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS) -pipe
+CFLAGS := $(ARCHCFLAGS) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS) -pipe
 CPICFLAGS = $(ARCHPICFLAGS) $(CFLAGS)
-CXXFLAGS := $(ARCHCXXFLAGS) $(ARCHWARNINGSXX) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHXXINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS) -pipe
+CXXFLAGS := $(ARCHCXXFLAGS) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHXXINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS) -pipe
 CXXPICFLAGS = $(ARCHPICFLAGS) $(CXXFLAGS)
 CPPFLAGS := $(ARCHINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS)
 AFLAGS := $(CFLAGS) -D__ASSEMBLY__
@@ -66,11 +55,7 @@ LDNXFLATFLAGS = -e main -s 2048
 CMODULEFLAGS = $(CFLAGS) -mlong-calls # --target1-abs
 
 LDMODULEFLAGS = -r -e module_initialize
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  LDMODULEFLAGS += -T "${shell cygpath -w $(TOPDIR)/libs/libc/modlib/gnu-elf.ld}"
-else
-  LDMODULEFLAGS += -T $(TOPDIR)/libs/libc/modlib/gnu-elf.ld
-endif
+LDMODULEFLAGS += -T $(call CONVERT_PATH,$(TOPDIR)/libs/libc/modlib/gnu-elf.ld)
 
 # ELF module definitions
 
@@ -78,30 +63,9 @@ CELFFLAGS = $(CFLAGS)
 CXXELFFLAGS = $(CXXFLAGS)
 
 LDELFFLAGS = -r -e main
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  LDELFFLAGS += -T "${shell cygpath -w $(BOARD_DIR)$(DELIM)scripts$(DELIM)gnu-elf.ld}"
-else
-  LDELFFLAGS += -T $(BOARD_DIR)$(DELIM)scripts$(DELIM)gnu-elf.ld
-endif
-
-LDFLAGS += --gc-sections
-
-ifneq ($(CROSSDEV),arm-nuttx-elf-)
-  LDFLAGS += -nostartfiles -nodefaultlibs
-endif
-ifeq ($(CONFIG_DEBUG_SYMBOLS),y)
-  CFLAGS += -gdwarf-3
-  CXXFLAGS += -gdwarf-3
-  LDFLAGS += -g
-endif
+LDELFFLAGS += -T $(call CONVERT_PATH,$(TOPDIR)/binfmt/libelf/gnu-elf.ld)
 
 # Output map file with cross reference table
-
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  LDFLAGS += -Map="${shell cygpath -w $(TOPDIR)/nuttx.map}" --cref
-else
-  LDFLAGS += -Map=$(TOPDIR)/nuttx.map --cref
-endif
 
 ifneq ($(CONFIG_ASMP_MEMSIZE),)
   LDFLAGS += --defsym=__reserved_ramsize=$(CONFIG_ASMP_MEMSIZE)

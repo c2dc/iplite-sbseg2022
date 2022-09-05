@@ -29,14 +29,10 @@
 #include <debug.h>
 #include <assert.h>
 
-#include <net/if.h>
-
 #include <nuttx/net/net.h>
-#include <nuttx/net/netdev.h>
 #include <nuttx/net/udp.h>
 
 #include "devif/devif.h"
-#include "netdev/netdev.h"
 #include "udp/udp.h"
 #include "socket/socket.h"
 
@@ -87,9 +83,9 @@ int udp_close(FAR struct socket *psock)
    *   state of the option and linger interval.
    */
 
-  if (_SO_GETOPT(psock->s_options, SO_LINGER))
+  if (_SO_GETOPT(conn->sconn.s_options, SO_LINGER))
     {
-      timeout = _SO_TIMEOUT(psock->s_linger);
+      timeout = _SO_TIMEOUT(conn->sconn.s_linger);
     }
 #endif
 
@@ -106,35 +102,13 @@ int udp_close(FAR struct socket *psock)
       nerr("ERROR: udp_txdrain() failed: %d\n", ret);
     }
 
-#ifdef CONFIG_NET_UDP_BINDTODEVICE
-  /* Is the socket bound to an interface device */
-
-  if (conn->boundto != 0)
-    {
-      FAR struct net_driver_s *dev;
-
-      /* Yes, get the interface that we are bound do.  NULL would indicate
-       * that the interface no longer exists for some reason.
-       */
-
-      dev = netdev_findbyindex(conn->boundto);
-      if (dev != NULL)
-        {
-          /* Clear the interface flag to unbind the device from the socket.
-           */
-
-          IFF_CLR_BOUND(dev->d_flags);
-        }
-    }
-#endif
-
 #ifdef CONFIG_NET_UDP_WRITE_BUFFERS
   /* Free any semi-permanent write buffer callback in place. */
 
-  if (psock->s_sndcb != NULL)
+  if (conn->sndcb != NULL)
     {
-      udp_callback_free(conn->dev, conn, psock->s_sndcb);
-      psock->s_sndcb = NULL;
+      udp_callback_free(conn->dev, conn, conn->sndcb);
+      conn->sndcb = NULL;
     }
 #endif
 

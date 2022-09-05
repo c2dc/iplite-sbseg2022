@@ -34,26 +34,31 @@
 #include <nuttx/config.h>
 #include <nuttx/irq.h>
 
+#include <sys/types.h>
+#ifndef __ASSEMBLY__
+#  include <stdbool.h>
+#endif
+
 #include <arch/types.h>
 #include <arch/chip/tie.h>
 #include <arch/chip/core-isa.h>
+#include <arch/xtensa/core.h>
 
 #include <arch/xtensa/xtensa_specregs.h>
 #include <arch/xtensa/xtensa_corebits.h>
 #include <arch/xtensa/xtensa_coproc.h>
+
+/* Include chip-specific IRQ definitions (including IRQ numbers) */
+
+#include <arch/chip/irq.h>
 
 /* Include architecture-specific IRQ definitions */
 
 #ifdef CONFIG_ARCH_FAMILY_LX6
 #  include <arch/lx6/irq.h>
 
-/* Include implementation-specific IRQ definitions (including IRQ numbers) */
-
-#  ifdef CONFIG_ARCH_CHIP_ESP32
-#    include <arch/esp32/irq.h>
-#  else
-#    error Unknown LX6 implementation
-#  endif
+#elif CONFIG_ARCH_FAMILY_LX7
+#  include <arch/lx7/irq.h>
 
 #else
 #  error Unknown XTENSA architecture
@@ -62,6 +67,10 @@
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
+
+#ifndef ALIGN_UP
+#  define ALIGN_UP(num, align) (((num) + ((align) - 1)) & ~((align) - 1))
+#endif
 
 /* IRQ Stack Frame Format.  Each value is a uint32_t register index */
 
@@ -87,9 +96,16 @@
 #define REG_EXCCAUSE        (19)
 #define REG_EXCVADDR        (20)
 
-#define _REG_LOOPS_START    (21)
+#define _REG_EXTRA_START    (21)
 
-#ifdef XCHAL_HAVE_LOOPS
+#if XCHAL_HAVE_S32C1I != 0
+#  define REG_SCOMPARE1       (_REG_EXTRA_START + 0)
+#  define _REG_LOOPS_START    (_REG_EXTRA_START + 1)
+#else
+#  define _REG_LOOPS_START    _REG_EXTRA_START
+#endif
+
+#if XCHAL_HAVE_LOOPS != 0
 #  define REG_LBEG          (_REG_LOOPS_START + 0)
 #  define REG_LEND          (_REG_LOOPS_START + 1)
 #  define REG_LCOUNT        (_REG_LOOPS_START + 2)
@@ -99,33 +115,63 @@
 #endif
 
 #ifndef __XTENSA_CALL0_ABI__
-  /* Temporary space for saving stuff during window spill.
-   * REVISIT: I don't think that we need so many temporaries.
-   */
+  /* Temporary space for saving stuff during window spill. */
 
-#  define REG_TMP0          (_REG_WINDOW_TMPS + 0)
-#  define REG_TMP1          (_REG_WINDOW_TMPS + 1)
-#  define _REG_OVLY_START   (_REG_WINDOW_TMPS + 2)
+#  define REG_TMP0            (_REG_WINDOW_TMPS + 0)
+#  define _REG_INT_CTX_START  (_REG_WINDOW_TMPS + 1)
 #else
-#  define _REG_OVLY_START   _REG_WINDOW_TMPS
+#  define _REG_INT_CTX_START  _REG_WINDOW_TMPS
+#endif
+
+#ifndef CONFIG_BUILD_FLAT
+/* Temporary space for saving Interrupt Context information */
+
+#  define REG_INT_CTX       (_REG_INT_CTX_START + 0)
+#  define _REG_OVLY_START   (_REG_INT_CTX_START + 1)
+#else
+#  define _REG_OVLY_START   _REG_INT_CTX_START
 #endif
 
 #ifdef CONFIG_XTENSA_USE_OVLY
 /* Storage for overlay state */
 
 #  error Overlays not supported
-#  define XCPTCONTEXT_REGS  _REG_OVLY_START
+#  define _REG_CP_START  _REG_OVLY_START
 #else
-#  define XCPTCONTEXT_REGS  _REG_OVLY_START
+#  define _REG_CP_START  _REG_OVLY_START
 #endif
 
-#define XCPTCONTEXT_SIZE    ((4 * XCPTCONTEXT_REGS) + 0x20)
+#if XCHAL_CP_NUM > 0
+  /* FPU first address must align to CP align size. */
+
+#  define COMMON_CTX_REGS   ALIGN_UP(_REG_CP_START, XCHAL_TOTAL_SA_ALIGN / 4)
+#  define COPROC_CTX_REGS   (XTENSA_CP_SA_SIZE / 4)
+#  define RESERVE_REGS      8
+#  define XCPTCONTEXT_REGS  (COMMON_CTX_REGS + COPROC_CTX_REGS + RESERVE_REGS)
+#else
+#  define RESERVE_REGS      8
+#  define XCPTCONTEXT_REGS  (_REG_CP_START + RESERVE_REGS)
+#endif
+
+#define XCPTCONTEXT_SIZE    (4 * XCPTCONTEXT_REGS)
 
 /****************************************************************************
  * Public Types
  ****************************************************************************/
 
 #ifndef __ASSEMBLY__
+
+#ifdef CONFIG_LIB_SYSCALL
+/* This structure represents the return state from a system call */
+
+struct xcpt_syscall_s
+{
+  uintptr_t sysreturn;   /* The return PC */
+#ifndef CONFIG_BUILD_FLAT
+  uintptr_t int_ctx;     /* Interrupt context */
+#endif
+};
+#endif
 
 /* This struct defines the way the registers are stored. */
 
@@ -145,17 +191,18 @@ struct xcptcontext
    * another signal handler is executing will be ignored!
    */
 
-  uint32_t saved_pc;
-  uint32_t saved_ps;
+  uint32_t *saved_regs;
 
   /* Register save area */
 
-  uint32_t regs[XCPTCONTEXT_REGS];
+  uint32_t *regs;
 
-#if XCHAL_CP_NUM > 0
-  /* Co-processor save area */
+#ifndef CONFIG_BUILD_FLAT
+  /* This is the saved address to use when returning from a user-space
+   * signal handler.
+   */
 
-  struct xtensa_cpstate_s cpstate;
+  uintptr_t sigreturn;
 #endif
 
 #ifdef CONFIG_LIB_SYSCALL
@@ -192,8 +239,27 @@ static inline void xtensa_setps(uint32_t ps)
 {
   __asm__ __volatile__
   (
-    "wsr %0, PS"  : : "r"(ps)
+    "wsr %0, PS \n"
+    "rsync \n"
+    :
+    : "r"(ps)
+    : "memory"
   );
+}
+
+/* Return the current value of the stack pointer */
+
+static inline uint32_t up_getsp(void)
+{
+  register uint32_t sp;
+
+  __asm__ __volatile__
+  (
+    "mov %0, sp\n"
+    : "=r" (sp)
+  );
+
+  return sp;
 }
 
 /* Restore the value of the PS register */
@@ -202,7 +268,11 @@ static inline void up_irq_restore(uint32_t ps)
 {
   __asm__ __volatile__
   (
-    "wsr %0, PS"  : : "r"(ps)
+    "wsr %0, PS\n"
+    "rsync \n"
+    :
+    : "r"(ps)
+    : "memory"
   );
 }
 
@@ -219,7 +289,7 @@ static inline uint32_t up_irq_save(void)
 
   __asm__ __volatile__
   (
-    "rsil %0, %1" : "=r"(ps) : "I"(XCHAL_EXCM_LEVEL)
+    "rsil %0, %1" : "=r"(ps) : "i"(XCHAL_IRQ_LEVEL)
   );
 
   /* Return the previous PS value so that it can be restored with
@@ -252,8 +322,35 @@ static inline void up_irq_disable(void)
 }
 
 /****************************************************************************
- * Public Data
+ * Name: xtensa_disable_all
  ****************************************************************************/
+
+static inline void xtensa_disable_all(void)
+{
+  __asm__ __volatile__
+  (
+    "movi a2, 0\n"
+    "xsr a2, INTENABLE\n"
+    "rsync\n"
+    : : : "a2"
+  );
+}
+
+/****************************************************************************
+ * Name: xtensa_intclear
+ ****************************************************************************/
+
+static inline void xtensa_intclear(uint32_t mask)
+{
+  __asm__ __volatile__
+  (
+    "wsr %0, INTCLEAR\n"
+    "rsync\n"
+    :
+    : "r"(mask)
+    :
+  );
+}
 
 #ifdef __cplusplus
 #define EXTERN extern "C"
@@ -261,6 +358,25 @@ extern "C"
 {
 #else
 #define EXTERN extern
+#endif
+
+/****************************************************************************
+ * Public Data
+ ****************************************************************************/
+
+#ifndef __ASSEMBLY__
+/* g_current_regs[] holds a references to the current interrupt level
+ * register storage structure.  If is non-NULL only during interrupt
+ * processing.  Access to g_current_regs[] must be through the macro
+ * CURRENT_REGS for portability.
+ */
+
+/* For the case of architectures with multiple CPUs, then there must be one
+ * such value for each processor that can receive an interrupt.
+ */
+
+EXTERN volatile uint32_t *g_current_regs[CONFIG_SMP_NCPUS];
+#define CURRENT_REGS (g_current_regs[up_cpu_index()])
 #endif
 
 /****************************************************************************
@@ -290,6 +406,54 @@ irqstate_t xtensa_enable_interrupts(irqstate_t mask);
  ****************************************************************************/
 
 irqstate_t xtensa_disable_interrupts(irqstate_t mask);
+
+/****************************************************************************
+ * Name: up_cpu_index
+ *
+ * Description:
+ *   Return an index in the range of 0 through (CONFIG_SMP_NCPUS-1) that
+ *   corresponds to the currently executing CPU.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   An integer index in the range of 0 through (CONFIG_SMP_NCPUS-1) that
+ *   corresponds to the currently executing CPU.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_SMP
+int up_cpu_index(void);
+#else
+#  define up_cpu_index() (0)
+#endif
+
+/****************************************************************************
+ * Name: up_interrupt_context
+ *
+ * Description:
+ *   Return true is we are currently executing in the interrupt
+ *   handler context.
+ *
+ ****************************************************************************/
+
+#ifndef __ASSEMBLY__
+static inline bool up_interrupt_context(void)
+{
+#ifdef CONFIG_SMP
+  irqstate_t flags = up_irq_save();
+#endif
+
+  bool ret = CURRENT_REGS != NULL;
+
+#ifdef CONFIG_SMP
+  up_irq_restore(flags);
+#endif
+
+  return ret;
+}
+#endif
 
 #undef EXTERN
 #ifdef __cplusplus

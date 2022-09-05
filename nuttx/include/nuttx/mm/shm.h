@@ -27,8 +27,6 @@
 
 #include <nuttx/config.h>
 
-#include <debug.h>
-
 #include <nuttx/mm/gran.h>
 
 #ifdef CONFIG_MM_SHM
@@ -96,22 +94,6 @@ struct group_shm_s
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
-
-/****************************************************************************
- * Name: shm_initialize
- *
- * Description:
- *   Perform one time, start-up initialization of the shared memory logic.
- *
- * Input Parameters:
- *   None
- *
- * Returned Value:
- *   None
- *
- ****************************************************************************/
-
-void shm_initialize(void);
 
 /****************************************************************************
  * Name: shm_group_initialize

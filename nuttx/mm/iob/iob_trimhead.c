@@ -32,14 +32,6 @@
 #include "iob.h"
 
 /****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-#ifndef NULL
-#  define NULL ((FAR void *)0)
-#endif
-
-/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -52,10 +44,9 @@
  *
  ****************************************************************************/
 
-FAR struct iob_s *iob_trimhead(FAR struct iob_s *iob, unsigned int trimlen,
-                               enum iob_user_e producerid)
+FAR struct iob_s *iob_trimhead(FAR struct iob_s *iob, unsigned int trimlen)
 {
-  uint16_t pktlen;
+  unsigned int pktlen;
 
   iobinfo("iob=%p trimlen=%d\n", iob, trimlen);
 
@@ -100,7 +91,7 @@ FAR struct iob_s *iob_trimhead(FAR struct iob_s *iob, unsigned int trimlen,
               /* Free this entry and set the next I/O buffer as the head */
 
               iobinfo("iob=%p: Freeing\n", iob);
-              iob_free(iob, producerid);
+              iob_free(iob);
               iob = next;
             }
           else

@@ -34,6 +34,7 @@
 #include <arch/irq.h>
 
 #include <nuttx/net/net.h>
+#include <netdev/netdev.h>
 
 #include "socket/socket.h"
 #include "inet/inet.h"
@@ -75,6 +76,8 @@ static int psock_socketlevel_option(FAR struct socket *psock, int option,
                                     FAR const void *value,
                                     socklen_t value_len)
 {
+  FAR struct socket_conn_s *conn = psock->s_conn;
+
   /* Verify that the socket option if valid (but might not be supported ) */
 
   if (!_SO_SETVALID(option) || !value)
@@ -82,7 +85,7 @@ static int psock_socketlevel_option(FAR struct socket *psock, int option,
       return -EINVAL;
     }
 
-  /* Process the option */
+  /* Process the options always handled locally */
 
   switch (option)
     {
@@ -114,28 +117,37 @@ static int psock_socketlevel_option(FAR struct socket *psock, int option,
 
           if (option == SO_RCVTIMEO)
             {
-              psock->s_rcvtimeo = timeo;
+              conn->s_rcvtimeo = timeo;
             }
           else
             {
-              psock->s_sndtimeo = timeo;
+              conn->s_sndtimeo = timeo;
             }
 
           /* Set/clear the corresponding enable/disable bit */
 
           if (timeo)
             {
-              _SO_CLROPT(psock->s_options, option);
+              _SO_CLROPT(conn->s_options, option);
             }
           else
             {
-              _SO_SETOPT(psock->s_options, option);
+              _SO_SETOPT(conn->s_options, option);
             }
+
+          return OK;
         }
-        break;
+    }
 
-#ifndef CONFIG_NET_USRSOCK
+#ifdef CONFIG_NET_USRSOCK
+    if (psock->s_type == SOCK_USRSOCK_TYPE)
+      {
+        return -ENOPROTOOPT;
+      }
+#endif
 
+  switch (option)
+    {
       case SO_BROADCAST:  /* Permits sending of broadcast messages */
       case SO_DEBUG:      /* Enables recording of debugging information */
       case SO_DONTROUTE:  /* Requests outgoing messages bypass standard routing */
@@ -171,11 +183,11 @@ static int psock_socketlevel_option(FAR struct socket *psock, int option,
 
           if (setting)
             {
-              _SO_SETOPT(psock->s_options, option);
+              _SO_SETOPT(conn->s_options, option);
             }
           else
             {
-              _SO_CLROPT(psock->s_options, option);
+              _SO_CLROPT(conn->s_options, option);
             }
 
           net_unlock();
@@ -227,13 +239,13 @@ static int psock_socketlevel_option(FAR struct socket *psock, int option,
 
           if (setting->l_onoff)
             {
-              _SO_SETOPT(psock->s_options, option);
-              psock->s_linger = 10 * setting->l_linger;
+              _SO_SETOPT(conn->s_options, option);
+              conn->s_linger = 10 * setting->l_linger;
             }
           else
             {
-              _SO_CLROPT(psock->s_options, option);
-              psock->s_linger = 0;
+              _SO_CLROPT(conn->s_options, option);
+              conn->s_linger = 0;
             }
 
           net_unlock();
@@ -257,17 +269,185 @@ static int psock_socketlevel_option(FAR struct socket *psock, int option,
 
           net_lock();
 
-          psock->s_timestamp = *((FAR int32_t *)value);
+          conn->s_timestamp = *((FAR int32_t *)value);
 
           net_unlock();
         }
         break;
 #endif
+
+#if CONFIG_NET_RECV_BUFSIZE > 0
+      case SO_RCVBUF:     /* Sets receive buffer size */
+        {
+          int buffersize;
+
+          /* Verify that option is the size of an 'int'.  Should also check
+           * that 'value' is properly aligned for an 'int'
+           */
+
+          if (value_len != sizeof(int))
+            {
+              return -EINVAL;
+            }
+
+          /* Get the value.  Is the option being set or cleared? */
+
+          buffersize = *(FAR int *)value;
+
+          if (buffersize < 0)
+            {
+              return -EINVAL;
+            }
+
+          net_lock();
+
+#if defined(CONFIG_NET_TCP) && !defined(CONFIG_NET_TCP_NO_STACK)
+          if (psock->s_type == SOCK_STREAM)
+            {
+              FAR struct tcp_conn_s *tcp;
+
+              tcp = (FAR struct tcp_conn_s *)conn;
+
+              /* Save the receive buffer size */
+
+              tcp->rcv_bufs = buffersize;
+            }
+          else
+#endif
+#if defined(CONFIG_NET_UDP) && !defined(CONFIG_NET_UDP_NO_STACK)
+          if (psock->s_type == SOCK_DGRAM)
+            {
+              FAR struct udp_conn_s *udp;
+
+              udp = (FAR struct udp_conn_s *)conn;
+
+              /* Save the receive buffer size */
+
+              udp->rcvbufs = buffersize;
+            }
+          else
+#endif
+            {
+              net_unlock();
+              return -ENOPROTOOPT;
+            }
+
+          net_unlock();
+
+          break;
+        }
+#endif
+
+#if CONFIG_NET_SEND_BUFSIZE > 0
+      case SO_SNDBUF:     /* Sets send buffer size */
+        {
+          int buffersize;
+
+          /* Verify that option is the size of an 'int'.  Should also check
+           * that 'value' is properly aligned for an 'int'
+           */
+
+          if (value_len != sizeof(int))
+            {
+              return -EINVAL;
+            }
+
+          /* Get the value.  Is the option being set or cleared? */
+
+          buffersize = *(FAR int *)value;
+
+          if (buffersize < 0)
+            {
+              return -EINVAL;
+            }
+
+          net_lock();
+
+#if defined(CONFIG_NET_TCP) && !defined(CONFIG_NET_TCP_NO_STACK)
+          if (psock->s_type == SOCK_STREAM)
+            {
+              FAR struct tcp_conn_s *tcp;
+
+              tcp = (FAR struct tcp_conn_s *)conn;
+
+              /* Save the send buffer size */
+
+              tcp->snd_bufs = buffersize;
+            }
+          else
+#endif
+#if defined(CONFIG_NET_UDP) && !defined(CONFIG_NET_UDP_NO_STACK)
+          if (psock->s_type == SOCK_DGRAM)
+            {
+              FAR struct udp_conn_s *udp;
+
+              udp = (FAR struct udp_conn_s *)conn;
+
+              /* Save the send buffer size */
+
+              udp->sndbufs = buffersize;
+            }
+          else
+#endif
+            {
+              net_unlock();
+              return -ENOPROTOOPT;
+            }
+
+          net_unlock();
+
+          break;
+        }
+#endif
+
+#ifdef CONFIG_NET_BINDTODEVICE
+      /* Handle the SO_BINDTODEVICE socket-level option.
+       *
+       * NOTE: this option makes sense for UDP sockets trying to broadcast
+       * while their local address is not set, eg, with DHCP requests.
+       * The problem is that we are not able to determine the interface to be
+       * used for sending packets when multiple interfaces do not have a
+       * local address yet. This option can be used to "force" the interface
+       * used to send the UDP traffic in this connection. Note that it does
+       * NOT only apply to broadcast packets.
+       */
+
+      case SO_BINDTODEVICE:  /* Bind socket to a specific network device */
+        {
+          FAR struct net_driver_s *dev;
+
+          /* Check if we are are unbinding the socket */
+
+          if (value == NULL || value_len == 0 ||
+             (value_len > 0 && ((FAR char *)value)[0] == 0))
+            {
+              conn->s_boundto = 0;  /* This interface is no longer bound */
+              break;
+            }
+
+          /* No, we are binding a socket to the interface
+           * Find the interface device with this name.
+           */
+
+          dev = netdev_findbyname(value);
+          if (dev == NULL)
+            {
+              return -ENODEV;
+            }
+
+          /* Bind the socket to the interface */
+
+          DEBUGASSERT(dev->d_ifindex > 0 &&
+                      dev->d_ifindex <= MAX_IFINDEX);
+          conn->s_boundto = dev->d_ifindex;
+
+          break;
+        }
+#endif
+
       /* The following are not yet implemented */
 
-      case SO_RCVBUF:     /* Sets receive buffer size */
       case SO_RCVLOWAT:   /* Sets the minimum number of bytes to input */
-      case SO_SNDBUF:     /* Sets send buffer size */
       case SO_SNDLOWAT:   /* Sets the minimum number of bytes to output */
 
       /* There options are only valid when used with getopt */
@@ -276,7 +456,6 @@ static int psock_socketlevel_option(FAR struct socket *psock, int option,
       case SO_ERROR:      /* Reports and clears error status. */
       case SO_TYPE:       /* Reports the socket type */
 
-#endif
       default:
         return -ENOPROTOOPT;
     }

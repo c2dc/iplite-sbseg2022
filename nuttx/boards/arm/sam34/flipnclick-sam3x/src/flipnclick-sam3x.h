@@ -239,7 +239,7 @@
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -258,7 +258,7 @@ int sam_bringup(void);
 
 #ifdef HAVE_SSD1306
 struct lcd_dev_s;  /* Forward reference */
-FAR struct lcd_dev_s *sam_graphics_setup(unsigned int devno);
+struct lcd_dev_s *sam_graphics_setup(unsigned int devno);
 #endif
 
 #endif /* __ASSEMBLY__ */

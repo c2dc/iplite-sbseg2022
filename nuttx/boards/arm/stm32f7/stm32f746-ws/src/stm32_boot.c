@@ -29,7 +29,7 @@
 #include <nuttx/board.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32f746-ws.h"
 
 /****************************************************************************
@@ -79,7 +79,7 @@ void stm32_boardinitialize(void)
 #ifdef CONFIG_BOARD_LATE_INITIALIZE
 void board_late_initialize(void)
 {
-#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_LIB_BOARDCTL)
+#if defined(CONFIG_NSH_LIBRARY) && !defined(CONFIG_BOARDCTL)
   /* Perform NSH initialization here instead of from the NSH.  This
    * alternative NSH initialization is necessary when NSH is ran in
    * user-space but the initialization function must run in kernel space.

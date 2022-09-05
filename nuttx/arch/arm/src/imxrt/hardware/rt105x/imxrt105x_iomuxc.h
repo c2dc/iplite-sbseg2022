@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_IMXRT_HARDWARE_IMXRT105X_IOMUXC_H
-#define __ARCH_ARM_SRC_IMXRT_HARDWARE_IMXRT105X_IOMUXC_H
+#ifndef __ARCH_ARM_SRC_IMXRT_HARDWARE_RT105X_IMXRT105X_IOMUXC_H
+#define __ARCH_ARM_SRC_IMXRT_HARDWARE_RT105X_IMXRT105X_IOMUXC_H
 
 /****************************************************************************
  * Included Files
@@ -1270,7 +1270,7 @@
 #define GPR_GPR1_GINT                                           (1 << 12)
 #define GPR_GPR1_ENET1_CLK_SEL                                  (1 << 13)
 #define GPR_GPR1_USB_EXP_MODE_EN                                (1 << 15)
-#define GPR_GPR1_ENET1_TX_CLK_OUT_EN                            (1 << 17)
+#define GPR_GPR1_ENET1_TX_DIR_OUT                               (1 << 17)
 #define GPR_GPR1_SAI1_MCLK_DIR_IN                               (0 << 19)
 #define GPR_GPR1_SAI1_MCLK_DIR_OUT                              (1 << 19)
 #define GPR_GPR1_SAI2_MCLK_DIR_IN                               (0 << 20)
@@ -1976,4 +1976,4 @@
 #define GPR_GPR25_M7_APC_AC_R3_TOP_MASK                         (0x1fffffff << GPR_GPR25_M7_APC_AC_R3_TOP_SHIFT)
 #define GPR_GPR25_M7_APC_AC_R3_TOP(n)                           ((uint32_t)(n)) << GPR_GPR25_M7_APC_AC_R3_TOP_SHIFT)
 
-#endif /* __ARCH_ARM_SRC_IMXRT_HARDWARE_IMXRT105X_IOMUXC_H */
+#endif /* __ARCH_ARM_SRC_IMXRT_HARDWARE_RT105X_IMXRT105X_IOMUXC_H */

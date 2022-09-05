@@ -27,6 +27,7 @@
 #ifdef CONFIG_ESP32_SPIFLASH
 
 #include <stdint.h>
+#include <assert.h>
 #include <debug.h>
 #include <stdio.h>
 #include <string.h>
@@ -58,6 +59,8 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
+/* Used in spiflash_cachestate_s structure even when SMP is disabled. */
+
 #define SPI_FLASH_WRITE_BUF_SIZE    (32)
 #define SPI_FLASH_READ_BUF_SIZE     (64)
 
@@ -68,11 +71,9 @@
 
 #define SPI_FLASH_ENCRYPT_UNIT_SIZE (32)
 #define SPI_FLASH_ENCRYPT_WORDS     (32 / 4)
+#define SPI_FLASH_ERASED_STATE      (0xff)
 
-#define ESP32_MTD_OFFSET            CONFIG_ESP32_MTD_OFFSET
-#define ESP32_MTD_SIZE              CONFIG_ESP32_MTD_SIZE
-
-#define MTD2PRIV(_dev)              ((FAR struct esp32_spiflash_s *)_dev)
+#define MTD2PRIV(_dev)              ((struct esp32_spiflash_s *)_dev)
 #define MTD_SIZE(_priv)             ((_priv)->chip->chip_size)
 #define MTD_BLKSIZE(_priv)          ((_priv)->chip->page_size)
 #define MTD_ERASESIZE(_priv)        ((_priv)->chip->sector_size)
@@ -90,9 +91,6 @@
 #ifndef MIN
 #  define  MIN(a, b) (((a) < (b)) ? (a) : (b))
 #endif
-
-#define DPORT_INTERRUPT_DISABLE()
-#define DPORT_INTERRUPT_RESTORE()
 
 /* Flash MMU table for PRO CPU */
 
@@ -165,15 +163,18 @@ struct spiflash_map_req
 struct spiflash_cachestate_s
 {
   int cpu;
+#ifdef CONFIG_SMP
+  int other;
+#endif
   irqstate_t flags;
-  uint32_t val[2];
+  uint32_t val[CONFIG_SMP_NCPUS];
 };
 
 /****************************************************************************
  * ROM function prototypes
  ****************************************************************************/
 
-extern void Cache_Flush(int cpu);
+extern void cache_flush(int cpu);
 
 /****************************************************************************
  * Private Functions Prototypes
@@ -193,63 +194,63 @@ static inline void spi_reset_regbits(struct esp32_spiflash_s *priv,
 /* Misc. helpers */
 
 static inline void IRAM_ATTR
-  esp32_spiflash_opstart(FAR struct spiflash_cachestate_s *state);
+esp32_spiflash_opstart(struct spiflash_cachestate_s *state);
 static inline void IRAM_ATTR
-  esp32_spiflash_opdone(FAR const struct spiflash_cachestate_s *state);
+esp32_spiflash_opdone(const struct spiflash_cachestate_s *state);
 
 static bool IRAM_ATTR spiflash_pagecached(uint32_t phypage);
 static void IRAM_ATTR spiflash_flushmapped(size_t start, size_t size);
 
 /* Flash helpers */
 
-static void IRAM_ATTR esp32_set_read_opt(FAR struct esp32_spiflash_s *priv);
+static void IRAM_ATTR esp32_set_read_opt(struct esp32_spiflash_s *priv);
 static void IRAM_ATTR esp32_set_write_opt(struct esp32_spiflash_s *priv);
-static int  IRAM_ATTR  esp32_read_status(FAR struct esp32_spiflash_s *priv,
+static int  IRAM_ATTR  esp32_read_status(struct esp32_spiflash_s *priv,
                                          uint32_t *status);
-static int IRAM_ATTR esp32_wait_idle(FAR struct esp32_spiflash_s *priv);
-static int IRAM_ATTR esp32_enable_write(FAR struct esp32_spiflash_s *priv);
-static int IRAM_ATTR esp32_erasesector(FAR struct esp32_spiflash_s *priv,
+static int IRAM_ATTR esp32_wait_idle(struct esp32_spiflash_s *priv);
+static int IRAM_ATTR esp32_enable_write(struct esp32_spiflash_s *priv);
+static int IRAM_ATTR esp32_erasesector(struct esp32_spiflash_s *priv,
                                        uint32_t addr, uint32_t size);
-static int IRAM_ATTR esp32_writedata(FAR struct esp32_spiflash_s *priv,
+static int IRAM_ATTR esp32_writedata(struct esp32_spiflash_s *priv,
                                      uint32_t addr,
                                      const uint8_t *buffer, uint32_t size);
-static int IRAM_ATTR esp32_readdata(FAR struct esp32_spiflash_s *priv,
+static int IRAM_ATTR esp32_readdata(struct esp32_spiflash_s *priv,
                                     uint32_t addr,
                                     uint8_t *buffer, uint32_t size);
 #if 0
-static int esp32_read_highstatus(FAR struct esp32_spiflash_s *priv,
+static int esp32_read_highstatus(struct esp32_spiflash_s *priv,
                                  uint32_t *status);
 #endif
 #if 0
-static int esp32_write_status(FAR struct esp32_spiflash_s *priv,
+static int esp32_write_status(struct esp32_spiflash_s *priv,
                               uint32_t status);
 #endif
 
 /* MTD driver methods */
 
-static int esp32_erase(FAR struct mtd_dev_s *dev, off_t startblock,
+static int esp32_erase(struct mtd_dev_s *dev, off_t startblock,
                        size_t nblocks);
-static ssize_t esp32_read(FAR struct mtd_dev_s *dev, off_t offset,
-                          size_t nbytes, FAR uint8_t *buffer);
-static ssize_t esp32_read_decrypt(FAR struct mtd_dev_s *dev,
+static ssize_t esp32_read(struct mtd_dev_s *dev, off_t offset,
+                          size_t nbytes, uint8_t *buffer);
+static ssize_t esp32_read_decrypt(struct mtd_dev_s *dev,
                                   off_t offset,
                                   size_t nbytes,
-                                  FAR uint8_t *buffer);
-static ssize_t esp32_bread(FAR struct mtd_dev_s *dev, off_t startblock,
-                           size_t nblocks, FAR uint8_t *buffer);
-static ssize_t esp32_bread_decrypt(FAR struct mtd_dev_s *dev,
+                                  uint8_t *buffer);
+static ssize_t esp32_bread(struct mtd_dev_s *dev, off_t startblock,
+                           size_t nblocks, uint8_t *buffer);
+static ssize_t esp32_bread_decrypt(struct mtd_dev_s *dev,
                                    off_t startblock,
                                    size_t nblocks,
-                                   FAR uint8_t *buffer);
-static ssize_t esp32_write(FAR struct mtd_dev_s *dev, off_t offset,
-                           size_t nbytes, FAR const uint8_t *buffer);
-static ssize_t esp32_bwrite(FAR struct mtd_dev_s *dev, off_t startblock,
-                            size_t nblocks, FAR const uint8_t *buffer);
-static ssize_t esp32_bwrite_encrypt(FAR struct mtd_dev_s *dev,
+                                   uint8_t *buffer);
+static ssize_t esp32_write(struct mtd_dev_s *dev, off_t offset,
+                           size_t nbytes, const uint8_t *buffer);
+static ssize_t esp32_bwrite(struct mtd_dev_s *dev, off_t startblock,
+                            size_t nblocks, const uint8_t *buffer);
+static ssize_t esp32_bwrite_encrypt(struct mtd_dev_s *dev,
                                     off_t startblock,
                                     size_t nblocks,
-                                    FAR const uint8_t *buffer);
-static int esp32_ioctl(FAR struct mtd_dev_s *dev, int cmd,
+                                    const uint8_t *buffer);
+static int esp32_ioctl(struct mtd_dev_s *dev, int cmd,
                        unsigned long arg);
 
 /****************************************************************************
@@ -407,27 +408,25 @@ static inline void spi_reset_regbits(struct esp32_spiflash_s *priv,
  ****************************************************************************/
 
 static inline void IRAM_ATTR
-  esp32_spiflash_opstart(FAR struct spiflash_cachestate_s *state)
+esp32_spiflash_opstart(struct spiflash_cachestate_s *state)
 {
-#ifdef CONFIG_SMP
-  int other;
-#endif
-
   state->flags = enter_critical_section();
 
   state->cpu = up_cpu_index();
 #ifdef CONFIG_SMP
-  other = state->cpu ? 0 : 1;
+  state->other = state->cpu ? 0 : 1;
 #endif
 
   DEBUGASSERT(state->cpu == 0 || state->cpu == 1);
 #ifdef CONFIG_SMP
-  DEBUGASSERT(other == 0 || other == 1);
+  DEBUGASSERT(state->other == 0 || state->other == 1);
+  DEBUGASSERT(state->other != state->cpu);
+  up_cpu_pause(state->other);
 #endif
 
   spi_disable_cache(state->cpu, &state->val[state->cpu]);
 #ifdef CONFIG_SMP
-  spi_disable_cache(state->cpu, &state->val[other]);
+  spi_disable_cache(state->other, &state->val[state->other]);
 #endif
 }
 
@@ -440,24 +439,18 @@ static inline void IRAM_ATTR
  ****************************************************************************/
 
 static inline void IRAM_ATTR
-  esp32_spiflash_opdone(FAR const struct spiflash_cachestate_s *state)
+  esp32_spiflash_opdone(const struct spiflash_cachestate_s *state)
 {
-#ifdef CONFIG_SMP
-  int other;
-#endif
-
-#ifdef CONFIG_SMP
-  other = state->cpu ? 0 : 1;
-#endif
-
   DEBUGASSERT(state->cpu == 0 || state->cpu == 1);
 #ifdef CONFIG_SMP
-  DEBUGASSERT(other == 0 || other == 1);
+  DEBUGASSERT(state->other == 0 || state->other == 1);
+  DEBUGASSERT(state->other != state->cpu);
 #endif
 
   spi_enable_cache(state->cpu, state->val[state->cpu]);
 #ifdef CONFIG_SMP
-  spi_enable_cache(other, state->val[other]);
+  spi_enable_cache(state->other, state->val[state->other]);
+  up_cpu_resume(state->other);
 #endif
 
   leave_critical_section(state->flags);
@@ -535,9 +528,9 @@ static void IRAM_ATTR spiflash_flushmapped(size_t start, size_t size)
 #ifdef CONFIG_ESP32_SPIRAM
           esp_spiram_writeback_cache();
 #endif
-          Cache_Flush(0);
+          cache_flush(0);
 #ifdef CONFIG_SMP
-          Cache_Flush(1);
+          cache_flush(1);
 #endif
         }
     }
@@ -559,7 +552,7 @@ static void IRAM_ATTR spiflash_flushmapped(size_t start, size_t size)
  *
  ****************************************************************************/
 
-static void IRAM_ATTR esp32_set_read_opt(FAR struct esp32_spiflash_s *priv)
+static void IRAM_ATTR esp32_set_read_opt(struct esp32_spiflash_s *priv)
 {
   uint32_t regval;
   uint32_t ctrl;
@@ -688,7 +681,7 @@ static void IRAM_ATTR esp32_set_write_opt(struct esp32_spiflash_s *priv)
  * Name: esp32_read_status
  *
  * Description:
- *   Read SPI Flash status regitser value.
+ *   Read SPI Flash status register value.
  *
  * Input Parameters:
  *   spi    - ESP32 SPI Flash chip data
@@ -699,7 +692,7 @@ static void IRAM_ATTR esp32_set_write_opt(struct esp32_spiflash_s *priv)
  *
  ****************************************************************************/
 
-static int IRAM_ATTR esp32_read_status(FAR struct esp32_spiflash_s *priv,
+static int IRAM_ATTR esp32_read_status(struct esp32_spiflash_s *priv,
                                        uint32_t *status)
 {
   esp32_spiflash_chip_t *chip = priv->chip;
@@ -753,7 +746,7 @@ static int IRAM_ATTR esp32_read_status(FAR struct esp32_spiflash_s *priv,
  *
  ****************************************************************************/
 
-static int IRAM_ATTR esp32_wait_idle(FAR struct esp32_spiflash_s *priv)
+static int IRAM_ATTR esp32_wait_idle(struct esp32_spiflash_s *priv)
 {
   uint32_t status;
 
@@ -779,7 +772,7 @@ static int IRAM_ATTR esp32_wait_idle(FAR struct esp32_spiflash_s *priv)
  * Name: esp32_read_highstatus
  *
  * Description:
- *   Read SPI Flash high status regitser value.
+ *   Read SPI Flash high status register value.
  *
  * Input Parameters:
  *   spi    - ESP32 SPI Flash chip data
@@ -791,7 +784,7 @@ static int IRAM_ATTR esp32_wait_idle(FAR struct esp32_spiflash_s *priv)
  ****************************************************************************/
 
 #if 0
-static int esp32_read_highstatus(FAR struct esp32_spiflash_s *priv,
+static int esp32_read_highstatus(struct esp32_spiflash_s *priv,
                                  uint32_t *status)
 {
   uint32_t regval;
@@ -816,7 +809,7 @@ static int esp32_read_highstatus(FAR struct esp32_spiflash_s *priv,
  * Name: esp32_write_status
  *
  * Description:
- *   Write status value to SPI Flash status regitser.
+ *   Write status value to SPI Flash status register.
  *
  * Input Parameters:
  *   spi    - ESP32 SPI Flash chip data
@@ -828,7 +821,7 @@ static int esp32_read_highstatus(FAR struct esp32_spiflash_s *priv,
  ****************************************************************************/
 
 #if 0
-static int esp32_write_status(FAR struct esp32_spiflash_s *priv,
+static int esp32_write_status(struct esp32_spiflash_s *priv,
                               uint32_t status)
 {
   if (esp32_wait_idle(priv))
@@ -866,7 +859,7 @@ static int esp32_write_status(FAR struct esp32_spiflash_s *priv,
  *
  ****************************************************************************/
 
-static int IRAM_ATTR esp32_enable_write(FAR struct esp32_spiflash_s *priv)
+static int IRAM_ATTR esp32_enable_write(struct esp32_spiflash_s *priv)
 {
   uint32_t flags;
   uint32_t regval;
@@ -912,7 +905,7 @@ static int IRAM_ATTR esp32_enable_write(FAR struct esp32_spiflash_s *priv)
  *
  ****************************************************************************/
 
-static int IRAM_ATTR esp32_erasesector(FAR struct esp32_spiflash_s *priv,
+static int IRAM_ATTR esp32_erasesector(struct esp32_spiflash_s *priv,
                                        uint32_t addr, uint32_t size)
 {
   uint32_t offset;
@@ -977,7 +970,7 @@ static int IRAM_ATTR esp32_erasesector(FAR struct esp32_spiflash_s *priv,
  *
  ****************************************************************************/
 
-static int IRAM_ATTR esp32_writeonce(FAR struct esp32_spiflash_s *priv,
+static int IRAM_ATTR esp32_writeonce(struct esp32_spiflash_s *priv,
                                      uint32_t addr,
                                      const uint32_t *buffer,
                                      uint32_t size)
@@ -1047,7 +1040,7 @@ static int IRAM_ATTR esp32_writeonce(FAR struct esp32_spiflash_s *priv,
  *
  ****************************************************************************/
 
-static int IRAM_ATTR esp32_writedata(FAR struct esp32_spiflash_s *priv,
+static int IRAM_ATTR esp32_writedata(struct esp32_spiflash_s *priv,
                                      uint32_t addr,
                                      const uint8_t *buffer,
                                      uint32_t size)
@@ -1115,7 +1108,7 @@ static int IRAM_ATTR esp32_writedata(FAR struct esp32_spiflash_s *priv,
  ****************************************************************************/
 
 static int IRAM_ATTR esp32_writedata_encrypted(
-  FAR struct esp32_spiflash_s *priv,
+  struct esp32_spiflash_s *priv,
   uint32_t addr,
   const uint8_t *buffer,
   uint32_t size)
@@ -1204,7 +1197,7 @@ exit:
  *
  ****************************************************************************/
 
-static int IRAM_ATTR esp32_readonce(FAR struct esp32_spiflash_s *priv,
+static int IRAM_ATTR esp32_readonce(struct esp32_spiflash_s *priv,
                                     uint32_t addr,
                                     uint32_t *buffer,
                                     uint32_t size)
@@ -1266,7 +1259,7 @@ static int IRAM_ATTR esp32_readonce(FAR struct esp32_spiflash_s *priv,
  *
  ****************************************************************************/
 
-static int IRAM_ATTR esp32_readdata(FAR struct esp32_spiflash_s *priv,
+static int IRAM_ATTR esp32_readdata(struct esp32_spiflash_s *priv,
                                     uint32_t addr,
                                     uint8_t *buffer,
                                     uint32_t size)
@@ -1319,7 +1312,7 @@ static int IRAM_ATTR esp32_readdata(FAR struct esp32_spiflash_s *priv,
  *
  ****************************************************************************/
 
-static int IRAM_ATTR esp32_mmap(FAR struct esp32_spiflash_s *priv,
+static int IRAM_ATTR esp32_mmap(struct esp32_spiflash_s *priv,
                                 struct spiflash_map_req *req)
 {
   int ret;
@@ -1347,7 +1340,7 @@ static int IRAM_ATTR esp32_mmap(FAR struct esp32_spiflash_s *priv,
     }
 
   flash_page = MMU_ADDR2PAGE(req->src_addr);
-  page_cnt = MMU_BYTES2PAGES(req->size);
+  page_cnt = MMU_BYTES2PAGES(MMU_ADDR2OFF(req->src_addr) + req->size);
 
   if (start_page + page_cnt < DROM0_PAGES_END)
     {
@@ -1377,9 +1370,9 @@ static int IRAM_ATTR esp32_mmap(FAR struct esp32_spiflash_s *priv,
 #ifdef CONFIG_ESP32_SPIRAM
       esp_spiram_writeback_cache();
 #endif
-      Cache_Flush(0);
+      cache_flush(0);
 #ifdef CONFIG_SMP
-      Cache_Flush(1);
+      cache_flush(1);
 #endif
     }
 
@@ -1403,7 +1396,7 @@ static int IRAM_ATTR esp32_mmap(FAR struct esp32_spiflash_s *priv,
  *
  ****************************************************************************/
 
-static void IRAM_ATTR esp32_ummap(FAR struct esp32_spiflash_s *priv,
+static void IRAM_ATTR esp32_ummap(struct esp32_spiflash_s *priv,
                                   const struct spiflash_map_req *req)
 {
   int i;
@@ -1422,9 +1415,9 @@ static void IRAM_ATTR esp32_ummap(FAR struct esp32_spiflash_s *priv,
 #ifdef CONFIG_ESP32_SPIRAM
   esp_spiram_writeback_cache();
 #endif
-  Cache_Flush(0);
+  cache_flush(0);
 #ifdef CONFIG_SMP
-  Cache_Flush(1);
+  cache_flush(1);
 #endif
   esp32_spiflash_opdone(&state);
 }
@@ -1448,7 +1441,7 @@ static void IRAM_ATTR esp32_ummap(FAR struct esp32_spiflash_s *priv,
  ****************************************************************************/
 
 static int IRAM_ATTR esp32_readdata_encrypted(
-  FAR struct esp32_spiflash_s *priv,
+  struct esp32_spiflash_s *priv,
   uint32_t addr,
   uint8_t *buffer,
   uint32_t size)
@@ -1489,11 +1482,11 @@ static int IRAM_ATTR esp32_readdata_encrypted(
  *
  ****************************************************************************/
 
-static int esp32_erase(FAR struct mtd_dev_s *dev, off_t startblock,
+static int esp32_erase(struct mtd_dev_s *dev, off_t startblock,
                        size_t nblocks)
 {
   int ret;
-  FAR struct esp32_spiflash_s *priv = MTD2PRIV(dev);
+  struct esp32_spiflash_s *priv = MTD2PRIV(dev);
   uint32_t addr = startblock * MTD_ERASESIZE(priv);
   uint32_t size = nblocks * MTD_ERASESIZE(priv);
 
@@ -1545,11 +1538,11 @@ static int esp32_erase(FAR struct mtd_dev_s *dev, off_t startblock,
  *
  ****************************************************************************/
 
-static ssize_t esp32_read(FAR struct mtd_dev_s *dev, off_t offset,
-                          size_t nbytes, FAR uint8_t *buffer)
+static ssize_t esp32_read(struct mtd_dev_s *dev, off_t offset,
+                          size_t nbytes, uint8_t *buffer)
 {
   int ret;
-  FAR struct esp32_spiflash_s *priv = MTD2PRIV(dev);
+  struct esp32_spiflash_s *priv = MTD2PRIV(dev);
 
 #ifdef CONFIG_ESP32_SPIFLASH_DEBUG
   finfo("esp32_read(%p, 0x%x, %d, %p)\n", dev, offset, nbytes, buffer);
@@ -1599,11 +1592,11 @@ error_with_buffer:
  *
  ****************************************************************************/
 
-static ssize_t esp32_bread(FAR struct mtd_dev_s *dev, off_t startblock,
-                           size_t nblocks, FAR uint8_t *buffer)
+static ssize_t esp32_bread(struct mtd_dev_s *dev, off_t startblock,
+                           size_t nblocks, uint8_t *buffer)
 {
   int ret;
-  FAR struct esp32_spiflash_s *priv = MTD2PRIV(dev);
+  struct esp32_spiflash_s *priv = MTD2PRIV(dev);
   uint32_t addr = MTD_BLK2SIZE(priv, startblock);
   uint32_t size = MTD_BLK2SIZE(priv, nblocks);
 
@@ -1643,14 +1636,14 @@ static ssize_t esp32_bread(FAR struct mtd_dev_s *dev, off_t startblock,
  *
  ****************************************************************************/
 
-static ssize_t esp32_read_decrypt(FAR struct mtd_dev_s *dev,
+static ssize_t esp32_read_decrypt(struct mtd_dev_s *dev,
                                   off_t offset,
                                   size_t nbytes,
-                                  FAR uint8_t *buffer)
+                                  uint8_t *buffer)
 {
   int ret;
   uint8_t *tmpbuff = buffer;
-  FAR struct esp32_spiflash_s *priv = MTD2PRIV(dev);
+  struct esp32_spiflash_s *priv = MTD2PRIV(dev);
 
 #ifdef CONFIG_ESP32_SPIFLASH_DEBUG
   finfo("esp32_read_decrypt(%p, 0x%x, %d, %p)\n",
@@ -1700,13 +1693,13 @@ error_with_buffer:
  *
  ****************************************************************************/
 
-static ssize_t esp32_bread_decrypt(FAR struct mtd_dev_s *dev,
+static ssize_t esp32_bread_decrypt(struct mtd_dev_s *dev,
                                    off_t startblock,
                                    size_t nblocks,
-                                   FAR uint8_t *buffer)
+                                   uint8_t *buffer)
 {
   int ret;
-  FAR struct esp32_spiflash_s *priv = MTD2PRIV(dev);
+  struct esp32_spiflash_s *priv = MTD2PRIV(dev);
   uint32_t addr = MTD_BLK2SIZE(priv, startblock);
   uint32_t size = MTD_BLK2SIZE(priv, nblocks);
 
@@ -1745,11 +1738,11 @@ static ssize_t esp32_bread_decrypt(FAR struct mtd_dev_s *dev,
  *
  ****************************************************************************/
 
-static ssize_t esp32_write(FAR struct mtd_dev_s *dev, off_t offset,
-                           size_t nbytes, FAR const uint8_t *buffer)
+static ssize_t esp32_write(struct mtd_dev_s *dev, off_t offset,
+                           size_t nbytes, const uint8_t *buffer)
 {
   int ret;
-  FAR struct esp32_spiflash_s *priv = MTD2PRIV(dev);
+  struct esp32_spiflash_s *priv = MTD2PRIV(dev);
 
   ASSERT(buffer);
 
@@ -1806,11 +1799,11 @@ error_with_buffer:
  *
  ****************************************************************************/
 
-static ssize_t esp32_bwrite(FAR struct mtd_dev_s *dev, off_t startblock,
-                            size_t nblocks, FAR const uint8_t *buffer)
+static ssize_t esp32_bwrite(struct mtd_dev_s *dev, off_t startblock,
+                            size_t nblocks, const uint8_t *buffer)
 {
   ssize_t ret;
-  FAR struct esp32_spiflash_s *priv = MTD2PRIV(dev);
+  struct esp32_spiflash_s *priv = MTD2PRIV(dev);
   uint32_t addr = MTD_BLK2SIZE(priv, startblock);
   uint32_t size = MTD_BLK2SIZE(priv, nblocks);
 
@@ -1850,13 +1843,13 @@ static ssize_t esp32_bwrite(FAR struct mtd_dev_s *dev, off_t startblock,
  *
  ****************************************************************************/
 
-static ssize_t esp32_bwrite_encrypt(FAR struct mtd_dev_s *dev,
+static ssize_t esp32_bwrite_encrypt(struct mtd_dev_s *dev,
                                     off_t startblock,
                                     size_t nblocks,
-                                    FAR const uint8_t *buffer)
+                                    const uint8_t *buffer)
 {
   ssize_t ret;
-  FAR struct esp32_spiflash_s *priv = MTD2PRIV(dev);
+  struct esp32_spiflash_s *priv = MTD2PRIV(dev);
   uint32_t addr = MTD_BLK2SIZE(priv, startblock);
   uint32_t size = MTD_BLK2SIZE(priv, nblocks);
 
@@ -1905,20 +1898,19 @@ error_with_buffer:
  *
  ****************************************************************************/
 
-static int esp32_ioctl(FAR struct mtd_dev_s *dev, int cmd,
+static int esp32_ioctl(struct mtd_dev_s *dev, int cmd,
                        unsigned long arg)
 {
   int ret = -EINVAL;
-  FAR struct esp32_spiflash_s *priv = MTD2PRIV(dev);
-  FAR struct mtd_geometry_s *geo;
+  struct esp32_spiflash_s *priv = MTD2PRIV(dev);
 
-  finfo("cmd: %d \n", cmd);
+  finfo("cmd: %d\n", cmd);
 
   switch (cmd)
     {
       case MTDIOC_GEOMETRY:
         {
-          geo = (FAR struct mtd_geometry_s *)arg;
+          struct mtd_geometry_s *geo = (struct mtd_geometry_s *)arg;
           if (geo)
             {
               geo->blocksize    = MTD_BLKSIZE(priv);
@@ -1929,6 +1921,30 @@ static int esp32_ioctl(FAR struct mtd_dev_s *dev, int cmd,
               finfo("blocksize: %d erasesize: %d neraseblocks: %d\n",
                     geo->blocksize, geo->erasesize, geo->neraseblocks);
             }
+        }
+        break;
+
+      case BIOC_PARTINFO:
+        {
+          struct partition_info_s *info =
+            (struct partition_info_s *)arg;
+          if (info != NULL)
+            {
+              info->numsectors  = MTD_SIZE(priv) / MTD_BLKSIZE(priv);
+              info->sectorsize  = MTD_BLKSIZE(priv);
+              info->startsector = 0;
+              info->parent[0]   = '\0';
+              ret               = OK;
+            }
+        }
+        break;
+
+      case MTDIOC_ERASESTATE:
+        {
+          uint8_t *result = (uint8_t *)arg;
+          *result = SPI_FLASH_ERASED_STATE;
+
+          ret = OK;
         }
         break;
 
@@ -1949,28 +1965,40 @@ static int esp32_ioctl(FAR struct mtd_dev_s *dev, int cmd,
  * Name: esp32_spiflash_alloc_mtdpart
  *
  * Description:
- *   Alloc ESP32 SPI Flash MTD
+ *   Allocate an MTD partition from the ESP32 SPI Flash.
  *
  * Input Parameters:
- *   None
+ *   mtd_offset - MTD Partition offset from the base address in SPI Flash.
+ *   mtd_size   - Size for the MTD partition.
+ *   encrypted  - Flag indicating whether the newly allocated partition will
+ *                have its content encrypted.
  *
  * Returned Value:
- *   ESP32 SPI Flash MTD data pointer if success or NULL if fail
+ *   ESP32 SPI Flash MTD data pointer if success or NULL if fail.
  *
  ****************************************************************************/
 
-FAR struct mtd_dev_s *esp32_spiflash_alloc_mtdpart(void)
+struct mtd_dev_s *esp32_spiflash_alloc_mtdpart(uint32_t mtd_offset,
+                                               uint32_t mtd_size,
+                                               bool encrypted)
 {
-  struct esp32_spiflash_s *priv = &g_esp32_spiflash1;
-  esp32_spiflash_chip_t *chip = priv->chip;
-  FAR struct mtd_dev_s *mtd_part;
+  struct esp32_spiflash_s *priv;
+  esp32_spiflash_chip_t *chip;
+  struct mtd_dev_s *mtd_part;
   uint32_t blocks;
   uint32_t startblock;
   uint32_t size;
 
-  ASSERT((ESP32_MTD_OFFSET + ESP32_MTD_SIZE) <= chip->chip_size);
-  ASSERT((ESP32_MTD_OFFSET % chip->sector_size) == 0);
-  ASSERT((ESP32_MTD_SIZE % chip->sector_size) == 0);
+  if (encrypted)
+    {
+      priv = &g_esp32_spiflash1_encrypt;
+    }
+  else
+    {
+      priv = &g_esp32_spiflash1;
+    }
+
+  chip = priv->chip;
 
   finfo("ESP32 SPI Flash information:\n");
   finfo("\tID = 0x%x\n", chip->device_id);
@@ -1980,16 +2008,23 @@ FAR struct mtd_dev_s *esp32_spiflash_alloc_mtdpart(void)
   finfo("\tSector size = %d KB\n", chip->sector_size / 1024);
   finfo("\tBlock size = %d KB\n", chip->block_size / 1024);
 
-#if ESP32_MTD_SIZE == 0
-  size = chip->chip_size - ESP32_MTD_OFFSET;
-#else
-  size = ESP32_MTD_SIZE;
-#endif
+  ASSERT((mtd_offset + mtd_size) <= chip->chip_size);
+  ASSERT((mtd_offset % chip->sector_size) == 0);
+  ASSERT((mtd_size % chip->sector_size) == 0);
 
-  finfo("\tMTD offset = 0x%x\n", ESP32_MTD_OFFSET);
+  if (mtd_size == 0)
+    {
+      size = chip->chip_size - mtd_offset;
+    }
+  else
+    {
+      size = mtd_size;
+    }
+
+  finfo("\tMTD offset = 0x%x\n", mtd_offset);
   finfo("\tMTD size = 0x%x\n", size);
 
-  startblock = MTD_SIZE2BLK(priv, ESP32_MTD_OFFSET);
+  startblock = MTD_SIZE2BLK(priv, mtd_offset);
   blocks = MTD_SIZE2BLK(priv, size);
 
   mtd_part = mtd_partition(&priv->mtd, startblock, blocks);
@@ -2016,7 +2051,7 @@ FAR struct mtd_dev_s *esp32_spiflash_alloc_mtdpart(void)
  *
  ****************************************************************************/
 
-FAR struct mtd_dev_s *esp32_spiflash_get_mtd(void)
+struct mtd_dev_s *esp32_spiflash_get_mtd(void)
 {
   struct esp32_spiflash_s *priv = &g_esp32_spiflash1;
 
@@ -2037,7 +2072,7 @@ FAR struct mtd_dev_s *esp32_spiflash_get_mtd(void)
  *
  ****************************************************************************/
 
-FAR struct mtd_dev_s *esp32_spiflash_encrypt_get_mtd(void)
+struct mtd_dev_s *esp32_spiflash_encrypt_get_mtd(void)
 {
   struct esp32_spiflash_s *priv = &g_esp32_spiflash1_encrypt;
 

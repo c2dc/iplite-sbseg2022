@@ -31,7 +31,6 @@
 #include "arm_internal.h"
 #include "sctlr.h"
 #include "gic.h"
-#include "imx_irq.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -51,15 +50,11 @@
  * CURRENT_REGS for portability.
  */
 
-#ifdef CONFIG_SMP
 /* For the case of configurations with multiple CPUs, then there must be one
  * such value for each processor that can receive an interrupt.
  */
 
 volatile uint32_t *g_current_regs[CONFIG_SMP_NCPUS];
-#else
-volatile uint32_t *g_current_regs[1];
-#endif
 
 #if defined(CONFIG_SMP) && CONFIG_ARCH_INTERRUPTSTACK > 7
 /* In the SMP configuration, we will need custom IRQ and FIQ stacks.
@@ -173,16 +168,16 @@ void up_irqinitialize(void)
 }
 
 /****************************************************************************
- * Name: arm_intstack_base
+ * Name: arm_intstack_top
  *
  * Description:
- *   Return a pointer to the "base" the correct interrupt stack allocation
- *   for the current CPU. NOTE: Here, the base means "top" of the stack
+ *   Return a pointer to the top the correct interrupt stack allocation
+ *   for the current CPU.
  *
  ****************************************************************************/
 
 #if defined(CONFIG_SMP) && CONFIG_ARCH_INTERRUPTSTACK > 7
-uintptr_t arm_intstack_base(void)
+uintptr_t arm_intstack_top(void)
 {
   return g_irqstack_top[up_cpu_index()];
 }

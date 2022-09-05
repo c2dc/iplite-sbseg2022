@@ -1,35 +1,20 @@
 /****************************************************************************
  * apps/system/cle/cle.c
  *
- *   Copyright (C) 2014, 2018-2019 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -157,8 +142,8 @@ struct cle_s
   uint16_t coloffs;         /* Left cursor offset */
   uint16_t linelen;         /* Size of the line buffer */
   uint16_t nchars;          /* Size of data in the line buffer */
-  FAR FILE *ins;            /* Input file stream */
-  FAR FILE *outs;           /* Output file stream */
+  int infd;                 /* Input file handle */
+  int outfd;                /* Output file handle */
   FAR char *line;           /* Line buffer */
   FAR const char *prompt;   /* Prompt, in case we have to re-print it */
 };
@@ -168,7 +153,7 @@ struct cle_s
  ****************************************************************************/
 
 #if CONFIG_SYSTEM_CLE_DEBUGLEVEL > 0
-static void     cle_debug(FAR const char *fmt, ...);
+static void     cle_debug(FAR const char *fmt, ...) printflike(1, 2);
 #endif
 
 /* Low-level display and data entry functions */
@@ -272,7 +257,6 @@ static void cle_write(FAR struct cle_s *priv, FAR const char *buffer,
                       uint16_t buflen)
 {
   ssize_t nwritten;
-  uint16_t  nremaining = buflen;
 
   /* Loop until all bytes have been successfully written (or until a
    * unrecoverable error is encountered)
@@ -282,7 +266,7 @@ static void cle_write(FAR struct cle_s *priv, FAR const char *buffer,
     {
       /* Put the next gulp */
 
-      nwritten = fwrite(buffer, sizeof(char), buflen, priv->outs);
+      nwritten = write(priv->outfd, buffer, buflen);
 
       /* Handle write errors.  write() should neve return 0. */
 
@@ -306,12 +290,11 @@ static void cle_write(FAR struct cle_s *priv, FAR const char *buffer,
 
       else
         {
-          nremaining -= nwritten;
+          buffer += nwritten;
+          buflen -= nwritten;
         }
     }
-  while (nremaining > 0);
-
-  fflush(priv->outs);
+  while (buflen > 0);
 }
 
 /****************************************************************************
@@ -348,7 +331,7 @@ static int cle_getch(FAR struct cle_s *priv)
     {
       /* Read one character from the incoming stream */
 
-      nread = fread (&buffer, sizeof(char), 1, priv->ins);
+      nread = read(priv->infd, &buffer, 1);
 
       /* Check for error or end-of-file. */
 
@@ -1150,7 +1133,7 @@ static int cle_editloop(FAR struct cle_s *priv)
  ****************************************************************************/
 
 /****************************************************************************
- * Name: cle
+ * Name: cle/cle_fd
  *
  * Description:
  *   EMACS-like command line editor.  This is actually more like readline
@@ -1158,8 +1141,8 @@ static int cle_editloop(FAR struct cle_s *priv)
  *
  ****************************************************************************/
 
-int cle(FAR char *line, const char *prompt, uint16_t linelen,
-        FILE *instream, FILE *outstream)
+int cle_fd(FAR char *line, FAR const char *prompt, uint16_t linelen,
+           int infd, int outfd)
 {
   FAR struct cle_s priv;
   uint16_t column;
@@ -1172,8 +1155,8 @@ int cle(FAR char *line, const char *prompt, uint16_t linelen,
   priv.linelen  = linelen;
   priv.line     = line;
 
-  priv.ins      = instream;
-  priv.outs     = outstream;
+  priv.infd     = infd;
+  priv.outfd    = outfd;
 
   /* Store the prompt in case we need to re-print it */
 
@@ -1240,3 +1223,11 @@ int cle(FAR char *line, const char *prompt, uint16_t linelen,
 
   return ret;
 }
+
+#ifdef CONFIG_FILE_STREAM
+int cle(FAR char *line, FAR const char *prompt, uint16_t linelen,
+        FAR FILE *instream, FAR FILE *outstream)
+{
+  return cle_fd(line, prompt, linelen, instream->fs_fd, outstream->fs_fd);
+}
+#endif

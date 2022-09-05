@@ -34,7 +34,6 @@
 #include <nuttx/spinlock.h>
 #include <nuttx/sched_note.h>
 
-#include "arm_arch.h"
 #include "sched/sched.h"
 #include "arm_internal.h"
 #include "hardware/cxd5602_memorymap.h"
@@ -202,7 +201,7 @@ int up_cpu_paused(int cpu)
       return OK;
     }
 
-  FAR struct tcb_s *tcb = this_task();
+  struct tcb_s *tcb = this_task();
 
   /* Update scheduler parameters */
 
@@ -265,12 +264,12 @@ int up_cpu_paused(int cpu)
  *
  ****************************************************************************/
 
-int arm_pause_handler(int irq, void *c, FAR void *arg)
+int arm_pause_handler(int irq, void *c, void *arg)
 {
   int cpu = up_cpu_index();
   int ret = OK;
 
-  DPRINTF("cpu%d will be paused \n", cpu);
+  DPRINTF("cpu%d will be paused\n", cpu);
 
   /* Clear SW_INT for APP_DSP(cpu) */
 
@@ -295,12 +294,12 @@ int arm_pause_handler(int irq, void *c, FAR void *arg)
       /* NOTE: Normally, we do not call up_cpu_paused() here because
        * the above enter_critical_setion() would call up_cpu_paused()
        * inside because the caller holds a crtical section.
-       * Howerver, cxd56's remote IRQ control logic also uses this handler
+       * However, cxd56's remote IRQ control logic also uses this handler
        * and a caller might not take a critical section to avoid a deadlock
        * during up_enable_irq() and up_disable_irq(). This is allowed
        * because IRQ control logic does not interact wtih the scheduler.
        * This means that if the request was not handled above, we need
-       * to call up_cpu_puased() here again.
+       * to call up_cpu_paused() here again.
        */
 
       if (up_cpu_pausereq(cpu))
@@ -350,10 +349,12 @@ int up_cpu_pause(int cpu)
    * handler from returning until up_cpu_resume() is called; g_cpu_paused
    * is a handshake that will prefent this function from returning until
    * the CPU is actually paused.
+   * Note that we might spin before getting g_cpu_wait, this just means that
+   * the other CPU still hasn't finished responding to the previous resume
+   * request.
    */
 
-  DEBUGASSERT(!spin_islocked(&g_cpu_wait[cpu]) &&
-              !spin_islocked(&g_cpu_paused[cpu]));
+  DEBUGASSERT(!spin_islocked(&g_cpu_paused[cpu]));
 
   spin_lock(&g_cpu_wait[cpu]);
   spin_lock(&g_cpu_paused[cpu]);

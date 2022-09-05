@@ -32,8 +32,6 @@
 
 #include "nvic.h"
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "chip.h"
 
 /****************************************************************************
@@ -69,7 +67,7 @@
  *
  ****************************************************************************/
 
-static int efm32_timerisr(int irq, uint32_t *regs, FAR void *arg)
+static int efm32_timerisr(int irq, uint32_t *regs, void *arg)
 {
   /* Process timer interrupt */
 

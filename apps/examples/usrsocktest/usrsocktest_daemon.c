@@ -1,35 +1,20 @@
 /****************************************************************************
- * examples/usrsocktest/usrsocktest_daemon.c
+ * apps/examples/usrsocktest/usrsocktest_daemon.c
  *
- *   Copyright (C) 2015, 2017 Haltian Ltd. All rights reserved.
- *    Author: Jussi Kivilinna <jussi.kivilinna@haltian.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -51,6 +36,7 @@
 #include <pthread.h>
 
 #include <sys/socket.h>
+#include <sys/ioctl.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <nuttx/net/usrsock.h>
@@ -89,6 +75,7 @@ struct test_socket_s
   bool connect_refused:1;
   bool disconnected:1;
   int recv_avail_bytes;
+  int flags;
   FAR void *endp;
   struct usrsock_message_req_ack_s pending_resp;
 };
@@ -268,7 +255,7 @@ static int tsock_send_event(int fd, FAR struct daemon_priv_s *priv,
     }
 
   event.usockid = i + TEST_SOCKET_SOCKID_BASE;
-  event.events = events;
+  event.head.events = events;
 
   wlen = write(fd, &event, sizeof(event));
   if (wlen < 0)
@@ -392,8 +379,9 @@ static int socket_request(int fd, FAR struct daemon_priv_s *priv,
 
   /* Prepare response. */
 
-  resp.head.msgid = USRSOCK_MESSAGE_RESPONSE_ACK;
-  resp.head.flags = 0;
+  resp.head.msgid  = USRSOCK_MESSAGE_RESPONSE_ACK;
+  resp.head.flags  = 0;
+  resp.head.events = 0;
   resp.xid = req->head.xid;
   resp.result = socketid;
 
@@ -428,7 +416,8 @@ static int close_request(int fd, FAR struct daemon_priv_s *priv,
 
   /* Prepare response. */
 
-  resp.head.msgid = USRSOCK_MESSAGE_RESPONSE_ACK;
+  resp.head.msgid  = USRSOCK_MESSAGE_RESPONSE_ACK;
+  resp.head.events = 0;
   resp.xid = req->head.xid;
   if (priv->conf->delay_all_responses)
     {
@@ -566,8 +555,9 @@ prepare:
   /* Prepare response. */
 
   resp.xid = req->head.xid;
-  resp.head.msgid = USRSOCK_MESSAGE_RESPONSE_ACK;
-  resp.head.flags = 0;
+  resp.head.msgid  = USRSOCK_MESSAGE_RESPONSE_ACK;
+  resp.head.flags  = 0;
+  resp.head.events = 0;
 
   if (priv->conf->endpoint_block_connect)
     {
@@ -759,8 +749,9 @@ prepare:
   /* Prepare response. */
 
   resp.xid = req->head.xid;
-  resp.head.msgid = USRSOCK_MESSAGE_RESPONSE_ACK;
-  resp.head.flags = 0;
+  resp.head.msgid  = USRSOCK_MESSAGE_RESPONSE_ACK;
+  resp.head.flags  = 0;
+  resp.head.events = 0;
 
   if (priv->conf->delay_all_responses)
     {
@@ -865,7 +856,7 @@ static int recvfrom_request(int fd, FAR struct daemon_priv_s *priv,
 
   if (!tsock->connected)
     {
-      ret = -ENOTCONN;
+      ret = (tsock->endp) ? 0 : -ENOTCONN;
       goto prepare;
     }
 
@@ -895,8 +886,9 @@ prepare:
   /* Prepare response. */
 
   resp.reqack.xid = req->head.xid;
-  resp.reqack.head.msgid = USRSOCK_MESSAGE_RESPONSE_DATA_ACK;
-  resp.reqack.head.flags = 0;
+  resp.reqack.head.msgid  = USRSOCK_MESSAGE_RESPONSE_DATA_ACK;
+  resp.reqack.head.flags  = 0;
+  resp.reqack.head.events = 0;
 
   if (priv->conf->delay_all_responses)
     {
@@ -1086,8 +1078,9 @@ prepare:
   /* Prepare response. */
 
   resp.xid = req->head.xid;
-  resp.head.msgid = USRSOCK_MESSAGE_RESPONSE_ACK;
-  resp.head.flags = 0;
+  resp.head.msgid  = USRSOCK_MESSAGE_RESPONSE_ACK;
+  resp.head.flags  = 0;
+  resp.head.events = 0;
 
   if (priv->conf->delay_all_responses)
     {
@@ -1192,8 +1185,9 @@ prepare:
   /* Prepare response. */
 
   resp.reqack.xid = req->head.xid;
-  resp.reqack.head.msgid = USRSOCK_MESSAGE_RESPONSE_DATA_ACK;
-  resp.reqack.head.flags = 0;
+  resp.reqack.head.msgid  = USRSOCK_MESSAGE_RESPONSE_DATA_ACK;
+  resp.reqack.head.flags  = 0;
+  resp.reqack.head.events = 0;
 
   if (priv->conf->delay_all_responses)
     {
@@ -1303,8 +1297,143 @@ prepare:
   /* Prepare response. */
 
   resp.reqack.xid = req->head.xid;
-  resp.reqack.head.msgid = USRSOCK_MESSAGE_RESPONSE_DATA_ACK;
+  resp.reqack.head.msgid  = USRSOCK_MESSAGE_RESPONSE_DATA_ACK;
+  resp.reqack.head.flags  = 0;
+  resp.reqack.head.events = 0;
+
+  if (priv->conf->delay_all_responses)
+    {
+      resp.reqack.head.flags = USRSOCK_MESSAGE_FLAG_REQ_IN_PROGRESS;
+      resp.reqack.result = -EINPROGRESS;
+      resp.valuelen = 0;
+      resp.valuelen_nontrunc = 0;
+
+      /* Send ack response. */
+
+      wlen = write(fd, &resp, sizeof(resp));
+      if (wlen < 0)
+        {
+          return -errno;
+        }
+
+      if (wlen != sizeof(resp))
+        {
+          return -ENOSPC;
+        }
+
+      pthread_mutex_unlock(&daemon_mutex);
+      usleep(50 * 1000);
+      pthread_mutex_lock(&daemon_mutex);
+
+      /* Previous write was acknowledgment to request, informing that request
+       * is still in progress. Now write actual completion response.
+       */
+
+      resp.reqack.head.msgid = USRSOCK_MESSAGE_RESPONSE_DATA_ACK;
+      resp.reqack.head.flags &= ~USRSOCK_MESSAGE_FLAG_REQ_IN_PROGRESS;
+    }
+
   resp.reqack.head.flags = 0;
+  resp.reqack.result = ret;
+  if (req->max_addrlen == 0)
+    {
+      resp.valuelen = 0;
+      resp.valuelen_nontrunc = sizeof(addr);
+    }
+  else if (ret >= 0)
+    {
+      resp.valuelen = sizeof(addr);
+      resp.valuelen_nontrunc = sizeof(addr);
+      if (resp.valuelen > req->max_addrlen)
+        {
+          resp.valuelen = req->max_addrlen;
+        }
+    }
+  else
+    {
+      resp.valuelen = 0;
+      resp.valuelen_nontrunc = 0;
+    }
+
+  /* Send response. */
+
+  wlen = write(fd, &resp, sizeof(resp));
+  if (wlen < 0)
+    {
+      return -errno;
+    }
+
+  if (wlen != sizeof(resp))
+    {
+      return -ENOSPC;
+    }
+
+  if (resp.valuelen > 0)
+    {
+      /* Send address (value) */
+
+      wlen = write(fd, &addr, resp.valuelen);
+      if (wlen < 0)
+        {
+          return -errno;
+        }
+
+      if (wlen != resp.valuelen)
+        {
+          return -ENOSPC;
+        }
+    }
+
+  return OK;
+}
+
+static int ioctl_request(int fd, FAR struct daemon_priv_s *priv,
+                         FAR void *hdrbuf)
+{
+  FAR struct usrsock_request_ioctl_s *req = hdrbuf;
+  struct usrsock_message_datareq_ack_s resp = {
+  };
+
+  FAR struct test_socket_s *tsock;
+  uint32_t value;
+  ssize_t wlen;
+  ssize_t rlen;
+  int ret;
+
+  /* Check if this socket exists. */
+
+  tsock = test_socket_get(priv, req->usockid);
+  if (!tsock)
+    {
+      ret = -EBADFD;
+      goto prepare;
+    }
+
+  if (req->arglen != sizeof(value))
+    {
+      ret = -EINVAL;
+      goto prepare;
+    }
+
+  /* Read value. */
+
+  rlen = read(fd, &value, sizeof(value));
+  if (rlen < 0 || rlen < sizeof(value))
+    {
+      ret = -EFAULT;
+      goto prepare;
+    }
+
+  ret = OK;
+
+prepare:
+
+  /* Prepare response. */
+
+  resp.reqack.xid = req->head.xid;
+  resp.reqack.head.msgid  = USRSOCK_MESSAGE_RESPONSE_DATA_ACK;
+  resp.reqack.head.flags  = 0;
+  resp.reqack.head.events = 0;
 
   if (priv->conf->delay_all_responses)
     {
@@ -1342,17 +1471,15 @@ prepare:
   resp.reqack.result = ret;
   if (ret >= 0)
     {
-      resp.valuelen = sizeof(addr);
-      resp.valuelen_nontrunc = sizeof(addr);
-      if (resp.valuelen > req->max_addrlen)
-        {
-          resp.valuelen = req->max_addrlen;
-        }
+      resp.valuelen = sizeof(value);
+      resp.valuelen_nontrunc = sizeof(value);
+
+      tsock->flags |= value;
+      value = tsock->flags;
     }
   else
     {
       resp.valuelen = 0;
-      resp.valuelen_nontrunc = 0;
     }
 
   /* Send response. */
@@ -1372,7 +1499,7 @@ prepare:
     {
       /* Send address (value) */
 
-      wlen = write(fd, &addr, resp.valuelen);
+      wlen = write(fd, &value, resp.valuelen);
       if (wlen < 0)
         {
           return -errno;
@@ -1443,6 +1570,12 @@ static int handle_usrsock_request(int fd, FAR struct daemon_priv_s *priv)
         {
           sizeof(struct usrsock_request_getsockname_s),
           getsockname_request,
+        },
+
+      [USRSOCK_REQUEST_IOCTL] =
+        {
+          sizeof(struct usrsock_request_ioctl_s),
+          ioctl_request,
         },
     };
 
@@ -1564,6 +1697,7 @@ static int establish_blocked_connection(int fd,
 
       priv->sockets_waiting_connect--;
       resp->head.flags &= ~USRSOCK_MESSAGE_FLAG_REQ_IN_PROGRESS;
+      resp->head.events = 0;
 
       wlen = write(fd, resp, sizeof(*resp));
       if (wlen < 0)
@@ -1615,6 +1749,7 @@ static int fail_blocked_connection(int fd, FAR struct daemon_priv_s *priv,
 
       priv->sockets_waiting_connect--;
       resp->head.flags &= ~USRSOCK_MESSAGE_FLAG_REQ_IN_PROGRESS;
+      resp->head.events = 0;
 
       wlen = write(fd, resp, sizeof(*resp));
       if (wlen < 0)
@@ -1918,6 +2053,12 @@ errout_closepipe:
 out:
   pthread_mutex_unlock(&daemon_mutex);
   usrsocktest_dbg("ret: %d\n", ret);
+
+  if (ret == OK)
+    {
+      usleep(100);
+    }
+
   return ret;
 }
 
@@ -2193,6 +2334,11 @@ bool usrsocktest_send_delayed_command(const char cmd,
   while (sem_wait(&delayed_cmd->startsem) != OK);
 
   sq_addlast(&delayed_cmd->node, &priv->delayed_cmd_threads);
+
+  if (ret == OK)
+    {
+      usleep(100);
+    }
 
   return true;
 }

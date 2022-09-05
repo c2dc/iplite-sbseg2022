@@ -29,6 +29,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <assert.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/kmalloc.h>
@@ -205,6 +206,7 @@ static int irq_callback(int irq, FAR struct irq_info_s *info,
    * rate    = <interrupt-count> * TICKS_PER_SEC / elapsed
    */
 
+  elapsed = elapsed ? elapsed : 1;
   intpart = (unsigned int)((copy.count * TICK_PER_SEC) / elapsed);
   if (intpart >= 10000)
     {
@@ -281,14 +283,6 @@ static int irq_open(FAR struct file *filep, FAR const char *relpath,
     {
       ferr("ERROR: Only O_RDONLY supported\n");
       return -EACCES;
-    }
-
-  /* "irqs" is the only acceptable value for the relpath */
-
-  if (strcmp(relpath, "irqs") != 0)
-    {
-      ferr("ERROR: relpath is '%s'\n", relpath);
-      return -ENOENT;
     }
 
   /* Allocate a container to hold the file attributes */
@@ -421,14 +415,6 @@ static int irq_dup(FAR const struct file *oldp, FAR struct file *newp)
 
 static int irq_stat(const char *relpath, struct stat *buf)
 {
-  /* "irqs" is the only acceptable value for the relpath */
-
-  if (strcmp(relpath, "irqs") != 0)
-    {
-      ferr("ERROR: relpath is '%s'\n", relpath);
-      return -ENOENT;
-    }
-
   /* "irqs" is the name for a read-only file */
 
   memset(buf, 0, sizeof(struct stat));

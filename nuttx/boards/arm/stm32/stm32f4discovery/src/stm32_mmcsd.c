@@ -31,7 +31,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include "stm32.h"
 
@@ -82,7 +82,7 @@ int stm32_mmcsd_initialize(int port, int minor)
   stm32_configgpio(GPIO_MMCSD_NSS);   /* Assign CS */
   stm32_gpiowrite(GPIO_MMCSD_NSS, 1); /* Ensure the CS is inactive */
 
-  mcinfo("INFO: Initializing mmcsd port %d minor %d \n",
+  mcinfo("INFO: Initializing mmcsd port %d minor %d\n",
          port, minor);
 
   spi = stm32_spibus_initialize(port);

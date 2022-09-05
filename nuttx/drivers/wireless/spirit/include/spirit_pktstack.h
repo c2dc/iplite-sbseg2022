@@ -1,13 +1,9 @@
 /******************************************************************************
  * drivers/wireless/spirit/include/spirit_pktstack.h
- * Configuration and management of SPIRIT STack packets.
  *
  *   Copyright(c) 2015 STMicroelectronics
  *   Author: VMA division - AMS
  *   Version 3.2.2 08-July-2015
- *
- *   Adapted for NuttX by:
- *   Author:  Gregory Nutt <gnutt@nuttx.org>
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -36,8 +32,8 @@
  *
  ******************************************************************************/
 
-#ifndef __INCLUDE_NUTT_WIRELESS_SPIRIT_SPIRIT_PKTSTACK_H
-#define __INCLUDE_NUTT_WIRELESS_SPIRIT_SPIRIT_PKTSTACK_H
+#ifndef __DRIVERS_WIRELESS_SPIRIT_INCLUDE_SPIRIT_PKTSTACK_H
+#define __DRIVERS_WIRELESS_SPIRIT_INCLUDE_SPIRIT_PKTSTACK_H
 
 /* This module can be used to manage the configuration of Spirit STack
  * packets, and it is quite similar to the Basic packets one since the
@@ -486,4 +482,4 @@ int spirit_pkstack_enable_rxsource_addrfilter(
 }
 #endif
 
-#endif /* __INCLUDE_NUTT_WIRELESS_SPIRIT_SPIRIT_PKTSTACK_H */
+#endif /* __DRIVERS_WIRELESS_SPIRIT_INCLUDE_SPIRIT_PKTSTACK_H */

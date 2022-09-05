@@ -25,17 +25,4 @@
 #ifndef __ARCH_SIM_INCLUDE_ARCH_H
 #define __ARCH_SIM_INCLUDE_ARCH_H
 
-/****************************************************************************
- * Inline functions
- ****************************************************************************/
-
-/****************************************************************************
- * Name: sim_getsp
- ****************************************************************************/
-
-static inline uintptr_t sim_getsp(void)
-{
-  return (uintptr_t)__builtin_frame_address(0);
-}
-
 #endif /* __ARCH_SIM_INCLUDE_ARCH_H */

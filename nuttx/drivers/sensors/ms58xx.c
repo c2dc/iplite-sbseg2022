@@ -1,40 +1,20 @@
 /****************************************************************************
  * drivers/sensors/ms58xx.c
- * Character driver for MEAS MS58XX Altimeters
  *
- *   Copyright (C) 2015 Omni Hoverboards Inc. All rights reserved.
- *   Author: Paul Alexander Patience <paul-a.patience@polymtl.ca>
- *   Updated by: Karim Keddam <karim.keddam@polymtl.ca>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- *   Copyright (C) 2016 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -44,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <stdlib.h>
@@ -53,6 +34,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/i2c/i2c_master.h>
 #include <nuttx/sensors/ms58xx.h>
+#include <nuttx/sensors/msxxxx_crc4.h>
 #include <nuttx/random.h>
 
 #if defined(CONFIG_I2C) && defined(CONFIG_SENSORS_MS58XX)
@@ -140,12 +122,6 @@ struct ms58xx_dev_s
  * Private Function Prototypes
  ****************************************************************************/
 
-/* CRC Calculation */
-
-static uint8_t ms58xx_crc(FAR uint16_t *src,
-                          uint8_t crcndx,
-                          uint16_t crcmask);
-
 /* I2C Helpers */
 
 static int ms58xx_i2c_write(FAR struct ms58xx_dev_s *priv,
@@ -164,8 +140,6 @@ static int ms58xx_measure(FAR struct ms58xx_dev_s *priv);
 
 /* Character Driver Methods */
 
-static int     ms58xx_open(FAR struct file *filep);
-static int     ms58xx_close(FAR struct file *filep);
 static ssize_t ms58xx_read(FAR struct file *filep, FAR char *buffer,
                            size_t buflen);
 static ssize_t ms58xx_write(FAR struct file *filep, FAR const char *buffer,
@@ -179,71 +153,21 @@ static int     ms58xx_ioctl(FAR struct file *filep, int cmd,
 
 static const struct file_operations g_fops =
 {
-  ms58xx_open,
-  ms58xx_close,
-  ms58xx_read,
-  ms58xx_write,
-  NULL,
-  ms58xx_ioctl,
-  NULL
+  NULL,            /* open */
+  NULL,            /* close */
+  ms58xx_read,     /* read */
+  ms58xx_write,    /* write */
+  NULL,            /* seek */
+  ms58xx_ioctl,    /* ioctl */
+  NULL             /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  , NULL
+  , NULL           /* unlink */
 #endif
 };
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
-
-/****************************************************************************
- * Name: ms58xx_crc
- *
- * Description:
- *   Calculate the CRC.
- *
- ****************************************************************************/
-
-static uint8_t ms58xx_crc(FAR uint16_t *src,
-                          uint8_t crcndx,
-                          uint16_t crcmask)
-{
-  uint16_t cnt;
-  uint16_t n_rem;
-  uint16_t crc_read;
-  uint8_t n_bit;
-
-  n_rem = 0x00;
-  crc_read = src[crcndx];
-  src[crcndx] &= ~crcmask;
-
-  for (cnt = 0; cnt < 16; cnt++)
-    {
-      if (cnt % 2 == 1)
-        {
-          n_rem ^= (uint16_t)((src[cnt >> 1]) & 0x00ff);
-        }
-      else
-        {
-          n_rem ^= (uint16_t)(src[cnt >> 1] >> 8);
-        }
-
-      for (n_bit = 8; n_bit > 0; n_bit--)
-        {
-          if (n_rem & (0x8000))
-            {
-              n_rem = (n_rem << 1) ^ 0x3000;
-            }
-          else
-            {
-              n_rem = (n_rem << 1);
-            }
-        }
-    }
-
-  n_rem = (0x000f & (n_rem >> 12));
-  src[crcndx] = crc_read;
-  return (n_rem ^ 0x00);
-}
 
 /****************************************************************************
  * Name: ms58xx_i2c_write
@@ -575,7 +499,7 @@ static int ms58xx_readprom(FAR struct ms58xx_dev_s *priv)
   crcmask         = (uint16_t)0xf << crcshift;
   crc             = (uint8_t)((prom[crcindex] & crcmask) >> crcshift);
 
-  if (crc != ms58xx_crc(prom, crcindex, crcmask))
+  if (crc != msxxxx_crc4(prom, crcindex, crcmask))
     {
       snerr("ERROR: crc mismatch\n");
       return -ENODEV;
@@ -826,32 +750,6 @@ static int ms58xx_measure(FAR struct ms58xx_dev_s *priv)
   priv->temp = temp;
   priv->press = press;
   return ret;
-}
-
-/****************************************************************************
- * Name: ms58xx_open
- *
- * Description:
- *   This method is called when the device is opened.
- *
- ****************************************************************************/
-
-static int ms58xx_open(FAR struct file *filep)
-{
-  return OK;
-}
-
-/****************************************************************************
- * Name: ms58xx_close
- *
- * Description:
- *   This method is called when the device is closed.
- *
- ****************************************************************************/
-
-static int ms58xx_close(FAR struct file *filep)
-{
-  return OK;
 }
 
 /****************************************************************************

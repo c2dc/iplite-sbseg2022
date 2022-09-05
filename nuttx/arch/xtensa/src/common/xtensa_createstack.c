@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <sched.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/kmalloc.h>
@@ -40,20 +41,6 @@
 
 #include "xtensa.h"
 #include "xtensa_mm.h"
-
-/****************************************************************************
- * Pre-processor Macros
- ****************************************************************************/
-
-/* XTENSA requires at least a 16-byte stack alignment. */
-
-#define STACK_ALIGNMENT     16
-
-/* Stack alignment macros */
-
-#define STACK_ALIGN_MASK    (STACK_ALIGNMENT - 1)
-#define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
-#define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
 
 /****************************************************************************
  * Public Functions
@@ -71,8 +58,8 @@
  *   - adj_stack_size: Stack size after adjustment for hardware, processor,
  *     etc.  This value is retained only for debug purposes.
  *   - stack_alloc_ptr: Pointer to allocated stack
- *   - adj_stack_ptr: Adjusted stack_alloc_ptr for HW.  The initial value of
- *     the stack pointer.
+ *   - stack_base_ptr: Adjusted stack base pointer after the TLS Data and
+ *     Arguments has been removed from the stack allocation.
  *
  * Input Parameters:
  *   - tcb: The TCB of new task
@@ -96,17 +83,8 @@
  *
  ****************************************************************************/
 
-int up_create_stack(FAR struct tcb_s *tcb, size_t stack_size, uint8_t ttype)
+int up_create_stack(struct tcb_s *tcb, size_t stack_size, uint8_t ttype)
 {
-#if XCHAL_CP_NUM > 0
-  struct xcptcontext *xcp;
-  uintptr_t cpstart;
-#endif
-
-  /* Add the size of the TLS information structure */
-
-  stack_size += sizeof(struct tls_info_s);
-
 #ifdef CONFIG_TLS_ALIGNED
   /* The allocated stack size must not exceed the maximum possible for the
    * TLS feature.
@@ -131,16 +109,6 @@ int up_create_stack(FAR struct tcb_s *tcb, size_t stack_size, uint8_t ttype)
       up_release_stack(tcb, ttype);
     }
 
-#if XCHAL_CP_NUM > 0
-  /* Add the size of the co-processor save area to the stack allocation.
-   * REVISIT:  This may waste memory.  Increasing the caller's requested
-   * stack size should only be necessary if the requested size could not
-   * hold the co-processor save area.
-   */
-
-  stack_size += XTENSA_CP_SA_SIZE;
-#endif
-
   /* Do we need to allocate a new stack? */
 
   if (!tcb->stack_alloc_ptr)
@@ -156,16 +124,14 @@ int up_create_stack(FAR struct tcb_s *tcb, size_t stack_size, uint8_t ttype)
 
       if (ttype == TCB_FLAG_TTYPE_KERNEL)
         {
-          tcb->stack_alloc_ptr =
-            (uint32_t *)kmm_memalign(TLS_STACK_ALIGN, stack_size);
+          tcb->stack_alloc_ptr = kmm_memalign(TLS_STACK_ALIGN, stack_size);
         }
       else
 #endif
         {
           /* Use the user-space allocator if this is a task or pthread */
 
-          tcb->stack_alloc_ptr =
-            (uint32_t *)UMM_MEMALIGN(TLS_STACK_ALIGN, stack_size);
+          tcb->stack_alloc_ptr = UMM_MEMALIGN(TLS_STACK_ALIGN, stack_size);
         }
 
 #else /* CONFIG_TLS_ALIGNED */
@@ -174,14 +140,14 @@ int up_create_stack(FAR struct tcb_s *tcb, size_t stack_size, uint8_t ttype)
 
       if (ttype == TCB_FLAG_TTYPE_KERNEL)
         {
-          tcb->stack_alloc_ptr = (uint32_t *)kmm_malloc(stack_size);
+          tcb->stack_alloc_ptr = kmm_malloc(stack_size);
         }
       else
 #endif
         {
           /* Use the user-space allocator if this is a task or pthread */
 
-          tcb->stack_alloc_ptr = (uint32_t *)UMM_MALLOC(stack_size);
+          tcb->stack_alloc_ptr = UMM_MALLOC(stack_size);
         }
 #endif /* CONFIG_TLS_ALIGNED */
 
@@ -208,32 +174,7 @@ int up_create_stack(FAR struct tcb_s *tcb, size_t stack_size, uint8_t ttype)
        * the stack are referenced as positive word offsets from sp.
        */
 
-      top_of_stack = (uintptr_t)tcb->stack_alloc_ptr + stack_size - 16;
-
-#if XCHAL_CP_NUM > 0
-      /* Allocate the co-processor save area at the top of the (push down)
-       * stack.
-       *
-       * REVISIT:  This is not secure.  In secure built configurations it
-       * be more appropriate to use kmm_memalign() to allocate protected
-       * memory rather than using the stack.
-       */
-
-      cpstart      = (uintptr_t)_CP_ALIGNDOWN(XCHAL_CP0_SA_ALIGN,
-                                              top_of_stack -
-                                              XCHAL_CP1_SA_ALIGN);
-      top_of_stack = cpstart;
-
-      /* Initialize the coprocessor save area (see xtensa_coproc.h) */
-
-      xcp                   = &tcb->xcp;
-      xcp->cpstate.cpenable = 0;                   /* No coprocessors active
-                                                    * for this thread */
-      xcp->cpstate.cpstored = 0;                   /* No coprocessors saved
-                                                    * for this thread */
-      xcp->cpstate.cpasa    = (uint32_t *)cpstart; /* Start of aligned save
-                                                    * area */
-#endif
+      top_of_stack = (uintptr_t)tcb->stack_alloc_ptr + stack_size;
 
       /* The XTENSA stack must be aligned.  If necessary top_of_stack must be
        * rounded down to the next boundary to meet this alignment
@@ -243,16 +184,12 @@ int up_create_stack(FAR struct tcb_s *tcb, size_t stack_size, uint8_t ttype)
        */
 
       top_of_stack  = STACK_ALIGN_DOWN(top_of_stack);
-      size_of_stack = top_of_stack - (uint32_t)tcb->stack_alloc_ptr + 16;
+      size_of_stack = top_of_stack - (uintptr_t)tcb->stack_alloc_ptr;
 
       /* Save the adjusted stack values in the struct tcb_s */
 
-      tcb->adj_stack_ptr  = (FAR uint32_t *)top_of_stack;
+      tcb->stack_base_ptr = tcb->stack_alloc_ptr;
       tcb->adj_stack_size = size_of_stack;
-
-      /* Initialize the TLS data structure */
-
-      memset(tcb->stack_alloc_ptr, 0, sizeof(struct tls_info_s));
 
 #ifdef CONFIG_STACK_COLORATION
       /* If stack debug is enabled, then fill the stack with a
@@ -260,10 +197,9 @@ int up_create_stack(FAR struct tcb_s *tcb, size_t stack_size, uint8_t ttype)
        * water marks.
        */
 
-      up_stack_color((FAR void *)tcb->stack_alloc_ptr +
-                     sizeof(struct tls_info_s),
-                     tcb->adj_stack_size - sizeof(struct tls_info_s));
+      xtensa_stack_color(tcb->stack_base_ptr, tcb->adj_stack_size);
 #endif
+      tcb->flags |= TCB_FLAG_FREE_STACK;
 
       board_autoled_on(LED_STACKCREATED);
       return OK;
@@ -273,7 +209,7 @@ int up_create_stack(FAR struct tcb_s *tcb, size_t stack_size, uint8_t ttype)
 }
 
 /****************************************************************************
- * Name: up_stack_color
+ * Name: xtensa_stack_color
  *
  * Description:
  *   Write a well know value into the stack
@@ -281,28 +217,38 @@ int up_create_stack(FAR struct tcb_s *tcb, size_t stack_size, uint8_t ttype)
  ****************************************************************************/
 
 #ifdef CONFIG_STACK_COLORATION
-void up_stack_color(FAR void *stackbase, size_t nbytes)
+void xtensa_stack_color(void *stackbase, size_t nbytes)
 {
-  uintptr_t start;
-  uintptr_t end;
-  size_t nwords;
-  FAR uint32_t *ptr;
+  uint32_t *stkptr;
+  uintptr_t stkend;
+  size_t    nwords;
+  uintptr_t sp;
 
   /* Take extra care that we do not write outside the stack boundaries */
 
-  start = STACK_ALIGN_UP((uintptr_t)stackbase);
-  end   = STACK_ALIGN_DOWN((uintptr_t)stackbase + nbytes);
+  stkptr = (uint32_t *)STACK_ALIGN_UP((uintptr_t)stackbase);
 
-  /* Get the adjusted size based on the top and bottom of the stack */
+  if (nbytes == 0) /* 0: colorize the running stack */
+    {
+      stkend = up_getsp();
+      if (stkend > (uintptr_t)&sp)
+        {
+          stkend = (uintptr_t)&sp;
+        }
+    }
+  else
+    {
+      stkend = (uintptr_t)stackbase + nbytes;
+    }
 
-  nwords = (end - start) >> 2;
-  ptr  = (FAR uint32_t *)start;
+  stkend = STACK_ALIGN_DOWN(stkend);
+  nwords = (stkend - (uintptr_t)stackbase) >> 2;
 
   /* Set the entire stack to the coloration value */
 
   while (nwords-- > 0)
     {
-      *ptr++ = STACK_COLOR;
+      *stkptr++ = STACK_COLOR;
     }
 }
 #endif

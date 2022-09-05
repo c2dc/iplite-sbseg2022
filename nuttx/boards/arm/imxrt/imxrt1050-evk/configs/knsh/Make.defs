@@ -25,31 +25,14 @@ include $(TOPDIR)/arch/arm/src/armv7-m/Toolchain.defs
 LDSCRIPT1 = memory.ld
 LDSCRIPT2 = kernel-space.ld
 
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  ARCHSCRIPT = -T "${shell cygpath -w $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT1)}"
-  ARCHSCRIPT += -T "${shell cygpath -w $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT2)}"
-else
-  ARCHSCRIPT = -T$(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT1)
-  ARCHSCRIPT += -T$(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT2)
-endif
+ARCHSCRIPT += $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT1)
+ARCHSCRIPT += $(BOARD_DIR)$(DELIM)scripts$(DELIM)$(LDSCRIPT2)
 
-ifeq ($(CONFIG_DEBUG_SYMBOLS),y)
-  ARCHOPTIMIZATION = -g
-endif
-
-ifneq ($(CONFIG_DEBUG_NOOPT),y)
-  ARCHOPTIMIZATION += $(MAXOPTIMIZATION)
-endif
-
-ARCHCFLAGS = -fno-builtin
-ARCHCXXFLAGS = -fno-builtin -fno-exceptions -fcheck-new -fno-rtti
-ARCHWARNINGS = -Wall -Wstrict-prototypes -Wshadow -Wundef -fno-strict-aliasing
-ARCHWARNINGSXX = -Wall -Wshadow -Wundef
 ARCHPICFLAGS = -fpic -msingle-pic-base -mpic-register=r10
 
-CFLAGS := $(ARCHCFLAGS) $(ARCHWARNINGS) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS) -pipe
+CFLAGS := $(ARCHCFLAGS) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS) -pipe
 CPICFLAGS = $(ARCHPICFLAGS) $(CFLAGS)
-CXXFLAGS := $(ARCHCXXFLAGS) $(ARCHWARNINGSXX) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHXXINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS) -pipe
+CXXFLAGS := $(ARCHCXXFLAGS) $(ARCHOPTIMIZATION) $(ARCHCPUFLAGS) $(ARCHXXINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS) -pipe
 CXXPICFLAGS = $(ARCHPICFLAGS) $(CXXFLAGS)
 CPPFLAGS := $(ARCHINCLUDES) $(ARCHDEFINES) $(EXTRAFLAGS)
 AFLAGS := $(CFLAGS) -D__ASSEMBLY__
@@ -63,15 +46,4 @@ LDNXFLATFLAGS = -e main -s 2048
 CMODULEFLAGS = $(CFLAGS) -mlong-calls # --target1-abs
 
 LDMODULEFLAGS = -r -e module_initialize
-ifeq ($(CONFIG_CYGWIN_WINTOOL),y)
-  LDMODULEFLAGS += -T "${shell cygpath -w $(TOPDIR)/libs/libc/modlib/gnu-elf.ld}"
-else
-  LDMODULEFLAGS += -T $(TOPDIR)/libs/libc/modlib/gnu-elf.ld
-endif
-
-ifneq ($(CROSSDEV),arm-nuttx-elf-)
-  LDFLAGS += -nostartfiles -nodefaultlibs
-endif
-ifeq ($(CONFIG_DEBUG_SYMBOLS),y)
-  LDFLAGS += -g
-endif
+LDMODULEFLAGS += -T $(call CONVERT_PATH,$(TOPDIR)/libs/libc/modlib/gnu-elf.ld)

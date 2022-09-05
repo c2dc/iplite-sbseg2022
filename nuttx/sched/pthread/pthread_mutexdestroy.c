@@ -27,6 +27,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <sched.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -59,7 +60,7 @@ int pthread_mutex_destroy(FAR pthread_mutex_t *mutex)
   int ret = EINVAL;
   int status;
 
-  sinfo("mutex=0x%p\n", mutex);
+  sinfo("mutex=%p\n", mutex);
   DEBUGASSERT(mutex != NULL);
 
   if (mutex != NULL)
@@ -93,7 +94,7 @@ int pthread_mutex_destroy(FAR pthread_mutex_t *mutex)
             {
               /* The thread associated with the PID no longer exists */
 
-              mutex->pid = -1;
+              mutex->pid = INVALID_PROCESS_ID;
 
               /* Reset the semaphore.  If threads are were on this
                * semaphore, then this will awakened them and make
@@ -110,7 +111,7 @@ int pthread_mutex_destroy(FAR pthread_mutex_t *mutex)
                * mutex.
                */
 
-              else if (mutex->pid != -1)
+              else if (mutex->pid != INVALID_PROCESS_ID)
                 {
                   /* Yes.. then we cannot destroy the mutex now. */
 

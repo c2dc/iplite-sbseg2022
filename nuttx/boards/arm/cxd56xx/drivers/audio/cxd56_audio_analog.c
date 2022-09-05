@@ -62,7 +62,7 @@ static void clear_mic_boot_time(void)
 static void set_mic_boot_time(void)
 {
   struct timespec start;
-  if (clock_gettime(CLOCK_REALTIME, &start) < 0)
+  if (clock_systime_timespec(&start) < 0)
     {
       g_mic_boot_start_time = 0x0ull;
       return;
@@ -77,7 +77,7 @@ static void wait_mic_boot_finish(void)
   if (g_mic_boot_start_time != 0x0ull)
     {
       struct timespec end;
-      if (clock_gettime(CLOCK_REALTIME, &end) < 0)
+      if (clock_systime_timespec(&end) < 0)
         {
           return;
         }
@@ -148,7 +148,7 @@ CXD56_AUDIO_ECODE cxd56_audio_analog_poweroff(void)
 }
 
 CXD56_AUDIO_ECODE
-cxd56_audio_analog_poweron_input(FAR cxd56_audio_mic_gain_t *gain)
+cxd56_audio_analog_poweron_input(cxd56_audio_mic_gain_t *gain)
 {
   CXD56_AUDIO_ECODE ret = CXD56_AUDIO_ECODE_OK;
 
@@ -262,7 +262,7 @@ CXD56_AUDIO_ECODE cxd56_audio_analog_disable_output(void)
 }
 
 CXD56_AUDIO_ECODE
-cxd56_audio_analog_set_micgain(FAR cxd56_audio_mic_gain_t *gain)
+cxd56_audio_analog_set_micgain(cxd56_audio_mic_gain_t *gain)
 {
   CXD56_AUDIO_ECODE ret = CXD56_AUDIO_ECODE_OK;
 

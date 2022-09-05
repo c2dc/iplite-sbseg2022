@@ -32,7 +32,7 @@
 #include <nuttx/usb/usbdev.h>
 #include <nuttx/usb/usbdev_trace.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam3u-ek.h"
 
 /****************************************************************************
@@ -59,7 +59,7 @@
  *
  ****************************************************************************/
 
-void sam_usbsuspend(FAR struct usbdev_s *dev, bool resume)
+void sam_usbsuspend(struct usbdev_s *dev, bool resume)
 {
   uinfo("resume: %d\n", resume);
 }

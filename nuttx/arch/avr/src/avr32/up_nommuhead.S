@@ -26,7 +26,6 @@
 #include <arch/avr32/avr32.h>
 
 #include "up_internal.h"
-#include "up_arch.h"
 
 /****************************************************************************
  * External Symbols
@@ -121,7 +120,7 @@ __start:
 	lda.w		pc, nx_start
 
 .Lstackbase:
-	.word	_ebss+CONFIG_IDLETHREAD_STACKSIZE-4
+	.word	_ebss+CONFIG_IDLETHREAD_STACKSIZE
 .Lup_lowinit:
 	.word	up_lowinit
 	.size	__start, .-__start

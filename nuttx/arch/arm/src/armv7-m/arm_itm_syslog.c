@@ -33,7 +33,7 @@
 #include "itm.h"
 #include "tpi.h"
 #include "dwt.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "itm_syslog.h"
 
 #ifdef CONFIG_ARMV7M_ITMSYSLOG
@@ -62,8 +62,8 @@
 
 /* SYSLOG channel methods */
 
-static int itm_putc(FAR struct syslog_channel_s *channel, int ch);
-static int itm_flush(FAR struct syslog_channel_s *channel);
+static int itm_putc(struct syslog_channel_s *channel, int ch);
+static int itm_flush(struct syslog_channel_s *channel);
 
 /****************************************************************************
  * Private Data
@@ -97,7 +97,7 @@ static const struct syslog_channel_s g_itm_channel =
  *
  ****************************************************************************/
 
-static int itm_putc(FAR struct syslog_channel_s *channel, int ch)
+static int itm_putc(struct syslog_channel_s *channel, int ch)
 {
   UNUSED(channel);
 
@@ -127,7 +127,7 @@ static int itm_putc(FAR struct syslog_channel_s *channel, int ch)
  *
  ****************************************************************************/
 
-static int itm_flush(FAR struct syslog_channel_s *channel)
+static int itm_flush(struct syslog_channel_s *channel)
 {
   UNUSED(channel);
   return OK;

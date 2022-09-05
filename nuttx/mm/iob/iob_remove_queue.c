@@ -26,19 +26,13 @@
 
 #include <debug.h>
 
+#include <nuttx/irq.h>
+#include <nuttx/arch.h>
 #include <nuttx/mm/iob.h>
 
 #include "iob.h"
 
 #if CONFIG_IOB_NCHAINS > 0
-
-/****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-#ifndef NULL
-#  define NULL ((FAR void *)0)
-#endif
 
 /****************************************************************************
  * Public Functions
@@ -62,6 +56,7 @@ FAR struct iob_s *iob_remove_queue(FAR struct iob_queue_s *iobq)
 
   /* Remove the I/O buffer chain from the head of the queue */
 
+  irqstate_t flags = enter_critical_section();
   qentry = iobq->qh_head;
   if (qentry)
     {
@@ -79,6 +74,7 @@ FAR struct iob_s *iob_remove_queue(FAR struct iob_queue_s *iobq)
       iob_free_qentry(qentry);
     }
 
+  leave_critical_section(flags);
   return iob;
 }
 

@@ -72,7 +72,7 @@ ifeq ($(CONFIG_LCD_SSD1306),y)
 CSRCS += stm32_ssd1306.c
 endif
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += stm32_appinitialize.c
 endif
 
@@ -86,6 +86,10 @@ endif
 
 ifeq ($(CONFIG_PWM),y)
 CSRCS += stm32_pwm.c
+endif
+
+ifeq ($(CONFIG_BOARDCTL_RESET),y)
+CSRCS += stm32_reset.c
 endif
 
 include $(TOPDIR)/boards/Board.mk

@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -37,7 +38,6 @@
 #include <nuttx/serial/serial.h>
 
 #include "chip.h"
-#include "up_arch.h"
 #include "up_internal.h"
 #include "m16c_uart.h"
 
@@ -842,6 +842,7 @@ static void m16c_rxint(struct up_dev_s *dev, bool enable)
 #endif
     {
       _err("ERROR: Invalid UART #\n");
+      leave_critical_section(flags);
       return;
     }
 
@@ -974,6 +975,7 @@ static void m16c_txint(struct up_dev_s *dev, bool enable)
 #endif
     {
       _err("ERROR: Invalid UART #\n");
+      leave_critical_section(flags);
       return;
     }
 

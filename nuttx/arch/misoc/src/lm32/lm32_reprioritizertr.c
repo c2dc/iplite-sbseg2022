@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include <sched.h>
 #include <syscall.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/arch.h>
@@ -52,8 +53,7 @@
  *   1) The priority of the currently running task drops and the next
  *      task in the ready to run list has priority.
  *   2) An idle, ready to run task's priority has been raised above the
- *      the priority of the current, running task and it now has the
- *      priority.
+ *      priority of the current, running task and it now has the priority.
  *
  * Input Parameters:
  *   tcb: The TCB of the task that has been reprioritized
@@ -111,7 +111,6 @@ void up_reprioritize_rtr(struct tcb_s *tcb, uint8_t priority)
         {
           /* If we are going to do a context switch, then now is the right
            * time to add any pending tasks back into the ready-to-run list.
-           * task list now
            */
 
           if (g_pendingtasks.head)
@@ -160,15 +159,6 @@ void up_reprioritize_rtr(struct tcb_s *tcb, uint8_t priority)
 
               struct tcb_s *nexttcb = this_task();
 
-#ifdef CONFIG_ARCH_ADDRENV
-              /* Make sure that the address environment for the previously
-               * running task is closed down gracefully (data caches dump,
-               * MMU flushed) and set up the address environment for the new
-               * thread at the head of the ready-to-run list.
-               */
-
-              group_addrenv(nexttcb);
-#endif
               /* Update scheduler parameters */
 
               nxsched_resume_scheduler(nexttcb);

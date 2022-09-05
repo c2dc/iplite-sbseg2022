@@ -5,7 +5,7 @@
 
 config NETUTILS_WEBSERVER
 	bool "uIP web server"
-	default y
+	default n
 	depends on NET_TCP
 	---help---
 		Enable support for the uIP web server.  This tiny web server was
@@ -53,7 +53,7 @@ config NETUTILS_HTTPD_MAXPATH
 
 config NETUTILS_HTTPD_CGIPATH
 	bool "URL/CGI function mapping"
-	default y
+	default n
 	---help---
 		This option enables mappings from URLs to call CGI functions.  The
 		effect is that the existing httpd_cgi_register() interface can be
@@ -86,7 +86,7 @@ config NETUTILS_HTTPD_ERRPATH
 
 config NETUTILS_HTTPD_SERVERHEADER_DISABLE
 	bool "Disabled the SERVER header"
-	default y
+	default n
 	---help---
 		This option, if selected, will elide the Server\: header
 
@@ -176,6 +176,6 @@ config NETUTILS_HTTPDNETSTATS
 config NETUTILS_HTTPD_DIRLIST
 	bool "Directory listing"
 	depends on NETUTILS_HTTPD_SENDFILE
-	default y
+	default n
 
 endif # NETUTILS_WEBSERVER

@@ -417,7 +417,7 @@ STM3220G-EVAL-specific Configuration Options
     CONFIG_STM32_SPI_INTERRUPTS - Select to enable interrupt driven SPI
       support. Non-interrupt-driven, poll-waiting is recommended if the
       interrupt rate would be to high in the interrupt driven case.
-    CONFIG_STM32_SPI_DMA - Use DMA to improve SPI transfer performance.
+    CONFIG_STM32_SPIx_DMA - Use DMA to improve SPIx transfer performance.
       Cannot be used with CONFIG_STM32_SPI_INTERRUPT.
 
     CONFIG_SDIO_DMA - Support DMA data transfers.  Requires CONFIG_STM32_SDIO
@@ -534,7 +534,7 @@ Where <subdir> is one of the following:
 
       CONFIG_HOST_WINDOWS=y
       CONFIG_WINDOWS_CYGWIN=y
-      CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y
+      CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y
 
   nettest:
   -------
@@ -564,7 +564,7 @@ Where <subdir> is one of the following:
 
         CONFIG_HOST_WINDOWS=y                    : Windows
         CONFIG_WINDOWS_CYGWIN=y                  : Under Cygwin
-        CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y      : GNU EABI toolchain for Windows
+        CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y       : GNU EABI toolchain for Windows
 
        Than can, of course, be easily changes by reconfiguring per Note 1.
 
@@ -573,7 +573,7 @@ Where <subdir> is one of the following:
     Configures the NuttShell (nsh) located at apps/examples/nsh.  The
     Configuration enables both the serial and telnet NSH interfaces.
 
-    CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y           : GNU EABI toolchain for Windows
+    CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y            : GNU EABI toolchain for Windows
     CONFIG_NSH_DHCPC=n                            : DHCP is disabled
     CONFIG_NSH_IPADDR=(192<<24|168<<16|13<<8|161) : Target IP address 192.168.8.161
     CONFIG_NSH_DRIPADDR=(192<<24|168<<16|13<<8|1) : Host IP address 192.168.8.1
@@ -777,9 +777,9 @@ Where <subdir> is one of the following:
        "If you use a large I/O buffer to access the file system, then the
         MMCSD driver will perform multiple block SD transfers.  With DMA
         ON, this seems to result in CRC errors detected by the hardware
-        during the transfer.  Workaround:  CONFIG_MMCSD_MULTIBLOCK_DISABLE=y"
+        during the transfer.  Workaround:  CONFIG_MMCSD_MULTIBLOCK_LIMIT=1"
 
-       For this reason, CONFIG_MMCSD_MULTIBLOCK_DISABLE=y appears in the defconfig
+       For this reason, CONFIG_MMCSD_MULTIBLOCK_LIMIT=1 appears in the defconfig
        file.
 
     7. Another DMA-related concern.  I see this statement in the reference
@@ -843,4 +843,4 @@ Where <subdir> is one of the following:
 
       CONFIG_HOST_WINDOWS=y
       CONFIG_WINDOWS_CYGWIN=y
-      CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y
+      CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y

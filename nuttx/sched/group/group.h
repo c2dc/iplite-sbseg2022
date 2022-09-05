@@ -52,14 +52,14 @@ extern FAR struct task_group_s *g_grouphead;
 #endif
 
 #ifdef CONFIG_ARCH_ADDRENV
-/* This variable holds the PID of the current task group.  This ID is
- * zero if the current task is a kernel thread that has no address
- * environment (other than the kernel context).
+/* This variable holds the current task group.  This pointer is NULL
+ * if the current task is a kernel thread that has no address environment
+ * (other than the kernel context).
  *
  * This must only be accessed with interrupts disabled.
  */
 
-extern pid_t g_pid_current;
+extern FAR struct task_group_s *g_group_current[CONFIG_SMP_NCPUS];
 #endif
 
 /****************************************************************************
@@ -67,13 +67,15 @@ extern pid_t g_pid_current;
  ****************************************************************************/
 
 #ifdef CONFIG_SCHED_CHILD_STATUS
-void weak_function task_initialize(void);
+void task_initialize(void);
+#else
+#  define task_initialize()
 #endif
 
 /* Task group data structure management */
 
 int  group_allocate(FAR struct task_tcb_s *tcb, uint8_t ttype);
-int  group_initialize(FAR struct task_tcb_s *tcb);
+void group_initialize(FAR struct task_tcb_s *tcb);
 #ifndef CONFIG_DISABLE_PTHREAD
 int  group_bind(FAR struct pthread_tcb_s *tcb);
 int  group_join(FAR struct pthread_tcb_s *tcb);
@@ -138,12 +140,6 @@ int  group_setupidlefiles(FAR struct task_tcb_s *tcb);
 int  group_setuptaskfiles(FAR struct task_tcb_s *tcb);
 #ifdef CONFIG_FILE_STREAM
 int  group_setupstreams(FAR struct task_tcb_s *tcb);
-#endif
-
-#ifndef CONFIG_BUILD_KERNEL
-/* Task specific data */
-
-void tls_set_taskdata(FAR struct tcb_s *tcb);
 #endif
 
 #endif /* __SCHED_GROUP_GROUP_H */

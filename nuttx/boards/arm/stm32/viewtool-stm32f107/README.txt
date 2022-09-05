@@ -157,7 +157,6 @@ USB Interface
    3. The OTG FS module has is own, internal soft pull-up logic.  J51 should
       be open so that PE11 activity does effect USB.
 
-
   STM32F103 Configuration
   -----------------------
 
@@ -417,7 +416,6 @@ Freescale MPL115A barometer sensor
       CONFIG_SENSORS=y
       CONFIG_SENSORS_MPL115A=y
       CONFIG_NSH_ARCHINIT=y
-
 
   Note: this driver uses SPI3 then since PB3 pin is also use to JTAG TDO you
   need to disable JTAG support to get this driver working:
@@ -854,7 +852,7 @@ Configurations
      Here are the relevant current settings:
 
      System Type -> Toolchain:
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
      See also the "NOTE about Windows native toolchains" in the section call
      "GNU Toolchain Options" above.
@@ -940,7 +938,7 @@ Configurations
 
        CONFIG_HOST_WINDOWS=y                   : Windows operating system
        CONFIG_WINDOWS_CYGWIN=y                 : POSIX environment under Windows
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
     6. USB support is disabled by default.  See the section above entitled,
        "USB Interface"
@@ -972,7 +970,7 @@ Configurations
 
        CONFIG_HOST_WINDOWS=y                   : Windows operating system
        CONFIG_WINDOWS_CYGWIN=y                 : POSIX environment under Windows
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
     4. USB support is disabled by default.  See the section above entitled,
        "USB Interface"

@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
@@ -56,19 +57,13 @@
 # define CONFIG_HCS12_NINTERFACES 1
 #endif
 
-/* TX poll deley = 1 seconds.
- * CLK_TCK is the number of clock ticks per second
- */
-
-#define HCS12_WDDELAY   (1*CLK_TCK)
-
 /* TX timeout = 1 minute */
 
 #define HCS12_TXTIMEOUT (60*CLK_TCK)
 
 /* This is a helper pointer for accessing the contents of Ethernet header */
 
-#define BUF ((struct eth_hdr_s *)priv->d_dev.d_buf)
+#define BUF ((FAR struct eth_hdr_s *)priv->d_dev.d_buf)
 
 /****************************************************************************
  * Private Types
@@ -81,7 +76,6 @@
 struct emac_driver_s
 {
   bool    d_bifup;            /* true:ifup false:ifdown */
-  struct wdog_s d_txpoll;     /* TX poll timer */
   struct wdog_s d_txtimeout;  /* TX timeout timer */
 
   /* This holds the information visible to the NuttX network */
@@ -95,7 +89,8 @@ struct emac_driver_s
 
 /* A single packet buffer is used */
 
-static uint8_t g_pktbuf[MAX_NETDEV_PKTSIZE + CONFIG_NET_GUARDSIZE];
+static uint8_t g_pktbuf[CONFIG_HCS12_NINTERFACES]
+                       [MAX_NETDEV_PKTSIZE + CONFIG_NET_GUARDSIZE];
 
 /* Driver state structure */
 
@@ -118,7 +113,6 @@ static int  emac_interrupt(int irq, FAR void *context, FAR void *arg);
 
 /* Watchdog timer expirations */
 
-static void emac_polltimer(wdparm_t arg);
 static void emac_txtimeout(wdparm_t arg);
 
 /* NuttX callback functions */
@@ -369,7 +363,7 @@ static void emac_receive(FAR struct emac_driver_s *priv)
       else
 #endif
 #ifdef CONFIG_NET_ARP
-      if (BUF->type == htons(ETHTYPE_ARP))
+      if (BUF->type == HTONS(ETHTYPE_ARP))
         {
           arp_arpin(&priv->d_dev);
 
@@ -490,43 +484,6 @@ static void emac_txtimeout(wdparm_t arg)
 }
 
 /****************************************************************************
- * Function: emac_polltimer
- *
- * Description:
- *   Periodic timer handler.  Called from the timer interrupt handler.
- *
- * Input Parameters:
- *   arg  - The argument
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   Global interrupts are disabled by the watchdog logic.
- *
- ****************************************************************************/
-
-static void emac_polltimer(wdparm_t arg)
-{
-  FAR struct emac_driver_s *priv = (FAR struct emac_driver_s *)arg;
-
-  /* Check if there is room in the send another TX packet.  We cannot perform
-   * the TX poll if he are unable to accept another packet for transmission.
-   */
-
-  /* If so, update TCP timing states and poll the network for new XMIT data.
-   * Hmmm.. might be bug here.  Does this mean if there is a transmit in
-   * progress, we will missing TCP time state updates?
-   */
-
-  devif_timer(&priv->d_dev, HCS12_WDDELAY, emac_txpoll);
-
-  /* Setup the watchdog poll timer again */
-
-  wd_start(&priv->d_txpoll, HCS12_WDDELAY, emac_polltimer, (wdparm_t)arg);
-}
-
-/****************************************************************************
  * Function: emac_ifup
  *
  * Description:
@@ -553,11 +510,6 @@ static int emac_ifup(struct net_driver_s *dev)
         (dev->d_ipaddr >> 16) & 0xff, dev->d_ipaddr >> 24);
 
   /* Initialize PHYs, Ethernet interface, and setup up Ethernet interrupts */
-
-  /* Set and activate a timer process */
-
-  wd_start(&priv->d_txpoll, HCS12_WDDELAY,
-           emac_polltimer, (wdparm_t)priv);
 
   /* Enable the Ethernet interrupt */
 
@@ -593,9 +545,8 @@ static int emac_ifdown(struct net_driver_s *dev)
   flags = enter_critical_section();
   up_disable_irq(CONFIG_HCS12_IRQ);
 
-  /* Cancel the TX poll timer and TX timeout timers */
+  /* Cancel the TX timeout timers */
 
-  wd_cancel(&priv->d_txpoll);
   wd_cancel(&priv->d_txtimeout);
 
   /* Put the EMAC is its reset, non-operational state.  This should be
@@ -649,7 +600,7 @@ static int emac_txavail(struct net_driver_s *dev)
 
       /* If so, then poll the network for new XMIT data */
 
-      devif_timer(&priv->d_dev, 0, emac_txpoll);
+      devif_poll(&priv->d_dev, emac_txpoll);
     }
 
   leave_critical_section(flags);
@@ -743,7 +694,7 @@ int emac_initialize(int intf)
 
   /* Get the interface structure associated with this interface number. */
 
-  DEBUGASSERT(inf <  CONFIG_HCS12_NINTERFACES);
+  DEBUGASSERT(inf < CONFIG_HCS12_NINTERFACES);
   priv = &g_emac[intf];
 
   /* Check if a Ethernet chip is recognized at its I/O base */
@@ -760,7 +711,7 @@ int emac_initialize(int intf)
   /* Initialize the driver structure */
 
   memset(priv, 0, sizeof(struct emac_driver_s));
-  priv->d_dev.d_buf     = g_pktbuf;      /* Single packet buffer */
+  priv->d_dev.d_buf     = g_pktbuf[inf]; /* Single packet buffer */
   priv->d_dev.d_ifup    = emac_ifup;     /* I/F down callback */
   priv->d_dev.d_ifdown  = emac_ifdown;   /* I/F up (new IP address) callback */
   priv->d_dev.d_txavail = emac_txavail;  /* New TX data callback */

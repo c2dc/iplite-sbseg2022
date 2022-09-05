@@ -33,9 +33,7 @@
 #include <nuttx/arch.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "hardware/efm32_timer.h"
 #include "efm32_config.h"
 #include "efm32_gpio.h"
@@ -70,7 +68,7 @@
  *
  ****************************************************************************/
 
-void efm32_timer_dumpregs(uintptr_t base, FAR const char *msg)
+void efm32_timer_dumpregs(uintptr_t base, const char *msg)
 {
 #ifdef CONFIG_DEBUG_TIMER_INFO
   int i;
@@ -104,10 +102,10 @@ void efm32_timer_dumpregs(uintptr_t base, FAR const char *msg)
           getreg32(base + EFM32_TIMER_STATUS_OFFSET),
           getreg32(base + EFM32_TIMER_IEN_OFFSET),
           getreg32(base + EFM32_TIMER_IF_OFFSET));
-  tmrinfo("DTFAULT: %04x DTFAULTC: %04x  DTLOCK: %04x \n",
+  tmrinfo("DTFAULT: %04x DTFAULTC: %04x  DTLOCK: %04x\n",
           getreg32(base + EFM32_TIMER_CTRL_OFFSET),
           getreg32(base + EFM32_TIMER_STATUS_OFFSET),
-          getreg32(base + EFM32_TIMER_IEN_OFFSET),
+          getreg32(base + EFM32_TIMER_IEN_OFFSET));
 #endif
 }
 
@@ -214,7 +212,7 @@ int efm32_timer_set_freq(uintptr_t base, uint32_t clk_freq, uint32_t freq)
 
   reload = (clk_freq / prescaler / freq);
 
-  tmrinfo("Source: %4" PRIx32 "Hz Div: %4x Reload: %4x \n",
+  tmrinfo("Source: %4" PRIx32 "Hz Div: %4x Reload: %4x\n",
           clk_freq, prescaler, reload);
 
   putreg32(reload, base + EFM32_TIMER_TOP_OFFSET);

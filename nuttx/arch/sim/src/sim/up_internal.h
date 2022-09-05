@@ -18,24 +18,33 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_SIM_SRC_UP_INTERNAL_H
-#define __ARCH_SIM_SRC_UP_INTERNAL_H
+#ifndef __ARCH_SIM_SRC_SIM_UP_INTERNAL_H
+#define __ARCH_SIM_SRC_SIM_UP_INTERNAL_H
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
-#ifdef __ASSEMBLY__
-#  include <nuttx/config.h>
-#else
+#ifdef __SIM__
+#  include "config.h"
+#endif
+
+#ifndef __ASSEMBLY__
 #  include <sys/types.h>
 #  include <stdbool.h>
-#  include <netinet/in.h>
+#  include <stdint.h>
+#  if defined(CONFIG_SIM_NETDEV_TAP)
+#    include <netinet/in.h>
+#  endif
 #endif
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
+
+#ifndef CONFIG_SMP_NCPUS
+#  define CONFIG_SMP_NCPUS 1
+#endif
 
 /* Determine which (if any) console driver to use */
 
@@ -48,6 +57,18 @@
 #    define USE_DEVCONSOLE 1
 #  endif
 #endif
+
+/* Use a stack alignment of 16 bytes.  If necessary frame_size must be
+ * rounded up to the next boundary
+ */
+
+#define STACK_ALIGNMENT     16
+
+/* Stack alignment macros */
+
+#define STACK_ALIGN_MASK    (STACK_ALIGNMENT - 1)
+#define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
+#define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
 
 /* Simulated Heap Definitions ***********************************************/
 
@@ -89,9 +110,6 @@
  ****************************************************************************/
 
 struct tcb_s;
-struct spi_dev_s;
-struct qspi_dev_s;
-struct ioexpander_dev_s;
 struct i2c_master_s;
 
 /****************************************************************************
@@ -104,21 +122,17 @@ struct i2c_master_s;
  * CURRENT_REGS for portability.
  */
 
-#ifdef CONFIG_SMP
 /* For the case of architectures with multiple CPUs, then there must be one
  * such value for each processor that can receive an interrupt.
  */
 
-int up_cpu_index(void); /* See include/nuttx/arch.h */
 extern volatile void *g_current_regs[CONFIG_SMP_NCPUS];
-#  define CURRENT_REGS (g_current_regs[up_cpu_index()])
+#define CURRENT_REGS (g_current_regs[up_cpu_index()])
 
-#else
+/* The command line  arguments passed to simulator */
 
-extern volatile void *g_current_regs[1];
-#  define CURRENT_REGS (g_current_regs[0])
-
-#endif
+extern int g_argc;
+extern char **g_argv;
 
 /****************************************************************************
  * Public Function Prototypes
@@ -126,28 +140,25 @@ extern volatile void *g_current_regs[1];
 
 /* Context switching */
 
-#if defined(CONFIG_HOST_X86_64) && !defined(CONFIG_SIM_M32)
 void up_copyfullstate(unsigned long *dest, unsigned long *src);
-#else
-void up_copyfullstate(uint32_t *dest, uint32_t *src);
-#endif
-
 void *up_doirq(int irq, void *regs);
 
-/* up_head.c ****************************************************************/
+/* up_hostmisc.c ************************************************************/
 
 void host_abort(int status);
+int  host_backtrace(void** array, int size);
 
 /* up_hostmemory.c **********************************************************/
 
 void *host_alloc_heap(size_t sz);
 void *host_alloc_shmem(const char *name, size_t size, int master);
 void  host_free_shmem(void *mem);
-void *host_malloc(size_t size);
+
+size_t host_malloc_size(void *mem);
+void *host_memalign(size_t alignment, size_t size);
 void host_free(void *mem);
 void *host_realloc(void *oldmem, size_t size);
-void *host_calloc(size_t n, size_t elem_size);
-void *host_memalign(size_t alignment, size_t size);
+void host_mallinfo(int *aordblks, int *uordblks);
 
 /* up_hosttime.c ************************************************************/
 
@@ -164,29 +175,21 @@ void sim_sigdeliver(void);
 
 #ifdef CONFIG_SMP
 void sim_cpu0_start(void);
+int sim_cpu_start(int cpu, void *stack, size_t size);
+void sim_send_ipi(int cpu);
 #endif
 
 /* up_smpsignal.c ***********************************************************/
 
 #ifdef CONFIG_SMP
 void up_cpu_started(void);
-int up_cpu_paused(int cpu);
-struct tcb_s *up_this_task(void);
-int up_cpu_set_pause_handler(int irq);
-void sim_send_ipi(int cpu);
-void sim_timer_handler(void);
+int up_init_ipi(int irq);
 #endif
 
 /* up_oneshot.c *************************************************************/
 
 #ifdef CONFIG_ONESHOT
 void up_timer_update(void);
-#endif
-
-/* rpmsg_serialinit *********************************************************/
-
-#ifdef CONFIG_RPMSG_UART
-void rpmsg_serialinit(void);
 #endif
 
 /* up_uart.c ****************************************************************/
@@ -231,10 +234,17 @@ int sim_tsc_initialize(int minor);
 int sim_tsc_uninitialize(void);
 #endif
 
+/* up_keyboard.c ************************************************************/
+
+#ifdef CONFIG_SIM_KEYBOARD
+int sim_kbd_initialize(void);
+void up_kbdevent(uint32_t key, bool is_press);
+#endif
+
 /* up_eventloop.c ***********************************************************/
 
 #if defined(CONFIG_SIM_TOUCHSCREEN) || defined(CONFIG_SIM_AJOYSTICK) || \
-    defined(CONFIG_ARCH_BUTTONS)
+    defined(CONFIG_ARCH_BUTTONS) || defined(CONFING_SIM_KEYBOARD)
 void up_x11events(void);
 void up_buttonevent(int x, int y, int buttons);
 #endif
@@ -245,61 +255,59 @@ void up_buttonevent(int x, int y, int buttons);
 int sim_ajoy_initialize(void);
 #endif
 
-/* up_ioexpander.c **********************************************************/
-
-#ifdef CONFIG_SIM_IOEXPANDER
-struct ioexpander_dev_s *sim_ioexpander_initialize(void);
-#endif
-
 /* up_tapdev.c **************************************************************/
 
 #if defined(CONFIG_SIM_NETDEV_TAP) && !defined(__CYGWIN__)
-void tapdev_init(void);
+void tapdev_init(void *priv,
+                 void (*tx_done_intr_cb)(void *priv),
+                 void (*rx_ready_intr_cb)(void *priv));
 int tapdev_avail(void);
 unsigned int tapdev_read(unsigned char *buf, unsigned int buflen);
 void tapdev_send(unsigned char *buf, unsigned int buflen);
 void tapdev_ifup(in_addr_t ifaddr);
 void tapdev_ifdown(void);
 
-#  define netdev_init()           tapdev_init()
-#  define netdev_avail()          tapdev_avail()
-#  define netdev_read(buf,buflen) tapdev_read(buf,buflen)
-#  define netdev_send(buf,buflen) tapdev_send(buf,buflen)
-#  define netdev_ifup(ifaddr)     tapdev_ifup(ifaddr)
-#  define netdev_ifdown()         tapdev_ifdown()
+#  define netdev_init(priv,txcb,rxcb) tapdev_init(priv,txcb,rxcb)
+#  define netdev_avail()              tapdev_avail()
+#  define netdev_read(buf,buflen)     tapdev_read(buf,buflen)
+#  define netdev_send(buf,buflen)     tapdev_send(buf,buflen)
+#  define netdev_ifup(ifaddr)         tapdev_ifup(ifaddr)
+#  define netdev_ifdown()             tapdev_ifdown()
 #endif
 
 /* up_wpcap.c ***************************************************************/
 
 #if defined(CONFIG_SIM_NETDEV_TAP) && defined(__CYGWIN__)
-void wpcap_init(void);
+void wpcap_init(void *priv,
+                void (*tx_done_intr_cb)(void *priv),
+                void (*rx_ready_intr_cb)(void *priv));
 unsigned int wpcap_read(unsigned char *buf, unsigned int buflen);
 void wpcap_send(unsigned char *buf, unsigned int buflen);
 
-#  define netdev_init()           wpcap_init()
-#  define netdev_avail()          1
-#  define netdev_read(buf,buflen) wpcap_read(buf,buflen)
-#  define netdev_send(buf,buflen) wpcap_send(buf,buflen)
-#  define netdev_ifup(ifaddr)     {}
-#  define netdev_ifdown()         {}
+#  define netdev_init(priv,txcb,rxcb) wpcap_init(priv,txcb,rxcb)
+#  define netdev_avail()              1
+#  define netdev_read(buf,buflen)     wpcap_read(buf,buflen)
+#  define netdev_send(buf,buflen)     wpcap_send(buf,buflen)
+#  define netdev_ifup(ifaddr)         {}
+#  define netdev_ifdown()             {}
 #endif
 
 /* up_vpnkit.c **************************************************************/
 
 #if defined(CONFIG_SIM_NETDEV_VPNKIT)
-void vpnkit_init(void);
+void vpnkit_init(void *priv,
+                 void (*tx_done_intr_cb)(void *priv),
+                 void (*rx_ready_intr_cb)(void *priv));
 int vpnkit_avail(void);
 unsigned int vpnkit_read(unsigned char *buf, unsigned int buflen);
 void vpnkit_send(unsigned char *buf, unsigned int buflen);
-void vpnkit_ifup(in_addr_t ifaddr);
-void vpnkit_ifdown(void);
 
-#  define netdev_init()           vpnkit_init()
-#  define netdev_avail()          vpnkit_avail()
-#  define netdev_read(buf,buflen) vpnkit_read(buf,buflen)
-#  define netdev_send(buf,buflen) vpnkit_send(buf,buflen)
-#  define netdev_ifup(ifaddr)     vpnkit_ifup(ifaddr)
-#  define netdev_ifdown()         vpnkit_ifdown()
+#  define netdev_init(priv,txcb,rxcb) vpnkit_init(priv,txcb,rxcb)
+#  define netdev_avail()              vpnkit_avail()
+#  define netdev_read(buf,buflen)     vpnkit_read(buf,buflen)
+#  define netdev_send(buf,buflen)     vpnkit_send(buf,buflen)
+#  define netdev_ifup(ifaddr)         {}
+#  define netdev_ifdown()             {}
 #endif
 
 /* up_netdriver.c ***********************************************************/
@@ -309,19 +317,18 @@ void netdriver_setmacaddr(unsigned char *macaddr);
 void netdriver_setmtu(int mtu);
 void netdriver_loop(void);
 
+/* up_usrsock.c *************************************************************/
+
+#ifdef CONFIG_SIM_NETUSRSOCK
+int usrsock_init(void);
+void usrsock_loop(void);
+#endif
+
 /* up_rptun.c ***************************************************************/
 
 #ifdef CONFIG_RPTUN
-int up_rptun_init(void);
+int up_rptun_init(const char *shmemname, const char *cpuname, bool master);
 void up_rptun_loop(void);
-#endif
-
-#ifdef CONFIG_SIM_SPIFLASH
-struct spi_dev_s *up_spiflashinitialize(const char *name);
-#endif
-
-#ifdef CONFIG_SIM_QSPIFLASH
-struct qspi_dev_s *up_qspiflashinitialize(void);
 #endif
 
 /* up_hcisocket.c ***********************************************************/
@@ -329,13 +336,6 @@ struct qspi_dev_s *up_qspiflashinitialize(void);
 #ifdef CONFIG_SIM_HCISOCKET
 int bthcisock_register(int dev_id);
 int bthcisock_loop(void);
-#endif
-
-/* up_btuart.c **************************************************************/
-
-#ifdef CONFIG_SIM_BTUART
-int  sim_btuart_register(const char *name, int id);
-void sim_btuart_loop(void);
 #endif
 
 /* up_audio.c ***************************************************************/
@@ -352,19 +352,19 @@ struct i2c_master_s *sim_i2cbus_initialize(int bus);
 int sim_i2cbus_uninitialize(struct i2c_master_s *dev);
 #endif
 
+/* up_spi*.c ****************************************************************/
+
+#ifdef CONFIG_SIM_SPI
+struct spi_dev_s *sim_spi_initialize(const char *filename);
+int sim_spi_uninitialize(struct spi_dev_s *dev);
+#endif
+
 /* Debug ********************************************************************/
 
 #ifdef CONFIG_STACK_COLORATION
+size_t sim_stack_check(void *alloc, size_t size);
 void up_stack_color(void *stackbase, size_t nbytes);
 #endif
 
-/* up_foc.c *****************************************************************/
-
-#ifdef CONFIG_MOTOR_FOC
-struct foc_dev_s;
-FAR struct foc_dev_s *sim_foc_initialize(int inst);
-void sim_foc_update(void);
-#endif
-
 #endif /* __ASSEMBLY__ */
-#endif /* __ARCH_SIM_SRC_UP_INTERNAL_H */
+#endif /* __ARCH_SIM_SRC_SIM_UP_INTERNAL_H */

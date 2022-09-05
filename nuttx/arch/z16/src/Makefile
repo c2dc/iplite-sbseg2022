@@ -19,7 +19,7 @@
 ############################################################################
 
 include $(TOPDIR)/Make.defs
--include chip/Make.defs
+include chip/Make.defs
 
 COMPILER = ${shell basename "$(CC)"}
 ARCHSRCDIR = $(TOPDIR)/arch/$(CONFIG_ARCH)/src
@@ -122,7 +122,7 @@ endif
 
 # This is part of the top-level export target
 
-export_startup: board/libboard$(LIBEXT) $(STARTUP_OBJS)
+export_startup: $(STARTUP_OBJS)
 ifeq ($(CONFIG_WINDOWS_NATIVE),y)
 	$(Q) if exist "$(EXPORT_DIR)$(DELIM)startup" ( copy $(STARTUP_OBJS) "$(EXPORT_DIR)$(DELIM)startup$(DELIM)." /b /y)
 else
@@ -139,8 +139,6 @@ endif
 depend: .depend
 
 context::
-
-clean_context::
 
 clean:
 ifeq ($(CONFIG_WINDOWS_NATIVE),y)
@@ -159,7 +157,7 @@ endif
 	$(call DELFILE, libarch$(LIBEXT))
 	$(call CLEAN)
 
-distclean: clean
+distclean:: clean
 ifeq ($(CONFIG_WINDOWS_NATIVE),y)
 	$(Q) if exist board$(DELIM)Makefile ( $(MAKE) -C board distclean )
 else

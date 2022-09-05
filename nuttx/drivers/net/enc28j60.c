@@ -36,6 +36,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
@@ -132,10 +133,6 @@
 
 /* Timing *******************************************************************/
 
-/* TX poll deley = 1 seconds. CLK_TCK is the number of ticks per second */
-
-#define ENC_WDDELAY   (1*CLK_TCK)
-
 /* TX timeout = 1 minute */
 
 #define ENC_TXTIMEOUT (60*CLK_TCK)
@@ -178,9 +175,13 @@
 #define enc_bfsgreg(priv,ctrlreg,setbits) \
   enc_wrgreg2(priv, ENC_BFS | GETADDR(ctrlreg), setbits)
 
+/* Packet buffer size */
+
+#define PKTBUF_SIZE (MAX_NETDEV_PKTSIZE + CONFIG_NET_GUARDSIZE)
+
 /* This is a helper pointer for accessing the contents of Ethernet header */
 
-#define BUF ((struct eth_hdr_s *)priv->dev.d_buf)
+#define BUF ((FAR struct eth_hdr_s *)priv->dev.d_buf)
 
 /* Debug ********************************************************************/
 
@@ -228,7 +229,6 @@ struct enc_driver_s
 
   /* Timing */
 
-  struct wdog_s         txpoll;        /* TX poll timer */
   struct wdog_s         txtimeout;     /* TX timeout timer */
 
   /* If we don't own the SPI bus, then we cannot do SPI accesses from the
@@ -239,7 +239,7 @@ struct enc_driver_s
   struct work_s         towork;        /* Tx timeout work queue support */
   struct work_s         pollwork;      /* Poll timeout work queue support */
 
-  /* This is the contained SPI driver intstance */
+  /* This is the contained SPI driver instance */
 
   FAR struct spi_dev_s *spi;
 
@@ -254,7 +254,7 @@ struct enc_driver_s
 
 /* A single packet buffer is used */
 
-static uint8_t g_pktbuf[MAX_NETDEV_PKTSIZE + CONFIG_NET_GUARDSIZE];
+static uint16_t g_pktbuf[CONFIG_ENC28J60_NINTERFACES][(PKTBUF_SIZE + 1) / 2];
 
 /* Driver status structure */
 
@@ -322,8 +322,6 @@ static int  enc_interrupt(int irq, FAR void *context, FAR void *arg);
 
 static void enc_toworker(FAR void *arg);
 static void enc_txtimeout(wdparm_t arg);
-static void enc_pollworker(FAR void *arg);
-static void enc_polltimer(wdparm_t arg);
 
 /* NuttX callback functions */
 
@@ -1460,7 +1458,7 @@ static void enc_rxdispatch(FAR struct enc_driver_s *priv)
   else
 #endif
 #ifdef CONFIG_NET_ARP
-  if (BUF->type == htons(ETHTYPE_ARP))
+  if (BUF->type == HTONS(ETHTYPE_ARP))
     {
       ninfo("ARP packet received (%02x)\n", BUF->type);
       NETDEV_RXARP(&priv->dev);
@@ -1480,7 +1478,7 @@ static void enc_rxdispatch(FAR struct enc_driver_s *priv)
 #endif
     {
       nwarn("WARNING: Unsupported packet type dropped (%02x)\n",
-            htons(BUF->type));
+            HTONS(BUF->type));
       NETDEV_RXDROPPED(&priv->dev);
     }
 }
@@ -1951,100 +1949,6 @@ static void enc_txtimeout(wdparm_t arg)
 }
 
 /****************************************************************************
- * Name: enc_pollworker
- *
- * Description:
- *   Periodic timer handler continuation.
- *
- * Input Parameters:
- *   arg  - The argument
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *
- ****************************************************************************/
-
-static void enc_pollworker(FAR void *arg)
-{
-  FAR struct enc_driver_s *priv = (FAR struct enc_driver_s *)arg;
-
-  DEBUGASSERT(priv);
-
-  /* Get exclusive access to both the network and the SPI bus. */
-
-  net_lock();
-  enc_lock(priv);
-
-  /* Verify that the hardware is ready to send another packet.  The driver
-   * start a transmission process by setting ECON1.TXRTS. When the packet is
-   * finished transmitting or is aborted due to an error/cancellation, the
-   * ECON1.TXRTS bit will be cleared.
-   */
-
-  if ((enc_rdgreg(priv, ENC_ECON1) & ECON1_TXRTS) == 0)
-    {
-      /* Yes.. update TCP timing states and poll the network for new XMIT
-       * data.  Hmmm.. looks like a bug here to me.  Does this mean if there
-       * is a transmit in progress, we will missing TCP time state updates?
-       */
-
-      devif_timer(&priv->dev, ENC_WDDELAY, enc_txpoll);
-    }
-
-  /* Release lock on the SPI bus and the network */
-
-  enc_unlock(priv);
-  net_unlock();
-
-  /* Setup the watchdog poll timer again */
-
-  wd_start(&priv->txpoll, ENC_WDDELAY,
-           enc_polltimer, (wdparm_t)arg);
-}
-
-/****************************************************************************
- * Name: enc_polltimer
- *
- * Description:
- *   Periodic timer handler.  Called from the timer interrupt handler.
- *
- * Input Parameters:
- *   arg  - The argument
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *
- ****************************************************************************/
-
-static void enc_polltimer(wdparm_t arg)
-{
-  FAR struct enc_driver_s *priv = (FAR struct enc_driver_s *)arg;
-  int ret;
-
-  /* In complex environments, we cannot do SPI transfers from the timeout
-   * handler because semaphores are probably used to lock the SPI bus.  In
-   * this case, we will defer processing to the worker thread.  This is also
-   * much kinder in the use of system resources and is, therefore, probably
-   * a good thing to do in any event.
-   */
-
-  DEBUGASSERT(priv && work_available(&priv->pollwork));
-
-  /* Notice that poll watchdog is not active so further poll timeouts can
-   * occur until we restart the poll timeout watchdog.
-   */
-
-  ret = work_queue(ENCWORK, &priv->pollwork, enc_pollworker,
-                   (FAR void *)priv, 0);
-  DEBUGASSERT(ret == OK);
-  UNUSED(ret);
-}
-
-/****************************************************************************
  * Name: enc_ifup
  *
  * Description:
@@ -2099,11 +2003,6 @@ static int enc_ifup(struct net_driver_s *dev)
 
       enc_bfsgreg(priv, ENC_ECON1, ECON1_RXEN);
 
-      /* Set and activate a timer process */
-
-      wd_start(&priv->txpoll, ENC_WDDELAY,
-               enc_polltimer, (wdparm_t)priv);
-
       /* Mark the interface up and enable the Ethernet interrupt at the
        * controller
        */
@@ -2155,9 +2054,8 @@ static int enc_ifdown(struct net_driver_s *dev)
   flags = enter_critical_section();
   priv->lower->disable(priv->lower);
 
-  /* Cancel the TX poll timer and TX timeout timers */
+  /* Cancel the TX timeout timers */
 
-  wd_cancel(&priv->txpoll);
   wd_cancel(&priv->txtimeout);
 
   /* Reset the device and leave in the power save state */
@@ -2219,7 +2117,7 @@ static int enc_txavail(struct net_driver_s *dev)
            * poll the network for new XMIT data
            */
 
-          devif_timer(&priv->dev, 0, enc_txpoll);
+          devif_poll(&priv->dev, enc_txpoll);
         }
     }
 
@@ -2634,17 +2532,17 @@ int enc_initialize(FAR struct spi_dev_s *spi,
   memset(g_enc28j60, 0,
          CONFIG_ENC28J60_NINTERFACES * sizeof(struct enc_driver_s));
 
-  priv->dev.d_buf     = g_pktbuf;     /* Single packet buffer */
-  priv->dev.d_ifup    = enc_ifup;     /* I/F down callback */
-  priv->dev.d_ifdown  = enc_ifdown;   /* I/F up (new IP address) callback */
-  priv->dev.d_txavail = enc_txavail;  /* New TX data callback */
+  priv->dev.d_buf     = (FAR uint8_t *)g_pktbuf[devno]; /* Single packet buffer */
+  priv->dev.d_ifup    = enc_ifup;                       /* I/F down callback */
+  priv->dev.d_ifdown  = enc_ifdown;                     /* I/F up (new IP address) callback */
+  priv->dev.d_txavail = enc_txavail;                    /* New TX data callback */
 #ifdef CONFIG_NET_MCASTGROUP
-  priv->dev.d_addmac  = enc_addmac;   /* Add multicast MAC address */
-  priv->dev.d_rmmac   = enc_rmmac;    /* Remove multicast MAC address */
+  priv->dev.d_addmac  = enc_addmac;                     /* Add multicast MAC address */
+  priv->dev.d_rmmac   = enc_rmmac;                      /* Remove multicast MAC address */
 #endif
-  priv->dev.d_private = priv;         /* Used to recover private state from dev */
-  priv->spi           = spi;          /* Save the SPI instance */
-  priv->lower         = lower;        /* Save the low-level MCU interface */
+  priv->dev.d_private = priv;                           /* Used to recover private state from dev */
+  priv->spi           = spi;                            /* Save the SPI instance */
+  priv->lower         = lower;                          /* Save the low-level MCU interface */
 
   /* The interface should be in the down state.  However, this function is
    * called too early in initialization to perform the ENC28J60 reset in

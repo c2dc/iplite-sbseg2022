@@ -32,7 +32,7 @@
 #include <nuttx/usb/usbdev.h>
 #include <nuttx/usb/usbdev_trace.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam_gpio.h"
 #include "samv71-xult.h"
 
@@ -78,7 +78,7 @@ void sam_usbinitialize(void)
  *
  ****************************************************************************/
 
-void sam_usbsuspend(FAR struct usbdev_s *dev, bool resume)
+void sam_usbsuspend(struct usbdev_s *dev, bool resume)
 {
   uinfo("resume: %d\n", resume);
 }

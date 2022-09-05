@@ -19,22 +19,23 @@
  ****************************************************************************/
 
 #ifndef __BOARDS_ARM_IMXRT_TEENSY_4X_SRC_TEENSY_4_H
-#  define __BOARDS_ARM_IMXRT_TEENSY_4X_SRC_TEENSY_4_H
+#define __BOARDS_ARM_IMXRT_TEENSY_4X_SRC_TEENSY_4_H
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
-#  include <nuttx/config.h>
+#include <nuttx/config.h>
 
-#  include <stdint.h>
-#  include <stdbool.h>
+#include <stdint.h>
+#include <stdbool.h>
 
-#  include <arch/irq.h>
-#  include <nuttx/irq.h>
+#include <arch/irq.h>
+#include <nuttx/irq.h>
 
-#  include "imxrt_gpio.h"
-#  include "imxrt_iomuxc.h"
+#include "imxrt_gpio.h"
+#include "imxrt_iomuxc.h"
+#include "hardware/imxrt_pinmux.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -56,33 +57,33 @@
  * Only a single LED, D3, is under software control.
  */
 
-#  define GPIO_LED        (GPIO_OUTPUT | IOMUX_LED_DEFAULT | \
+#define GPIO_LED        (GPIO_OUTPUT | IOMUX_LED_DEFAULT | \
                          GPIO_OUTPUT_ZERO | GPIO_PORT2 | GPIO_PIN3)  /* BO_03 */
 
-#  define LED_DRIVER_PATH "/dev/userleds"
+#define LED_DRIVER_PATH "/dev/userleds"
 
 /* LPSPI3 CS:  GPIO_AD_B1_12 */
 
-#  define IOMUX_LPSPI3_CS (IOMUX_SLEW_FAST | IOMUX_DRIVE_50OHM | \
+#define IOMUX_LPSPI3_CS (IOMUX_SLEW_FAST | IOMUX_DRIVE_50OHM | \
                          IOMUX_SPEED_MEDIUM | IOMUX_PULL_UP_100K | \
                          _IOMUX_PULL_ENABLE)
-#  define GPIO_LPSPI3_CS  (GPIO_OUTPUT | GPIO_OUTPUT_ONE | \
+#define GPIO_LPSPI3_CS  (GPIO_OUTPUT | GPIO_OUTPUT_ONE | \
                          GPIO_PORT1 | GPIO_PIN28 | IOMUX_LPSPI3_CS)
 
 /* LPSPI4 CS:  GPIO_B0_00  */
 
-#  define IOMUX_LPSPI4_CS      (IOMUX_SLEW_FAST | IOMUX_DRIVE_50OHM | \
+#define IOMUX_LPSPI4_CS      (IOMUX_SLEW_FAST | IOMUX_DRIVE_50OHM | \
                               IOMUX_SPEED_MEDIUM | IOMUX_PULL_UP_100K | \
                               _IOMUX_PULL_ENABLE)
-#  define GPIO_LPSPI4_CS       (GPIO_OUTPUT | GPIO_OUTPUT_ONE | \
+#define GPIO_LPSPI4_CS       (GPIO_OUTPUT | GPIO_OUTPUT_ONE | \
                               GPIO_PORT2 | GPIO_PIN0 | IOMUX_LPSPI4_CS)
 
-/* LCD dispay */
+/* LCD display */
 
-#  define GPIO_LCD_RST        (GPIO_OUTPUT | GPIO_OUTPUT_ONE | \
+#define GPIO_LCD_RST        (GPIO_OUTPUT | GPIO_OUTPUT_ONE | \
                               GPIO_PORT2 | GPIO_PIN18 | IOMUX_LPSPI4_CS)    /* B1_02 */
 
-#  define GPIO_LCD_CD         (GPIO_OUTPUT | GPIO_OUTPUT_ONE | \
+#define GPIO_LCD_CD         (GPIO_OUTPUT | GPIO_OUTPUT_ONE | \
                               GPIO_PORT2 | GPIO_PIN19 | IOMUX_LPSPI4_CS)    /* B1_03 */
 
 /* USB OTG ID Pin： GPIO_AD_B1_02 */
@@ -111,6 +112,21 @@
 #define GPIO_ENET_RST   (GPIO_OUTPUT | GPIO_OUTPUT_ZERO | \
                          GPIO_PORT2 | GPIO_PIN14 | IOMUX_ENET_RST_DEFAULT) /* B0_14 */
 
+/* Quadrature Encoder */
+
+#define GPIO_ENC1_PHASE_A    (GPIO_XBAR1_INOUT09_1|IOMUX_ENC_DEFAULT|PADMUX_MUXMODE_ALT3)  /* EMC_07 */
+#define GPIO_ENC1_PHASE_B    (GPIO_XBAR1_INOUT08_1|IOMUX_ENC_DEFAULT|PADMUX_MUXMODE_ALT3)  /* EMC_06 */
+#define GPIO_ENC1_INDEX      (GPIO_XBAR1_INOUT10_1|IOMUX_ENC_DEFAULT|PADMUX_MUXMODE_ALT1)  /* B0_12 */
+
+/* GPIO pins used by the GPIO subsystem */
+
+#define BOARD_NGPIOIN   1   /* Amount of GPIO input pins */
+#define BOARD_NGPIOOUT  1   /* Amount of GPIO output pins */
+
+#define GPIO_IN1       (GPIO_INPUT | GPIO_PORT4 | GPIO_PIN4)    /* EMC_04 */
+#define GPIO_OUT1      (GPIO_OUTPUT | GPIO_OUTPUT_ZERO | IOMUX_GOUT_DEFAULT | \
+                        GPIO_PORT4 | GPIO_PIN5)                 /* EMC_05 */
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/
@@ -119,7 +135,7 @@
  * Public Data
  ****************************************************************************/
 
-#  ifndef __ASSEMBLY__
+#ifndef __ASSEMBLY__
 
 /****************************************************************************
  * Name: imxrt_bringup
@@ -129,9 +145,9 @@
  *
  ****************************************************************************/
 
-#    if defined(CONFIG_LIB_BOARDCTL) || defined(CONFIG_BOARD_LATE_INITIALIZE)
+#if defined(CONFIG_BOARDCTL) || defined(CONFIG_BOARD_LATE_INITIALIZE)
 int imxrt_bringup(void);
-#    endif
+#endif
 
 /****************************************************************************
  * Name: imxrt_spidev_initialize
@@ -156,6 +172,18 @@ int imxrt_can_setup(void);
 #endif
 
 /****************************************************************************
+ * Name: imxrt_pwm_setup
+ *
+ * Description:
+ *   Initialize PWM and register the PWM device.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_IMXRT_FLEXPWM
+int imxrt_pwm_setup(void);
+#endif
+
+/****************************************************************************
  * Name: imxrt_adc_initialize
  *
  * Description:
@@ -165,6 +193,33 @@ int imxrt_can_setup(void);
 
 #ifdef CONFIG_IMXRT_ADC
 int imxrt_adc_initialize(void);
+#endif
+
+/****************************************************************************
+ * Name: imxrt_gpio_initialize
+ *
+ * Description:
+ *   Initialize GPIO drivers for use with /apps/examples/gpio
+ *
+ * Return Value:
+ *   OK on success; a negated errno value on failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_DEV_GPIO
+int imxrt_gpio_initialize(void);
+#endif
+
+/****************************************************************************
+ * Name: imxrt_enc_initialize
+ *
+ * Description:
+ *   Initialize the quadrature encoder driver for the given timer
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_IMXRT_ENC
+int imxrt_enc_initialize(void);
 #endif
 
 /****************************************************************************

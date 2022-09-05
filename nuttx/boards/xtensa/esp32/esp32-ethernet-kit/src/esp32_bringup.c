@@ -39,7 +39,6 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/himem/himem.h>
 
-#include "esp32_spiflash.h"
 #include "esp32_partition.h"
 
 #ifdef CONFIG_USERLED
@@ -58,12 +57,28 @@
 #  include "esp32_board_wdt.h"
 #endif
 
-#ifdef CONFIG_ESP32_WIRELESS
+#ifdef CONFIG_ESP32_RT_TIMER
+#  include "esp32_rt_timer.h"
+#endif
+
+#ifdef CONFIG_ESP32_SPIFLASH
+#  include "esp32_board_spiflash.h"
+#endif
+
+#ifdef CONFIG_ESP32_BLE
+#  include "esp32_ble.h"
+#endif
+
+#ifdef CONFIG_ESP32_WIFI
 #  include "esp32_board_wlan.h"
 #endif
 
 #ifdef CONFIG_INPUT_BUTTONS
 #  include <nuttx/input/buttons.h>
+#endif
+
+#ifdef CONFIG_RTC_DRIVER
+#  include "esp32_rtc_lowerhalf.h"
 #endif
 
 #include "esp32-ethernet-kit.h"
@@ -81,7 +96,7 @@
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -125,41 +140,48 @@ int esp32_bringup(void)
   if (ret < 0)
     {
       syslog(LOG_ERR, "Failed to initialize SD slot: %d\n", ret);
-      return ret;
     }
 #endif
 
 #ifdef CONFIG_ESP32_SPIFLASH
-
-#ifdef CONFIG_ESP32_SPIFLASH_ENCRYPTION_TEST
-  esp32_spiflash_encrypt_test();
-#endif
-
   ret = esp32_spiflash_init();
   if (ret)
     {
       syslog(LOG_ERR, "ERROR: Failed to initialize SPI Flash\n");
-      return ret;
     }
 #endif
 
-#ifdef CONFIG_ESP32_PARTITION
+#ifdef CONFIG_ESP32_PARTITION_TABLE
   ret = esp32_partition_init();
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: Failed to initialize partition error=%d\n",
              ret);
-      return ret;
     }
 #endif
 
-#ifdef CONFIG_ESP32_WIRELESS
+#ifdef CONFIG_ESP32_RT_TIMER
+  ret = esp32_rt_timer_init();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "Failed to initialize RT timer: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_ESP32_BLE
+  ret = esp32_ble_initialize();
+  if (ret)
+    {
+      syslog(LOG_ERR, "ERROR: Failed to initialize BLE: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_ESP32_WIFI
   ret = board_wlan_init();
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: Failed to initialize wireless subsystem=%d\n",
              ret);
-      return ret;
     }
 #endif
 
@@ -169,14 +191,13 @@ int esp32_bringup(void)
 
 #ifdef CONFIG_TIMER
 
-#ifdef CONFIG_ESP32_TIMER0
+#if defined(CONFIG_ESP32_TIMER0) && !defined(CONFIG_ESP32_RT_TIMER)
   ret = esp32_timer_initialize("/dev/timer0", TIMER0);
   if (ret < 0)
     {
       syslog(LOG_ERR,
              "ERROR: Failed to initialize timer driver: %d\n",
              ret);
-      return ret;
     }
 #endif
 
@@ -187,7 +208,6 @@ int esp32_bringup(void)
       syslog(LOG_ERR,
              "ERROR: Failed to initialize timer driver: %d\n",
              ret);
-      return ret;
     }
 #endif
 
@@ -198,7 +218,6 @@ int esp32_bringup(void)
       syslog(LOG_ERR,
              "ERROR: Failed to initialize timer driver: %d\n",
              ret);
-      return ret;
     }
 #endif
 
@@ -209,7 +228,6 @@ int esp32_bringup(void)
       syslog(LOG_ERR,
              "ERROR: Failed to initialize timer driver: %d\n",
              ret);
-      return ret;
     }
 #endif
 
@@ -256,6 +274,17 @@ int esp32_bringup(void)
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: btn_lower_initialize() failed: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_RTC_DRIVER
+  /* Instantiate the ESP32 RTC driver */
+
+  ret = esp32_rtc_driverinit();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR,
+             "ERROR: Failed to Instantiate the RTC driver: %d\n", ret);
     }
 #endif
 

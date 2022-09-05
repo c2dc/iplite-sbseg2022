@@ -1,10 +1,6 @@
 /****************************************************************************
  * arch/arm/src/samd5e5/sam_usbhost.h
  *
- *   Copyright 2020 Falker Automacao Agricola LTDA.
- *   Author: Leomar Mateus Radke <leomar@falker.com.br>
- *   Author: Ricardo Wartchow <wartchow@gmail.com>
- *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.  The
@@ -261,7 +257,7 @@ int samd_usbhost_initialize(void);
  ****************************************************************************/
 
 struct usbhost_connection_s;
-FAR struct usbhost_connection_s *sam_usbhost_initialize(int controller);
+struct usbhost_connection_s *sam_usbhost_initialize(int controller);
 
 /****************************************************************************
  * Name: sam_usbhost_vbusdrive

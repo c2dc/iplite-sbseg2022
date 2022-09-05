@@ -44,7 +44,9 @@
 
 /* Allocate a new IP forwarding data callback */
 
-#define ipfwd_callback_alloc(dev)   devif_callback_alloc(dev, &(dev)->d_conncb)
+#define ipfwd_callback_alloc(dev)   devif_callback_alloc(dev, \
+                                                         &(dev)->d_conncb, \
+                                                         &(dev)->d_conncb_tail)
 #define ipfwd_callback_free(dev,cb) devif_dev_callback_free(dev, cb)
 
 /****************************************************************************
@@ -232,7 +234,7 @@ int ipfwd_forward(FAR struct forward_s *fwd);
  *
  * Assumptions:
  *   This function is called from the MAC device driver indirectly through
- *   devif_poll() and devif_timer().
+ *   devif_poll().
  *
  ****************************************************************************/
 

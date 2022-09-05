@@ -26,15 +26,15 @@
 
 #include <assert.h>
 
+#include <nuttx/arch.h>
 #include <arch/pic32mx/cp0.h>
 
 #include "mips_internal.h"
-#include "mips_arch.h"
-
 #include "chip.h"
 #include "pic32mx.h"
 #include "pic32mx_bmx.h"
 #include "pic32mx_che.h"
+#include "pic32mx_ddp.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -157,6 +157,58 @@ static inline void pic32mx_cache(void)
 }
 
 /****************************************************************************
+ * Name: pic32mx_disable_jtag
+ *
+ * Description:
+ *   Disable the JTAG connection
+ *
+ * Assumptions:
+ *   Interrupts are disabled.
+ *
+ ****************************************************************************/
+
+static inline void pic32mx_disable_jtag(void)
+{
+#if defined(CHIP_PIC32MX3) || defined(CHIP_PIC32MX4) || defined(CHIP_PIC32MX5) || \
+    defined(CHIP_PIC32MX6) || defined(CHIP_PIC32MX7)
+  register uint32_t regval;
+
+  regval = getreg32(PIC32MX_DDP_CON);
+
+  /* Clear the JTAG enable bit */
+
+  regval &= ~DDP_CON_JTAGEN;
+  putreg32(regval, PIC32MX_DDP_CON);
+#endif
+}
+
+/****************************************************************************
+ * Name: pic32mx_enable_jtag
+ *
+ * Description:
+ *   Enable the JTAG connection
+ *
+ * Assumptions:
+ *   Interrupts are disabled.
+ *
+ ****************************************************************************/
+
+static inline void pic32mx_enable_jtag(void)
+{
+#if defined(CHIP_PIC32MX3) || defined(CHIP_PIC32MX4) || defined(CHIP_PIC32MX5) || \
+    defined(CHIP_PIC32MX6) || defined(CHIP_PIC32MX7)
+  register uint32_t regval;
+
+  regval = getreg32(PIC32MX_DDP_CON);
+
+  /* Set the JTAG enable bit */
+
+  regval |= DDP_CON_JTAGEN;
+  putreg32(regval, PIC32MX_DDP_CON);
+#endif
+}
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -191,6 +243,12 @@ void pic32mx_lowinit(void)
 
 #ifdef USE_EARLYSERIALINIT
   up_earlyserialinit();
+#endif
+
+#ifdef CONFIG_PIC32MX_JTAG_ENABLE
+  pic32mx_enable_jtag();
+#else
+  pic32mx_disable_jtag();
 #endif
 
   /* Perform board-level initialization */

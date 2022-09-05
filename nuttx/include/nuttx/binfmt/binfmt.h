@@ -33,12 +33,13 @@
 
 #include <nuttx/arch.h>
 #include <nuttx/sched.h>
+#include <nuttx/streams.h>
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define BINFMT_NALLOC 3
+#define BINFMT_NALLOC 4
 
 /****************************************************************************
  * Public Types
@@ -52,7 +53,7 @@ typedef FAR void (*binfmt_dtor_t)(void);
 /* This describes the file to be loaded.
  *
  * NOTE 1: The 'filename' must be the full, absolute path to the file to be
- * executed unless CONFIG_LIB_ENVPATH is defined.  In that case,
+ * executed unless CONFIG_LIBC_ENVPATH is defined.  In that case,
  * 'filename' may be a relative path; a set of candidate absolute paths
  * will be generated using the PATH environment variable and load_module()
  * will attempt to load each file that is found at those absolute paths.
@@ -61,18 +62,6 @@ typedef FAR void (*binfmt_dtor_t)(void);
 struct symtab_s;
 struct binary_s
 {
-  /* Information provided to the loader to load and bind a module */
-
-  FAR const char *filename;            /* Full path to the binary to be loaded (See NOTE 1 above) */
-#if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_BUILD_KERNEL)
-  FAR char *argbuffer;                 /* Allocated argument list */
-  FAR char **argv;                     /* Copy of argument list */
-#else
-  FAR char * const *argv;              /* Argument list */
-#endif
-  FAR const struct symtab_s *exports;  /* Table of exported symbols */
-  int nexports;                        /* The number of symbols in exports[] */
-
   /* Information provided from the loader (if successful) describing the
    * resources used by the loaded module.
    */
@@ -114,6 +103,15 @@ struct binary_s
   CODE int (*unload)(FAR struct binary_s *bin);
 };
 
+/* This describes binfmt coredump filed */
+
+struct memory_region_s
+{
+  uintptr_t start;   /* Start address of this region */
+  uintptr_t end;     /* End address of this region */
+  uint32_t  flags;   /* Figure 5-3: Segment Flag Bits: PF_[X|W|R] */
+};
+
 /* This describes one binary format handler */
 
 struct binfmt_s
@@ -124,11 +122,19 @@ struct binfmt_s
 
   /* Verify and load binary into memory */
 
-  CODE int (*load)(FAR struct binary_s *bin);
+  CODE int (*load)(FAR struct binary_s *bin,
+                   FAR const char *filename,
+                   FAR const struct symtab_s *exports,
+                   int nexports);
 
   /* Unload module callback */
 
   CODE int (*unload)(FAR struct binary_s *bin);
+
+  /* Unload module callback */
+
+  CODE int (*coredump)(FAR struct memory_region_s *regions,
+                       FAR struct lib_outstream_s *stream);
 };
 
 /****************************************************************************
@@ -185,6 +191,22 @@ int register_binfmt(FAR struct binfmt_s *binfmt);
 int unregister_binfmt(FAR struct binfmt_s *binfmt);
 
 /****************************************************************************
+ * Name: core_dump
+ *
+ * Description:
+ *   This function for generating core dump stream.
+ *
+ * Returned Value:
+ *   This is a NuttX internal function so it follows the convention that
+ *   0 (OK) is returned on success and a negated errno is returned on
+ *   failure.
+ *
+ ****************************************************************************/
+
+int core_dump(FAR struct memory_region_s *regions,
+              FAR struct lib_outstream_s *stream);
+
+/****************************************************************************
  * Name: load_module
  *
  * Description:
@@ -198,7 +220,8 @@ int unregister_binfmt(FAR struct binfmt_s *binfmt);
  *
  ****************************************************************************/
 
-int load_module(FAR struct binary_s *bin);
+int load_module(FAR struct binary_s *bin, FAR const char *filename,
+                FAR const struct symtab_s *exports, int nexports);
 
 /****************************************************************************
  * Name: unload_module
@@ -234,7 +257,9 @@ int unload_module(FAR struct binary_s *bin);
  *
  ****************************************************************************/
 
-int exec_module(FAR const struct binary_s *bin);
+int exec_module(FAR const struct binary_s *binp,
+                FAR const char *filename, FAR char * const *argv,
+                FAR char * const *envp);
 
 /****************************************************************************
  * Name: exec
@@ -278,12 +303,15 @@ int exec_module(FAR const struct binary_s *bin);
  *
  * Input Parameters:
  *   filename - The path to the program to be executed. If
- *              CONFIG_LIB_ENVPATH is defined in the configuration, then
+ *              CONFIG_LIBC_ENVPATH is defined in the configuration, then
  *              this may be a relative path from the current working
  *              directory. Otherwise, path must be the absolute path to the
  *              program.
  *   argv     - A pointer to an array of string arguments. The end of the
  *              array is indicated with a NULL entry.
+ *   envp     - An array of character pointers to null-terminated strings
+ *              that provide the environment for the new process image.
+ *              The environment array is terminated by a null pointer.
  *   exports  - The address of the start of the caller-provided symbol
  *              table. This symbol table contains the addresses of symbols
  *              exported by the caller and made available for linking the
@@ -297,7 +325,8 @@ int exec_module(FAR const struct binary_s *bin);
  ****************************************************************************/
 
 int exec(FAR const char *filename, FAR char * const *argv,
-         FAR const struct symtab_s *exports, int nexports);
+         FAR char * const *envp, FAR const struct symtab_s *exports,
+         int nexports);
 
 /****************************************************************************
  * Name: exec_spawn
@@ -308,12 +337,14 @@ int exec(FAR const char *filename, FAR char * const *argv,
  *
  * Input Parameters:
  *   filename - The path to the program to be executed. If
- *              CONFIG_LIB_ENVPATH is defined in the configuration, then
+ *              CONFIG_LIBC_ENVPATH is defined in the configuration, then
  *              this may be a relative path from the current working
  *              directory. Otherwise, path must be the absolute path to the
  *              program.
  *   argv     - A pointer to an array of string arguments. The end of the
  *              array is indicated with a NULL entry.
+ *   envp     - A pointer to an array of environment strings. Terminated with
+ *              a NULL entry.
  *   exports  - The address of the start of the caller-provided symbol
  *              table. This symbol table contains the addresses of symbols
  *              exported by the caller and made available for linking the
@@ -329,8 +360,8 @@ int exec(FAR const char *filename, FAR char * const *argv,
  ****************************************************************************/
 
 int exec_spawn(FAR const char *filename, FAR char * const *argv,
-               FAR const struct symtab_s *exports, int nexports,
-               FAR const posix_spawnattr_t *attr);
+               FAR char * const *envp, FAR const struct symtab_s *exports,
+               int nexports, FAR const posix_spawnattr_t *attr);
 
 /****************************************************************************
  * Name: binfmt_exit

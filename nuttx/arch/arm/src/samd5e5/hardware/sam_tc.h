@@ -1,10 +1,6 @@
 /****************************************************************************
  * arch/arm/src/samd5e5/hardware/sam_tc.h
  *
- *   Copyright 2020 Falker Automacao Agricola LTDA.
- *   Author: Leomar Mateus Radke <leomar@falker.com.br>
- *   Author: Ricardo Wartchow <wartchow@gmail.com>
- *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.  The
@@ -22,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_SAMD5E5_CHIP_SAMD_TC_H
-#define __ARCH_ARM_SRC_SAMD5E5_CHIP_SAMD_TC_H
+#ifndef __ARCH_ARM_SRC_SAMD5E5_HARDWARE_SAM_TC_H
+#define __ARCH_ARM_SRC_SAMD5E5_HARDWARE_SAM_TC_H
 
 /****************************************************************************
  * Included Files
@@ -476,4 +472,4 @@
  * Public Functions Prototypes
  ****************************************************************************/
 
-#endif /* __ARCH_ARM_SRC_SAMD5E5_CHIP_SAMD_TC_H */
+#endif /* __ARCH_ARM_SRC_SAMD5E5_HARDWARE_SAM_TC_H */

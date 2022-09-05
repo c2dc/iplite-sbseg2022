@@ -40,11 +40,11 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "rp2040_i2c.h"
 #include "hardware/rp2040_i2c.h"
+#include "hardware/rp2040_resets.h"
+#include "rp2040_gpio.h"
 
 #ifdef CONFIG_RP2040_I2C
 
@@ -55,7 +55,7 @@
 #define I2C_TIMEOUT  (20*1000/CONFIG_USEC_PER_TICK) /* 20 mS */
 
 #define I2C_DEFAULT_FREQUENCY 400000
-#define I2C_FIFO_MAX_SIZE	    32
+#define I2C_FIFO_MAX_SIZE	    16
 
 #define I2C_INTR_ENABLE ((RP2040_I2C_IC_INTR_STAT_R_STOP_DET) | \
                          (RP2040_I2C_IC_INTR_STAT_R_TX_ABRT)  | \
@@ -111,8 +111,8 @@ static struct rp2040_i2cdev_s g_i2c1dev =
  * Private Functions
  ****************************************************************************/
 
-static inline int i2c_takesem(FAR sem_t *sem);
-static inline int i2c_givesem(FAR sem_t *sem);
+static inline int i2c_takesem(sem_t *sem);
+static inline int i2c_givesem(sem_t *sem);
 
 static inline uint32_t i2c_reg_read(struct rp2040_i2cdev_s *priv,
                                     uint32_t offset);
@@ -124,23 +124,24 @@ static inline void i2c_reg_rmw(struct rp2040_i2cdev_s *dev,
                                uint32_t val, uint32_t mask);
 
 static int rp2040_i2c_disable(struct rp2040_i2cdev_s *priv);
+static void rp2040_i2c_init(struct rp2040_i2cdev_s *priv);
 static void rp2040_i2c_enable(struct rp2040_i2cdev_s *priv);
 
-static int  rp2040_i2c_interrupt(int irq, FAR void *context, FAR void *arg);
+static int  rp2040_i2c_interrupt(int irq, void *context, void *arg);
 static void rp2040_i2c_timeout(wdparm_t arg);
 static void rp2040_i2c_setfrequency(struct rp2040_i2cdev_s *priv,
                                    uint32_t frequency);
-static int  rp2040_i2c_transfer(FAR struct i2c_master_s *dev,
-                               FAR struct i2c_msg_s *msgs, int count);
+static int  rp2040_i2c_transfer(struct i2c_master_s *dev,
+                                struct i2c_msg_s *msgs, int count);
 #ifdef CONFIG_I2C_RESET
-static int rp2040_i2c_reset(FAR struct i2c_master_s *dev);
+static int rp2040_i2c_reset(struct i2c_master_s *dev);
 #endif
 
 /****************************************************************************
  * Name: i2c_takesem
  ****************************************************************************/
 
-static inline int i2c_takesem(FAR sem_t *sem)
+static inline int i2c_takesem(sem_t *sem)
 {
   return nxsem_wait_uninterruptible(sem);
 }
@@ -149,7 +150,7 @@ static inline int i2c_takesem(FAR sem_t *sem)
  * Name: i2c_givesem
  ****************************************************************************/
 
-static inline int i2c_givesem(FAR sem_t *sem)
+static inline int i2c_givesem(sem_t *sem)
 {
   return nxsem_post(sem);
 }
@@ -324,9 +325,9 @@ static void rp2040_i2c_drainrxfifo(struct rp2040_i2cdev_s *priv)
  *
  ****************************************************************************/
 
-static int rp2040_i2c_interrupt(int irq, FAR void *context, FAR void *arg)
+static int rp2040_i2c_interrupt(int irq, void *context, void *arg)
 {
-  FAR struct rp2040_i2cdev_s *priv = (FAR struct rp2040_i2cdev_s *)arg;
+  struct rp2040_i2cdev_s *priv = (struct rp2040_i2cdev_s *)arg;
   uint32_t state;
   int ret;
 
@@ -531,8 +532,8 @@ static int rp2040_i2c_send(struct rp2040_i2cdev_s *priv, int last)
  * currently guaranteed.
  ****************************************************************************/
 
-static int rp2040_i2c_transfer(FAR struct i2c_master_s *dev,
-                              FAR struct i2c_msg_s *msgs, int count)
+static int rp2040_i2c_transfer(struct i2c_master_s *dev,
+                               struct i2c_msg_s *msgs, int count)
 {
   struct rp2040_i2cdev_s *priv = (struct rp2040_i2cdev_s *)dev;
   int i;
@@ -637,9 +638,145 @@ static int rp2040_i2c_transfer(FAR struct i2c_master_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_I2C_RESET
-static int rp2040_i2c_reset(FAR struct i2c_master_s *dev)
+static int rp2040_i2c_reset(struct i2c_master_s *dev)
 {
-  return OK;
+  struct rp2040_i2cdev_s *priv = (struct rp2040_i2cdev_s *)dev;
+  unsigned int clock_count;
+  unsigned int stretch_count;
+  uint32_t scl_gpio;
+  uint32_t sda_gpio;
+  uint32_t subsys;
+  uint32_t frequency;
+  int pin;
+  int ret;
+
+  DEBUGASSERT(dev);
+
+  /* Our caller must own a ref */
+
+  DEBUGASSERT(priv->refs > 0);
+
+  /* Lock out other clients */
+
+  i2c_takesem(&priv->mutex);
+
+  ret = -EIO;
+
+  /* De-init the port */
+
+  rp2040_i2c_disable(priv);
+
+  /* Use GPIO configuration to un-wedge the bus */
+
+  pin = rp2040_gpio_get_function_pin(RP2040_GPIO_FUNC_I2C, priv->port);
+  if (pin < 0)
+    {
+      goto out_without_reinit;
+    }
+
+  sda_gpio = pin;
+  scl_gpio = pin + 1;
+  subsys = (priv->port == 0) ? RP2040_RESETS_RESET_I2C0 :
+                               RP2040_RESETS_RESET_I2C1;
+
+  rp2040_gpio_init(sda_gpio);
+  rp2040_gpio_setdir(sda_gpio, true);
+  rp2040_gpio_set_pulls(sda_gpio, true, false);  /* Pull up */
+  rp2040_gpio_put(sda_gpio, true);
+
+  rp2040_gpio_init(scl_gpio);
+  rp2040_gpio_setdir(scl_gpio, true);
+  rp2040_gpio_set_pulls(scl_gpio, true, false);
+  rp2040_gpio_put(scl_gpio, true);
+
+  /* Let SDA go high */
+
+  rp2040_gpio_put(sda_gpio, true);
+
+  /* Clock the bus until any slaves currently driving it let it go. */
+
+  clock_count = 0;
+  while (!rp2040_gpio_get(sda_gpio))
+    {
+      /* Give up if we have tried too hard */
+
+      if (clock_count++ > 10)
+        {
+          goto out;
+        }
+
+      /* Sniff to make sure that clock stretching has finished. If the bus
+       * never relaxes, the reset has failed.
+       */
+
+      stretch_count = 0;
+      while (!rp2040_gpio_get(scl_gpio))
+        {
+          /* Give up if we have tried too hard */
+
+          if (stretch_count++ > 10)
+            {
+              goto out;
+            }
+
+          up_udelay(10);
+        }
+
+      /* Drive SCL low */
+
+      rp2040_gpio_put(scl_gpio, false);
+      up_udelay(10);
+
+      /* Drive SCL high again */
+
+      rp2040_gpio_put(scl_gpio, true);
+      up_udelay(10);
+    }
+
+  /* Generate a start followed by a stop to reset slave state machines. */
+
+  rp2040_gpio_put(sda_gpio, false);
+  up_udelay(10);
+  rp2040_gpio_put(scl_gpio, false);
+  up_udelay(10);
+  rp2040_gpio_put(scl_gpio, true);
+  up_udelay(10);
+  rp2040_gpio_put(sda_gpio, true);
+  up_udelay(10);
+
+  ret = OK;
+
+out:
+
+  /* Revert the GPIO configuration. */
+
+  rp2040_gpio_set_function(sda_gpio, RP2040_GPIO_FUNC_I2C);
+  rp2040_gpio_set_function(scl_gpio, RP2040_GPIO_FUNC_I2C);
+
+  /* Reset I2C subsystem */
+
+  setbits_reg32(subsys, RP2040_RESETS_RESET);
+  clrbits_reg32(subsys, RP2040_RESETS_RESET);
+  while ((getreg32(RP2040_RESETS_RESET_DONE) & subsys) == 0)
+    ;
+
+  /* Re-init the port */
+
+  rp2040_i2c_disable(priv);
+  rp2040_i2c_init(priv);
+
+  /* Restore the frequency */
+
+  frequency = priv->frequency;
+  priv->frequency = 0;
+  rp2040_i2c_setfrequency(priv, frequency);
+
+out_without_reinit:
+
+  /* Release the port for re-use by other clients */
+
+  i2c_givesem(&priv->mutex);
+  return ret;
 }
 #endif /* CONFIG_I2C_RESET */
 
@@ -692,6 +829,26 @@ static int rp2040_i2c_disable(struct rp2040_i2cdev_s *priv)
   i2c_reg_read(priv, RP2040_I2C_IC_CLR_INTR_OFFSET);
 
   return 0;
+}
+
+static void rp2040_i2c_init(struct rp2040_i2cdev_s *priv)
+{
+  i2c_reg_write(priv, RP2040_I2C_IC_INTR_MASK_OFFSET, 0x00);
+  i2c_reg_read(priv, RP2040_I2C_IC_CLR_INTR_OFFSET);
+
+  /* set threshold level of the Rx/Tx FIFO */
+
+  i2c_reg_write(priv, RP2040_I2C_IC_RX_TL_OFFSET, 0xff);
+  i2c_reg_write(priv, RP2040_I2C_IC_TX_TL_OFFSET, 0);
+
+  /* set hold time for margin */
+
+  i2c_reg_write(priv, RP2040_I2C_IC_SDA_HOLD_OFFSET, 1);
+
+  i2c_reg_write(priv, RP2040_I2C_IC_CON_OFFSET,
+                (RP2040_I2C_IC_CON_IC_SLAVE_DISABLE |
+                 RP2040_I2C_IC_CON_MASTER_MODE |
+                 RP2040_I2C_IC_CON_TX_EMPTY_CTRL));
 }
 
 static void rp2040_i2c_enable(struct rp2040_i2cdev_s *priv)
@@ -758,23 +915,7 @@ struct i2c_master_s *rp2040_i2cbus_initialize(int port)
   priv->base_freq = BOARD_PERI_FREQ;
 
   rp2040_i2c_disable(priv);
-
-  i2c_reg_write(priv, RP2040_I2C_IC_INTR_MASK_OFFSET, 0x00);
-  i2c_reg_read(priv, RP2040_I2C_IC_CLR_INTR_OFFSET);
-
-  /* set threshold level of the Rx/Tx FIFO */
-
-  i2c_reg_write(priv, RP2040_I2C_IC_RX_TL_OFFSET, 0xff);
-  i2c_reg_write(priv, RP2040_I2C_IC_TX_TL_OFFSET, 0);
-
-  /* set hold time for margin */
-
-  i2c_reg_write(priv, RP2040_I2C_IC_SDA_HOLD_OFFSET, 1);
-
-  i2c_reg_write(priv, RP2040_I2C_IC_CON_OFFSET,
-                (RP2040_I2C_IC_CON_IC_SLAVE_DISABLE |
-                 RP2040_I2C_IC_CON_MASTER_MODE |
-                 RP2040_I2C_IC_CON_TX_EMPTY_CTRL));
+  rp2040_i2c_init(priv);
   rp2040_i2c_setfrequency(priv, I2C_DEFAULT_FREQUENCY);
 
   leave_critical_section(flags);
@@ -802,7 +943,7 @@ struct i2c_master_s *rp2040_i2cbus_initialize(int port)
  *
  ****************************************************************************/
 
-int rp2040_i2cbus_uninitialize(FAR struct i2c_master_s *dev)
+int rp2040_i2cbus_uninitialize(struct i2c_master_s *dev)
 {
   struct rp2040_i2cdev_s *priv = (struct rp2040_i2cdev_s *)dev;
 

@@ -34,6 +34,7 @@
 #include <nuttx/irq.h>
 #include <nuttx/clock.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/sched.h>
 #include <nuttx/mm/iob.h>
 #include <nuttx/net/net.h>
 
@@ -43,15 +44,15 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define NO_HOLDER (pid_t)-1
+#define NO_HOLDER (INVALID_PROCESS_ID)
 
 /****************************************************************************
  * Private Data
  ****************************************************************************/
 
-static sem_t        g_netlock;
-static pid_t        g_holder = NO_HOLDER;
-static unsigned int g_count  = 0;
+static sem_t        g_netlock = SEM_INITIALIZER(1);
+static pid_t        g_holder  = NO_HOLDER;
+static unsigned int g_count;
 
 /****************************************************************************
  * Private Functions
@@ -96,27 +97,15 @@ _net_timedwait(sem_t *sem, bool interruptible, unsigned int timeout)
 
   if (timeout != UINT_MAX)
     {
-      struct timespec abstime;
-
-      DEBUGVERIFY(clock_gettime(CLOCK_REALTIME, &abstime));
-
-      abstime.tv_sec  += timeout / MSEC_PER_SEC;
-      abstime.tv_nsec += timeout % MSEC_PER_SEC * NSEC_PER_MSEC;
-      if (abstime.tv_nsec >= NSEC_PER_SEC)
-        {
-          abstime.tv_sec++;
-          abstime.tv_nsec -= NSEC_PER_SEC;
-        }
-
       /* Wait until we get the lock or until the timeout expires */
 
       if (interruptible)
         {
-          ret = nxsem_timedwait(sem, &abstime);
+          ret = nxsem_tickwait(sem, MSEC2TICK(timeout));
         }
       else
         {
-          ret = nxsem_timedwait_uninterruptible(sem, &abstime);
+          ret = nxsem_tickwait_uninterruptible(sem, MSEC2TICK(timeout));
         }
     }
   else
@@ -150,19 +139,6 @@ _net_timedwait(sem_t *sem, bool interruptible, unsigned int timeout)
  ****************************************************************************/
 
 /****************************************************************************
- * Name: net_lockinitialize
- *
- * Description:
- *   Initialize the locking facility
- *
- ****************************************************************************/
-
-void net_lockinitialize(void)
-{
-  nxsem_init(&g_netlock, 0, 1);
-}
-
-/****************************************************************************
  * Name: net_lock
  *
  * Description:
@@ -179,9 +155,6 @@ void net_lockinitialize(void)
 
 int net_lock(void)
 {
-#ifdef CONFIG_SMP
-  irqstate_t flags = enter_critical_section();
-#endif
   pid_t me = getpid();
   int ret = OK;
 
@@ -207,9 +180,6 @@ int net_lock(void)
         }
     }
 
-#ifdef CONFIG_SMP
-  leave_critical_section(flags);
-#endif
   return ret;
 }
 
@@ -232,9 +202,6 @@ int net_lock(void)
 
 int net_trylock(void)
 {
-#ifdef CONFIG_SMP
-  irqstate_t flags = enter_critical_section();
-#endif
   pid_t me = getpid();
   int ret = OK;
 
@@ -258,9 +225,6 @@ int net_trylock(void)
         }
     }
 
-#ifdef CONFIG_SMP
-  leave_critical_section(flags);
-#endif
   return ret;
 }
 
@@ -280,9 +244,6 @@ int net_trylock(void)
 
 void net_unlock(void)
 {
-#ifdef CONFIG_SMP
-  irqstate_t flags = enter_critical_section();
-#endif
   DEBUGASSERT(g_holder == getpid() && g_count > 0);
 
   /* If the count would go to zero, then release the semaphore */
@@ -301,10 +262,6 @@ void net_unlock(void)
 
       g_count--;
     }
-
-#ifdef CONFIG_SMP
-  leave_critical_section(flags);
-#endif
 }
 
 /****************************************************************************
@@ -470,6 +427,57 @@ int net_lockedwait_uninterruptible(sem_t *sem)
   return net_timedwait_uninterruptible(sem, UINT_MAX);
 }
 
+#ifdef CONFIG_MM_IOB
+
+/****************************************************************************
+ * Name: net_timedalloc
+ *
+ * Description:
+ *   Allocate an IOB.  If no IOBs are available, then atomically wait for
+ *   for the IOB while temporarily releasing the lock on the network.
+ *   This function is wrapped version of nxsem_tickwait(), this wait will
+ *   be terminated when the specified timeout expires.
+ *
+ *   Caution should be utilized.  Because the network lock is relinquished
+ *   during the wait, there could be changes in the network state that occur
+ *   before the lock is recovered.  Your design should account for this
+ *   possibility.
+ *
+ * Input Parameters:
+ *   throttled  - An indication of the IOB allocation is "throttled"
+ *   timeout    - The relative time to wait until a timeout is declared.
+ *
+ * Returned Value:
+ *   A pointer to the newly allocated IOB is returned on success.  NULL is
+ *   returned on any allocation failure.
+ *
+ ****************************************************************************/
+
+FAR struct iob_s *net_iobtimedalloc(bool throttled, unsigned int timeout)
+{
+  FAR struct iob_s *iob;
+
+  iob = iob_tryalloc(throttled);
+  if (iob == NULL && timeout != 0)
+    {
+      unsigned int count;
+      int blresult;
+
+      /* There are no buffers available now.  We will have to wait for one to
+       * become available. But let's not do that with the network locked.
+       */
+
+      blresult = net_breaklock(&count);
+      iob      = iob_timedalloc(throttled, timeout);
+      if (blresult >= 0)
+        {
+          net_restorelock(count);
+        }
+    }
+
+  return iob;
+}
+
 /****************************************************************************
  * Name: net_ioballoc
  *
@@ -483,7 +491,7 @@ int net_lockedwait_uninterruptible(sem_t *sem)
  *   possibility.
  *
  * Input Parameters:
- *   throttled - An indication of the IOB allocation is "throttled"
+ *   throttled  - An indication of the IOB allocation is "throttled"
  *
  * Returned Value:
  *   A pointer to the newly allocated IOB is returned on success.  NULL is
@@ -491,33 +499,8 @@ int net_lockedwait_uninterruptible(sem_t *sem)
  *
  ****************************************************************************/
 
-#ifdef CONFIG_MM_IOB
-FAR struct iob_s *net_ioballoc(bool throttled, enum iob_user_e consumerid)
+FAR struct iob_s *net_ioballoc(bool throttled)
 {
-  FAR struct iob_s *iob;
-
-  iob = iob_tryalloc(throttled, consumerid);
-  if (iob == NULL)
-    {
-      irqstate_t flags;
-      unsigned int count;
-      int blresult;
-
-      /* There are no buffers available now.  We will have to wait for one to
-       * become available. But let's not do that with the network locked.
-       */
-
-      flags    = enter_critical_section();
-      blresult = net_breaklock(&count);
-      iob      = iob_alloc(throttled, consumerid);
-      if (blresult >= 0)
-        {
-          net_restorelock(count);
-        }
-
-      leave_critical_section(flags);
-    }
-
-  return iob;
+  return net_iobtimedalloc(throttled, UINT_MAX);
 }
 #endif

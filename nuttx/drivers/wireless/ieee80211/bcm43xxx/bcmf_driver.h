@@ -1,40 +1,25 @@
 /****************************************************************************
  * drivers/wireless/ieee80211/bcm43xxx/bcmf_driver.h
  *
- *   Copyright (C) 2017 Gregory Nutt. All rights reserved.
- *   Author: Simon Piriou <spiriou31@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
-#ifndef __DRIVERS_WIRELESS_IEEE80211_BCMF_DRIVER_H
-#define __DRIVERS_WIRELESS_IEEE80211_BCMF_DRIVER_H
+#ifndef __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_DRIVER_H
+#define __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_DRIVER_H
 
 /****************************************************************************
  * Included Files
@@ -79,8 +64,7 @@ struct bcmf_dev_s
   FAR struct bcmf_bus_dev_s *bus; /* Bus interface structure */
 
   bool bc_bifup;             /* true:ifup false:ifdown */
-  struct wdog_s bc_txpoll;   /* TX poll timer */
-  struct work_s bc_irqwork;  /* For deferring interrupt work to the work queue */
+  struct work_s bc_rxwork;   /* For deferring rx work to the work queue */
   struct work_s bc_pollwork; /* For deferring poll work to the work queue */
 
   /* This holds the information visible to the NuttX network */
@@ -105,11 +89,18 @@ struct bcmf_dev_s
 
   int scan_status;                     /* Current scan status */
   struct wdog_s scan_timeout;          /* Scan timeout timer */
-  FAR uint8_t *scan_result;            /* Temp buffer that holds results */
-  unsigned int scan_result_size;       /* Current size of temp buffer */
+  FAR wl_bss_info_t *scan_result;      /* Temp buffer that holds results */
+  unsigned int scan_result_entries;    /* Current entries of temp buffer */
 
   sem_t auth_signal; /* Authentication notification signal */
   int   auth_status; /* Authentication status */
+
+#ifdef CONFIG_IEEE80211_BROADCOM_LOWPOWER
+  struct work_s lp_work_ifdown; /* Ifdown work to work queue */
+  struct work_s lp_work_dtim;   /* Low power work to work queue */
+  int           lp_dtim;        /* Listen interval Delivery Traffic Indication Message */
+  sclock_t      lp_ticks;       /* Ticks of last tx time */
+#endif
 };
 
 /* Default bus interface structure */
@@ -148,11 +139,25 @@ struct bcmf_frame_s
  * Public Function Prototypes
  ****************************************************************************/
 
+FAR struct bcmf_dev_s *bcmf_allocate_device(void);
+void bcmf_free_device(FAR struct bcmf_dev_s *priv);
+
+int bcmf_driver_initialize(FAR struct bcmf_dev_s *priv);
+
 /* IOCTLs network interface implementation */
 
 int bcmf_wl_set_mac_address(FAR struct bcmf_dev_s *priv, struct ifreq *req);
 
 int bcmf_wl_enable(FAR struct bcmf_dev_s *priv, bool enable);
+
+int bcmf_wl_active(FAR struct bcmf_dev_s *priv, bool active);
+
+#ifdef CONFIG_IEEE80211_BROADCOM_LOWPOWER
+int bcmf_wl_set_dtim(FAR struct bcmf_dev_s *priv, uint32_t interval_ms);
+#endif
+
+int bcmf_wl_set_country_code(FAR struct bcmf_dev_s *priv,
+                             int interface, FAR void *code);
 
 /* IOCTLs AP scan interface implementation */
 
@@ -167,7 +172,25 @@ int bcmf_wl_set_auth_param(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
 int bcmf_wl_set_encode_ext(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
 
 int bcmf_wl_set_mode(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
+int bcmf_wl_get_mode(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
 
 int bcmf_wl_set_ssid(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
+int bcmf_wl_get_ssid(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
 
-#endif /* __DRIVERS_WIRELESS_IEEE80211_BCMF_DRIVER_H */
+int bcmf_wl_set_bssid(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
+int bcmf_wl_get_bssid(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
+
+int bcmf_wl_get_channel(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
+
+int bcmf_wl_get_rate(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
+
+int bcmf_wl_get_txpower(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
+
+int bcmf_wl_get_rssi(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
+
+int bcmf_wl_get_iwrange(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
+
+int bcmf_wl_set_country(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
+int bcmf_wl_get_country(FAR struct bcmf_dev_s *priv, struct iwreq *iwr);
+
+#endif /* __DRIVERS_WIRELESS_IEEE80211_BCM43XXX_BCMF_DRIVER_H */

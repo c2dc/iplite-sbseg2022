@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __INCLUDE_NUTTX_QSPI_QSPI_H
-#define __INCLUDE_NUTTX_QSPI_QSPI_H
+#ifndef __INCLUDE_NUTTX_SPI_QSPI_H
+#define __INCLUDE_NUTTX_SPI_QSPI_H
 
 /****************************************************************************
  * Included Files
@@ -228,10 +228,10 @@
 
 enum qspi_mode_e
 {
-  QSPIDEV_MODE0 = 0,     /* CPOL=0 CHPHA=0 */
-  QSPIDEV_MODE1,         /* CPOL=0 CHPHA=1 */
-  QSPIDEV_MODE2,         /* CPOL=1 CHPHA=0 */
-  QSPIDEV_MODE3          /* CPOL=1 CHPHA=1 */
+  QSPIDEV_MODE0 = 0,     /* CPOL=0 CPHA=0 */
+  QSPIDEV_MODE1,         /* CPOL=0 CPHA=1 */
+  QSPIDEV_MODE2,         /* CPOL=1 CPHA=0 */
+  QSPIDEV_MODE3          /* CPOL=1 CPHA=1 */
 };
 
 /* This structure describes one command transfer */
@@ -310,4 +310,4 @@ extern "C"
 #if defined(__cplusplus)
 }
 #endif
-#endif /* __INCLUDE_NUTTX_QSPI_QSPI_H */
+#endif /* __INCLUDE_NUTTX_SPI_QSPI_H */

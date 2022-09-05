@@ -26,7 +26,8 @@
 
 #include <sys/types.h>
 #include <stdint.h>
-#include <crc8.h>
+
+#include <nuttx/crc8.h>
 
 /***************************************************************************
  * Private Data
@@ -82,16 +83,7 @@ static const uint8_t crc8_tab[256] =
 
 uint8_t crc8ccittpart(FAR const uint8_t *src, size_t len, uint8_t crc8val)
 {
-  uint8_t *pos = (uint8_t *) src;
-  uint8_t *end = pos + len;
-
-  while (pos < end)
-    {
-      crc8val = crc8_tab[crc8val ^ *pos];
-      pos++;
-    }
-
-  return crc8val;
+  return crc8table(crc8_tab, src, len, crc8val);
 }
 
 /***************************************************************************

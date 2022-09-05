@@ -24,7 +24,6 @@
 
 #include <nuttx/config.h>
 #include <nuttx/fs/procfs.h>
-#include <nuttx/fs/dirent.h>
 #include <nuttx/kmalloc.h>
 
 #include <sys/stat.h>
@@ -32,12 +31,13 @@
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
 #include "cxd56_clock.h"
 #include "cxd56_powermgr.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "hardware/cxd56_crg.h"
 #include "hardware/cxd5602_topreg.h"
 
@@ -45,14 +45,22 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#ifdef CONFIG_CXD56_PM_DEBUG
-#  define pmerr(format, ...)  _err(format, ##__VA_ARGS__)
-#  define pmwarn(format, ...) _warn(format, ##__VA_ARGS__)
-#  define pminfo(format, ...) _info(format, ##__VA_ARGS__)
+/* Debug */
+
+#ifdef CONFIG_CXD56_PM_DEBUG_ERROR
+#  define pmerr(format, ...)   _err(format, ##__VA_ARGS__)
 #else
-#  define pmerr(x...)
-#  define pmwarn(x...)
-#  define pminfo(x...)
+#  define pmerr(x, ...)
+#endif
+#ifdef CONFIG_CXD56_PM_DEBUG_WARN
+#  define pmwarn(format, ...)  _warn(format, ##__VA_ARGS__)
+#else
+#  define pmwarn(x, ...)
+#endif
+#ifdef CONFIG_CXD56_PM_DEBUG_INFO
+#  define pminfo(format, ...)  _info(format, ##__VA_ARGS__)
+#else
+#  define pminfo(x, ...)
 #endif
 
 #define PWD_STAT(val, shift) ((val >> shift) & 0x1)
@@ -79,21 +87,22 @@ struct cxd56_powermgr_procfs_dir_s
  * Private Function Prototypes
  ****************************************************************************/
 
-static int cxd56_powermgr_procfs_open(FAR struct file *filep,
-                                      FAR const char *relpath,
+static int cxd56_powermgr_procfs_open(struct file *filep,
+                                      const char *relpath,
                                       int oflags, mode_t mode);
-static int cxd56_powermgr_procfs_close(FAR struct file *filep);
-static ssize_t cxd56_powermgr_procfs_read(FAR struct file *filep,
-                                          FAR char *buffer, size_t buflen);
-static int cxd56_powermgr_procfs_dup(FAR const struct file *oldp,
-                                     FAR struct file *newp);
-static int cxd56_powermgr_procfs_opendir(FAR const char *relpath,
-                                         FAR struct fs_dirent_s *dir);
-static int cxd56_powermgr_procfs_closedir(FAR struct fs_dirent_s *dir);
-static int cxd56_powermgr_procfs_readdir(struct fs_dirent_s *dir);
+static int cxd56_powermgr_procfs_close(struct file *filep);
+static ssize_t cxd56_powermgr_procfs_read(struct file *filep,
+                                          char *buffer, size_t buflen);
+static int cxd56_powermgr_procfs_dup(const struct file *oldp,
+                                     struct file *newp);
+static int cxd56_powermgr_procfs_opendir(const char *relpath,
+                                         struct fs_dirent_s **dir);
+static int cxd56_powermgr_procfs_closedir(struct fs_dirent_s *dir);
+static int cxd56_powermgr_procfs_readdir(struct fs_dirent_s *dir,
+                                         struct dirent *entry);
 static int cxd56_powermgr_procfs_rewinddir(struct fs_dirent_s *dir);
-static int cxd56_powermgr_procfs_stat(FAR const char *relpath,
-                                      FAR struct stat *buf);
+static int cxd56_powermgr_procfs_stat(const char *relpath,
+                                      struct stat *buf);
 
 /****************************************************************************
  * Private Data
@@ -123,7 +132,7 @@ static const struct procfs_entry_s g_powermgr_procfs2 =
   "pm/" , &cxd56_powermgr_procfs_operations
 };
 
-static FAR char *g_powermg_procfs_buffer;
+static char *g_powermg_procfs_buffer;
 static size_t g_powermg_procfs_size;
 static size_t g_powermg_procfs_len;
 
@@ -279,21 +288,21 @@ static void cxd56_powermgr_procfs_clock(void)
   len = snprintf(g_powermg_procfs_buffer + g_powermg_procfs_len,
                  g_powermg_procfs_size - g_powermg_procfs_len,
                   "Clock Status [Hz]\n"
-                  " |-RTC        : %9d""   |-APP        : %9d\n"
-                  " |-RCOSC      : %9d""   ||-DSP0      : %9d\n"
-                  " |-XOSC       : %9d""   ||-DSP1      : %9d\n"
-                  " |-SYSPLL     : %9d""   ||-DSP2      : %9d\n"
-                  " |-M0P        : %9d""   ||-DSP3      : %9d\n"
-                  " ||-AHB       : %9d""   ||-DSP4      : %9d\n"
-                  " | |-APB      : %9d""   ||-DSP5      : %9d\n"
-                  " |-UART1      : %9d""   ||-UART2     : %9d\n"
-                  " |-SFC        : %9d""   ||-SPI4      : %9d\n"
-                  " |-SCU        : %9d""   ||-SPI5      : %9d\n"
-                  " ||-LPADC     : %9d""   ||-USB       : %9d\n"
-                  " ||-HPADC     : %9d""   ||-EMMC      : %9d\n"
-                  " |-I2C4       : %9d""   ||-SDIO      : %9d\n"
-                  " |-GPS        : %9d""   ||-VSYNC     : %9d\n"
-                  " ||-AHB       : %9d\n",
+                  " |-RTC        : %9ld""   |-APP        : %9ld\n"
+                  " |-RCOSC      : %9ld""   ||-DSP0      : %9ld\n"
+                  " |-XOSC       : %9ld""   ||-DSP1      : %9ld\n"
+                  " |-SYSPLL     : %9ld""   ||-DSP2      : %9ld\n"
+                  " |-M0P        : %9ld""   ||-DSP3      : %9ld\n"
+                  " ||-AHB       : %9ld""   ||-DSP4      : %9ld\n"
+                  " | |-APB      : %9ld""   ||-DSP5      : %9ld\n"
+                  " |-UART1      : %9ld""   ||-UART2     : %9ld\n"
+                  " |-SFC        : %9ld""   ||-SPI4      : %9ld\n"
+                  " |-SCU        : %9ld""   ||-SPI5      : %9ld\n"
+                  " ||-LPADC     : %9ld""   ||-USB       : %9ld\n"
+                  " ||-HPADC     : %9ld""   ||-EMMC      : %9ld\n"
+                  " |-I2C4       : %9ld""   ||-SDIO      : %9ld\n"
+                  " |-GPS        : %9ld""   ||-VSYNC     : %9ld\n"
+                  " ||-AHB       : %9ld\n",
                  cxd56_get_rtc_clock(), cxd56_get_appsmp_baseclock(),
                  cxd56_get_rcosc_clock(), dsptabl[0],
                  cxd56_get_xosc_clock(), dsptabl[1],
@@ -456,12 +465,12 @@ static int cxd56_powermgr_procfs_check_dir(char *relpath,
  *
  ****************************************************************************/
 
-static int cxd56_powermgr_procfs_open(FAR struct file *filep,
-                                      FAR const char *relpath,
+static int cxd56_powermgr_procfs_open(struct file *filep,
+                                      const char *relpath,
                                       int oflags,
                                       mode_t mode)
 {
-  FAR struct cxd56_powermgr_procfs_file_s *priv;
+  struct cxd56_powermgr_procfs_file_s *priv;
   int ret;
   mode_t getmode;
   int level;
@@ -493,7 +502,7 @@ static int cxd56_powermgr_procfs_open(FAR struct file *filep,
 
   /* Allocate the open file structure */
 
-  priv = (FAR struct cxd56_powermgr_procfs_file_s *)
+  priv = (struct cxd56_powermgr_procfs_file_s *)
             kmm_zalloc(sizeof(struct cxd56_powermgr_procfs_file_s));
   if (!priv)
     {
@@ -516,7 +525,7 @@ static int cxd56_powermgr_procfs_open(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_powermgr_procfs_close(FAR struct file *filep)
+static int cxd56_powermgr_procfs_close(struct file *filep)
 {
   pminfo("Close\n");
 
@@ -535,18 +544,18 @@ static int cxd56_powermgr_procfs_close(FAR struct file *filep)
  *
  ****************************************************************************/
 
-static ssize_t cxd56_powermgr_procfs_read(FAR struct file *filep,
-                                          FAR char *buffer, size_t buflen)
+static ssize_t cxd56_powermgr_procfs_read(struct file *filep,
+                                          char *buffer, size_t buflen)
 {
   size_t    len;
-  FAR struct cxd56_powermgr_procfs_file_s *priv;
+  struct cxd56_powermgr_procfs_file_s *priv;
 
   pminfo("READ buffer=%p buflen=%lu len=%lu\n", buffer,
          (unsigned long)buflen, g_powermg_procfs_len);
 
   DEBUGASSERT(filep && filep->f_priv);
 
-  priv = (FAR struct cxd56_powermgr_procfs_file_s *)filep->f_priv;
+  priv = (struct cxd56_powermgr_procfs_file_s *)filep->f_priv;
 
   if (priv->fileno == 0)
     {
@@ -595,8 +604,8 @@ static ssize_t cxd56_powermgr_procfs_read(FAR struct file *filep,
  *
  ****************************************************************************/
 
-static int cxd56_powermgr_procfs_dup(FAR const struct file *oldp,
-                                     FAR struct file *newp)
+static int cxd56_powermgr_procfs_dup(const struct file *oldp,
+                                     struct file *newp)
 {
   void *oldpriv;
   void *newpriv;
@@ -636,8 +645,8 @@ static int cxd56_powermgr_procfs_dup(FAR const struct file *oldp,
  *
  ****************************************************************************/
 
-static int cxd56_powermgr_procfs_stat(FAR const char *relpath,
-                                      FAR struct stat *buf)
+static int cxd56_powermgr_procfs_stat(const char *relpath,
+                                      struct stat *buf)
 {
   int ret;
   mode_t mode;
@@ -667,10 +676,10 @@ static int cxd56_powermgr_procfs_stat(FAR const char *relpath,
  *
  ****************************************************************************/
 
-static int cxd56_powermgr_procfs_opendir(FAR const char *relpath,
-                                         FAR struct fs_dirent_s *dir)
+static int cxd56_powermgr_procfs_opendir(const char *relpath,
+                                         struct fs_dirent_s **dir)
 {
-  FAR struct cxd56_powermgr_procfs_dir_s *procfs;
+  struct cxd56_powermgr_procfs_dir_s *procfs;
   int ret;
   mode_t mode;
   int level;
@@ -692,7 +701,7 @@ static int cxd56_powermgr_procfs_opendir(FAR const char *relpath,
       return -ENOENT;
     }
 
-  procfs = (FAR struct cxd56_powermgr_procfs_dir_s *)
+  procfs = (struct cxd56_powermgr_procfs_dir_s *)
      kmm_malloc(sizeof(struct cxd56_powermgr_procfs_dir_s));
   if (!procfs)
     {
@@ -701,7 +710,7 @@ static int cxd56_powermgr_procfs_opendir(FAR const char *relpath,
     }
 
   procfs->index = 0;
-  dir->u.procfs = (FAR void *)procfs;
+  *dir = (struct fs_dirent_s *)procfs;
 
   return OK;
 }
@@ -714,21 +723,12 @@ static int cxd56_powermgr_procfs_opendir(FAR const char *relpath,
  *
  ****************************************************************************/
 
-static int cxd56_powermgr_procfs_closedir(FAR struct fs_dirent_s *dir)
+static int cxd56_powermgr_procfs_closedir(struct fs_dirent_s *dir)
 {
-  FAR struct smartfs_level1_s *priv;
-
   pminfo("Closedir\n");
 
-  DEBUGASSERT(dir && dir->u.procfs);
-  priv = dir->u.procfs;
-
-  if (priv)
-    {
-      kmm_free(priv);
-    }
-
-  dir->u.procfs = NULL;
+  DEBUGASSERT(dir);
+  kmm_free(dir);
   return OK;
 }
 
@@ -740,13 +740,14 @@ static int cxd56_powermgr_procfs_closedir(FAR struct fs_dirent_s *dir)
  *
  ****************************************************************************/
 
-static int cxd56_powermgr_procfs_readdir(struct fs_dirent_s *dir)
+static int cxd56_powermgr_procfs_readdir(struct fs_dirent_s *dir,
+                                         struct dirent *entry)
 {
-  FAR struct cxd56_powermgr_procfs_dir_s *procfs;
+  struct cxd56_powermgr_procfs_dir_s *procfs;
 
-  DEBUGASSERT(dir && dir->u.procfs);
+  DEBUGASSERT(dir);
 
-  procfs = (FAR struct cxd56_powermgr_procfs_dir_s *)dir->u.procfs;
+  procfs = (struct cxd56_powermgr_procfs_dir_s *)dir;
 
   pminfo("Readdir %d\n", procfs->index);
 
@@ -756,9 +757,9 @@ static int cxd56_powermgr_procfs_readdir(struct fs_dirent_s *dir)
       return -ENOENT;
     }
 
-  dir->fd_dir.d_type = DTYPE_FILE;
-  strncpy(dir->fd_dir.d_name, g_powermg_procfs_dir[procfs->index],
-            strlen(g_powermg_procfs_dir[procfs->index])+1);
+  entry->d_type = DTYPE_FILE;
+  strlcpy(entry->d_name, g_powermg_procfs_dir[procfs->index],
+          sizeof(entry->d_name));
   procfs->index++;
 
   return OK;
@@ -774,11 +775,11 @@ static int cxd56_powermgr_procfs_readdir(struct fs_dirent_s *dir)
 
 static int cxd56_powermgr_procfs_rewinddir(struct fs_dirent_s *dir)
 {
-  FAR struct cxd56_powermgr_procfs_dir_s *procfs;
+  struct cxd56_powermgr_procfs_dir_s *procfs;
 
-  DEBUGASSERT(dir && dir->u.procfs);
+  DEBUGASSERT(dir);
 
-  procfs = (FAR struct cxd56_powermgr_procfs_dir_s *)dir->u.procfs;
+  procfs = (struct cxd56_powermgr_procfs_dir_s *)dir;
   pminfo("Rewind %d\n", procfs->index);
   procfs->index = 0;
 

@@ -34,6 +34,7 @@
 
 #include <nuttx/mm/iob.h>
 #include <nuttx/net/ip.h>
+#include <nuttx/net/net.h>
 #include <nuttx/net/netdev.h>
 #include <nuttx/semaphore.h>
 
@@ -48,9 +49,9 @@
 /* Allocate a new ICMPv6 data callback */
 
 #define icmpv6_callback_alloc(dev, conn) \
-  devif_callback_alloc((dev), &(conn)->list)
+  devif_callback_alloc((dev), &(conn)->sconn.list, &(conn)->sconn.list_tail)
 #define icmpv6_callback_free(dev, conn, cb) \
-  devif_conn_callback_free((dev), (cb), &(conn)->list)
+  devif_conn_callback_free((dev), (cb), &(conn)->sconn.list, &(conn)->sconn.list_tail)
 
 /****************************************************************************
  * Public Type Definitions
@@ -79,13 +80,7 @@ struct icmpv6_conn_s
 {
   /* Common prologue of all connection structures. */
 
-  dq_entry_t node;     /* Supports a double linked list */
-
-  /* This is a list of ICMPV6 callbacks.  Each callback represents a thread
-   * that is stalled, waiting for a device-specific event.
-   */
-
-  FAR struct devif_callback_s *list;
+  struct socket_conn_s sconn;
 
   /* ICMPv6-specific content follows */
 
@@ -430,6 +425,24 @@ int icmpv6_autoconfig(FAR struct net_driver_s *dev);
 #endif
 
 /****************************************************************************
+ * Name: icmpv6_setaddresses
+ *
+ * Description:
+ *   We successfully obtained the Router Advertisement.  Set the new IPv6
+ *   addresses in the driver structure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_NET_ICMPv6_AUTOCONF
+void icmpv6_setaddresses(FAR struct net_driver_s *dev,
+                         const net_ipv6addr_t draddr,
+                         const net_ipv6addr_t prefix,
+                         unsigned int preflen);
+#else
+#  define icmpv6_setaddresses(dev,draddr,prefix,preflen) (0)
+#endif
+
+/****************************************************************************
  * Name: icmpv6_rwait_setup
  *
  * Description:
@@ -507,12 +520,9 @@ int icmpv6_rwait(FAR struct icmpv6_rnotify_s *notify, unsigned int timeout);
  ****************************************************************************/
 
 #ifdef CONFIG_NET_ICMPv6_AUTOCONF
-void icmpv6_rnotify(FAR struct net_driver_s *dev,
-                    const net_ipv6addr_t draddr,
-                    const net_ipv6addr_t prefix,
-                    unsigned int preflen);
+void icmpv6_rnotify(FAR struct net_driver_s *dev);
 #else
-#  define icmpv6_rnotify(d,p,l)
+#  define icmpv6_rnotify(d) (0)
 #endif
 
 /****************************************************************************
@@ -724,6 +734,51 @@ int icmpv6_pollteardown(FAR struct socket *psock, FAR struct pollfd *fds);
  ****************************************************************************/
 
 void icmpv6_linkipaddr(FAR struct net_driver_s *dev, net_ipv6addr_t ipaddr);
+
+/****************************************************************************
+ * Name: icmpv6_reply
+ *
+ * Description:
+ *   Send an ICMPv6 message in response to a situation
+ *   RFC 1122: 3.2.2 MUST send at least the IP header and 8 bytes of header.
+ *       MAY send more (we do).
+ *       MUST NOT change this header information.
+ *       MUST NOT reply to a multicast/broadcast IP address.
+ *       MUST NOT reply to a multicast/broadcast MAC address.
+ *       MUST reply to only the first fragment.
+ *
+ * Input Parameters:
+ *   dev   - The device driver structure containing the received packet
+ *   type  - ICMPv6 Message Type, eg. ICMPv6_DEST_UNREACHABLE
+ *   code  - ICMPv6 Message Code, eg. ICMPv6_PORT_UNREACH
+ *   data  - Additional 32-bit parameter in the ICMPv6 header
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+void icmpv6_reply(FAR struct net_driver_s *dev,
+                  int type, int code, int data);
+
+/****************************************************************************
+ * Name: icmpv6_ioctl
+ *
+ * Description:
+ *   This function performs icmp specific ioctl() operations.
+ *
+ * Parameters:
+ *   conn     The ICMP connection of interest
+ *   cmd      The ioctl command
+ *   arg      The argument of the ioctl cmd
+ *   arglen   The length of 'arg'
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_NET_ICMPv6_SOCKET
+int icmpv6_ioctl(FAR struct socket *psock,
+                 int cmd, FAR void *arg, size_t arglen);
+#endif
 
 #undef EXTERN
 #ifdef __cplusplus

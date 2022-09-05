@@ -153,7 +153,7 @@ static void ipfwd_packet_conversion(FAR struct net_driver_s *dev, int proto)
  *
  * Assumptions:
  *   This function is called from the MAC device driver indirectly through
- *   devif_poll() and devif_timer().
+ *   devif_poll().
  *
  ****************************************************************************/
 
@@ -171,7 +171,7 @@ void ipfwd_poll(FAR struct net_driver_s *dev)
    * the packet was forwarded, then the new set will be zero.
    */
 
-  flags = devif_conn_event(dev, NULL, IPFWD_POLL, dev->d_conncb);
+  flags = devif_conn_event(dev, IPFWD_POLL, dev->d_conncb);
 
 #ifdef CONFIG_NET_6LOWPAN
   if ((flags & DEVPOLL_MASK) == 0)

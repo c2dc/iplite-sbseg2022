@@ -122,7 +122,7 @@ static int ifconf_ipv4_callback(FAR struct net_driver_s *dev, FAR void *arg)
            * transferred is returned in ifc_len.
            */
 
-          strncpy(req->ifr_name, dev->d_ifname, IFNAMSIZ);
+          strlcpy(req->ifr_name, dev->d_ifname, IFNAMSIZ);
 
           inaddr->sin_family = AF_INET;
           inaddr->sin_port   = 0;
@@ -200,7 +200,7 @@ static int ifconf_ipv6_callback(FAR struct net_driver_s *dev, FAR void *arg)
            * transferred is returned in lifc_len.
            */
 
-          strncpy(req->lifr_name, dev->d_ifname, IFNAMSIZ);
+          strlcpy(req->lifr_name, dev->d_ifname, IFNAMSIZ);
 
           inaddr->sin6_family = AF_INET6;
           inaddr->sin6_port   = 0;

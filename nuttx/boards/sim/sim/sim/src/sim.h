@@ -93,7 +93,7 @@ int sim_bringup(void);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_LIB_ZONEINFO_ROMFS
+#ifdef CONFIG_LIBC_ZONEINFO_ROMFS
 int sim_zoneinfo(int minor);
 #endif
 
@@ -110,24 +110,18 @@ int sim_gpio_initialize(void);
 #endif
 
 /****************************************************************************
- * Name: sim_tsc_setup
+ * Name: sim_foc_setup
  *
  * Description:
- *   This function is called by board-bringup logic to configure the
- *   touchscreen device.  This function will register the driver as
- *   /dev/inputN where N is the minor device number.
- *
- * Input Parameters:
- *   minor   - The input device minor number
+ *   Initialize the FOC controller driver.
  *
  * Returned Value:
- *   Zero is returned on success.  Otherwise, a negated errno value is
- *   returned to indicate the nature of the failure.
+ *   0 on success, a negated errno value on failure
  *
  ****************************************************************************/
 
-#if defined(CONFIG_SIM_X11FB) && defined(CONFIG_SIM_TOUCHSCREEN)
-int sim_tsc_setup(int minor);
+#ifdef CONFIG_MOTOR_FOC_DUMMY
+int sim_foc_setup(void);
 #endif
 
 #endif /* __BOARDS_SIM_SIM_SIM_SRC_SIM_H */

@@ -26,19 +26,18 @@
 
 #include <sys/types.h>
 #include <sys/ioctl.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
 #include <errno.h>
-
-#include "arm_arch.h"
+#include <debug.h>
 
 #include "hardware/s32k1xx_ftfc.h"
 #include "hardware/s32k1xx_sim.h"
 
 #include "s32k1xx_config.h"
 #include "s32k1xx_eeeprom.h"
-
 #include "arm_internal.h"
 
 #include <arch/board/board.h> /* Include last:  has dependencies */
@@ -57,31 +56,34 @@ struct eeed_struct_s
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
   uint8_t eeed_crefs;             /* Open reference count */
 #endif
-  FAR uint8_t *eeed_buffer;       /* FlexRAM memory */
+  uint8_t *eeed_buffer;       /* FlexRAM memory */
 };
 
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
 
+static inline void wait_ftfc_ready(void);
+static uint32_t execute_ftfc_command(void);
+
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-static int     eeed_open(FAR struct inode *inode);
-static int     eeed_close(FAR struct inode *inode);
+static int     eeed_open(struct inode *inode);
+static int     eeed_close(struct inode *inode);
 #endif
 
-static ssize_t eeed_read(FAR struct inode *inode, FAR unsigned char *buffer,
+static ssize_t eeed_read(struct inode *inode, unsigned char *buffer,
                  blkcnt_t start_sector, unsigned int nsectors);
-static ssize_t eeed_write(FAR struct inode *inode,
-                 FAR const unsigned char *buffer, blkcnt_t start_sector,
+static ssize_t eeed_write(struct inode *inode,
+                 const unsigned char *buffer, blkcnt_t start_sector,
                  unsigned int nsectors);
 
-static int     eeed_geometry(FAR struct inode *inode,
-                 FAR struct geometry *geometry);
-static int     eeed_ioctl(FAR struct inode *inode, int cmd,
+static int     eeed_geometry(struct inode *inode,
+                 struct geometry *geometry);
+static int     eeed_ioctl(struct inode *inode, int cmd,
                  unsigned long arg);
 
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-static int     eeed_unlink(FAR struct inode *inode);
+static int     eeed_unlink(struct inode *inode);
 #endif
 
 /****************************************************************************
@@ -150,12 +152,12 @@ static uint32_t execute_ftfc_command()
  ****************************************************************************/
 
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-static int eeed_open(FAR struct inode *inode)
+static int eeed_open(struct inode *inode)
 {
-  FAR struct eeed_struct_s *dev;
+  struct eeed_struct_s *dev;
 
   DEBUGASSERT(inode && inode->i_private);
-  dev = (FAR struct eeed_struct_s *)inode->i_private;
+  dev = (struct eeed_struct_s *)inode->i_private;
 
   /* Increment the open reference count */
 
@@ -175,12 +177,12 @@ static int eeed_open(FAR struct inode *inode)
  ****************************************************************************/
 
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-static int eeed_close(FAR struct inode *inode)
+static int eeed_close(struct inode *inode)
 {
-  FAR struct eeed_struct_s *dev;
+  struct eeed_struct_s *dev;
 
   DEBUGASSERT(inode && inode->i_private);
-  dev = (FAR struct eeed_struct_s *)inode->i_private;
+  dev = (struct eeed_struct_s *)inode->i_private;
 
   /* Increment the open reference count */
 
@@ -199,15 +201,15 @@ static int eeed_close(FAR struct inode *inode)
  *
  ****************************************************************************/
 
-static ssize_t eeed_read(FAR struct inode *inode, unsigned char *buffer,
-                       blkcnt_t start_sector, unsigned int nsectors)
+static ssize_t eeed_read(struct inode *inode, unsigned char *buffer,
+                         blkcnt_t start_sector, unsigned int nsectors)
 {
-  FAR struct eeed_struct_s *dev;
+  struct eeed_struct_s *dev;
 
   DEBUGASSERT(inode && inode->i_private);
-  dev = (FAR struct eeed_struct_s *)inode->i_private;
+  dev = (struct eeed_struct_s *)inode->i_private;
 
-  finfo("sector: %" PRIu32 " nsectors: %u sectorsize: %d\n",
+  finfo("sector: %" PRIu64 " nsectors: %u sectorsize: %d\n",
         start_sector, nsectors, dev->eeed_sectsize);
 
   if (start_sector < dev->eeed_nsectors &&
@@ -235,7 +237,7 @@ static ssize_t eeed_read(FAR struct inode *inode, unsigned char *buffer,
  *
  ****************************************************************************/
 
-static ssize_t eeed_write(FAR struct inode *inode,
+static ssize_t eeed_write(struct inode *inode,
                           const unsigned char *buffer,
                           blkcnt_t start_sector, unsigned int nsectors)
 {
@@ -244,7 +246,7 @@ static ssize_t eeed_write(FAR struct inode *inode,
   DEBUGASSERT(inode && inode->i_private);
   dev = (struct eeed_struct_s *)inode->i_private;
 
-  finfo("sector: %" PRIu32 " nsectors: %u sectorsize: %d\n",
+  finfo("sector: %" PRIu64 " nsectors: %u sectorsize: %d\n",
         start_sector, nsectors, dev->eeed_sectsize);
 
   if (start_sector < dev->eeed_nsectors &&
@@ -254,7 +256,7 @@ static ssize_t eeed_write(FAR struct inode *inode,
              nsectors * dev->eeed_sectsize,
              &dev->eeed_buffer[start_sector * dev->eeed_sectsize]);
 
-      FAR uint32_t *dest = (FAR uint32_t *)&dev->eeed_buffer
+      uint32_t *dest = (uint32_t *)&dev->eeed_buffer
                            [start_sector * dev->eeed_sectsize];
 
       uint32_t *src = (uint32_t *)buffer;
@@ -280,7 +282,7 @@ static ssize_t eeed_write(FAR struct inode *inode,
  *
  ****************************************************************************/
 
-static int eeed_geometry(FAR struct inode *inode, struct geometry *geometry)
+static int eeed_geometry(struct inode *inode, struct geometry *geometry)
 {
   struct eeed_struct_s *dev;
 
@@ -298,7 +300,7 @@ static int eeed_geometry(FAR struct inode *inode, struct geometry *geometry)
 
       finfo("available: true mediachanged: false writeenabled: %s\n",
             geometry->geo_writeenabled ? "true" : "false");
-      finfo("nsectors: %" PRIu32 " sectorsize: %" PRIu16 "\n",
+      finfo("nsectors: %" PRIuOFF " sectorsize: %" PRIu16 "\n",
             geometry->geo_nsectors, geometry->geo_sectorsize);
 
       return OK;
@@ -315,10 +317,10 @@ static int eeed_geometry(FAR struct inode *inode, struct geometry *geometry)
  *
  ****************************************************************************/
 
-static int eeed_ioctl(FAR struct inode *inode, int cmd, unsigned long arg)
+static int eeed_ioctl(struct inode *inode, int cmd, unsigned long arg)
 {
-  FAR struct eeed_struct_s *dev;
-  FAR void **ppv = (void**)((uintptr_t)arg);
+  struct eeed_struct_s *dev;
+  void **ppv = (void**)((uintptr_t)arg);
 
   finfo("Entry\n");
 
@@ -327,8 +329,8 @@ static int eeed_ioctl(FAR struct inode *inode, int cmd, unsigned long arg)
   DEBUGASSERT(inode && inode->i_private);
   if (cmd == BIOC_XIPBASE && ppv)
     {
-      dev  = (FAR struct eeed_struct_s *)inode->i_private;
-      *ppv = (FAR void *)dev->eeed_buffer;
+      dev  = (struct eeed_struct_s *)inode->i_private;
+      *ppv = (void *)dev->eeed_buffer;
 
       finfo("ppv: %p\n", *ppv);
       return OK;
@@ -346,12 +348,12 @@ static int eeed_ioctl(FAR struct inode *inode, int cmd, unsigned long arg)
  ****************************************************************************/
 
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-static int eeed_unlink(FAR struct inode *inode)
+static int eeed_unlink(struct inode *inode)
 {
-  FAR struct eeed_struct_s *dev;
+  struct eeed_struct_s *dev;
 
   DEBUGASSERT(inode && inode->i_private);
-  dev = (FAR struct eeed_struct_s *)inode->i_private;
+  dev = (struct eeed_struct_s *)inode->i_private;
 
   /* And free the block driver itself */
 
@@ -395,7 +397,7 @@ int s32k1xx_eeeprom_register(int minor, uint32_t size)
 
       dev->eeed_nsectors     = size / 4;     /* Number of sectors on device */
       dev->eeed_sectsize     = 4;            /* The size of one sector */
-      dev->eeed_buffer       = (FAR uint8_t *)S32K1XX_FTFC_EEEPROM_BASE;
+      dev->eeed_buffer       = (uint8_t *)S32K1XX_FTFC_EEEPROM_BASE;
 
       /* Create a eeeprom device name */
 

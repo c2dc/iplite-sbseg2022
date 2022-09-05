@@ -31,8 +31,7 @@
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "hardware/kl_port.h"
 #include "kl_gpio.h"
 
@@ -101,8 +100,8 @@ static struct g_portisrs_s g_portdisrs[32];
  ****************************************************************************/
 
 #ifdef HAVE_PORTINTS
-static int kl_portinterrupt(int irq, FAR void *context,
-                                uintptr_t addr, xcpt_t *isrtab)
+static int kl_portinterrupt(int irq, void *context,
+                            uintptr_t addr, xcpt_t *isrtab)
 {
   uint32_t isfr = getreg32(addr);
   int i;
@@ -161,14 +160,14 @@ static int kl_portinterrupt(int irq, FAR void *context,
  ****************************************************************************/
 
 #ifdef CONFIG_KL_PORTAINTS
-static int kl_portainterrupt(int irq, FAR void *context, FAR void *arg)
+static int kl_portainterrupt(int irq, void *context, void *arg)
 {
   return kl_portinterrupt(irq, context, KL_PORTA_ISFR, g_portaisrs);
 }
 #endif
 
 #ifdef CONFIG_KL_PORTDINTS
-static int kl_portdinterrupt(int irq, FAR void *context, FAR void *arg)
+static int kl_portdinterrupt(int irq, void *context, void *arg)
 {
   return kl_portinterrupt(irq, context, KL_PORTD_ISFR, g_portdisrs);
 }

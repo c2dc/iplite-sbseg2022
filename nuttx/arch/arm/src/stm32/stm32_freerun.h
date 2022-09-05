@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_STM32_FREERUN_H
-#define __ARCH_ARM_SRC_STM32_FREERUN_H
+#ifndef __ARCH_ARM_SRC_STM32_STM32_FREERUN_H
+#define __ARCH_ARM_SRC_STM32_STM32_FREERUN_H
 
 /****************************************************************************
  * Included Files
@@ -47,9 +47,9 @@
 
 struct stm32_freerun_s
 {
-  uint8_t chan;                    /* The timer/counter in use */
-  uint8_t width;                   /* Width of timer (16- or 32-bits) */
-  FAR struct stm32_tim_dev_s *tch; /* Handle returned by stm32_tim_init() */
+  uint8_t chan;                /* The timer/counter in use */
+  uint8_t width;               /* Width of timer (16- or 32-bits) */
+  struct stm32_tim_dev_s *tch; /* Handle returned by stm32_tim_init() */
   uint32_t frequency;
 
 #ifndef CONFIG_CLOCK_TIMEKEEPING
@@ -156,4 +156,4 @@ int stm32_freerun_uninitialize(struct stm32_freerun_s *freerun);
 #endif
 
 #endif /* CONFIG_STM32_FREERUN */
-#endif /* __ARCH_ARM_SRC_STM32_FREERUN_H */
+#endif /* __ARCH_ARM_SRC_STM32_STM32_FREERUN_H */

@@ -30,6 +30,9 @@
  ****************************************************************************/
 
 #include <arch/setjmp.h>
+#ifndef __ASSEMBLY__
+#  include <stdbool.h>
+#endif
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -66,6 +69,45 @@ extern "C"
 #define EXTERN extern
 #endif
 
+/****************************************************************************
+ * Inline functions
+ ****************************************************************************/
+
+/* Return the current value of the stack pointer */
+
+static inline uintptr_t up_getsp(void)
+{
+#ifdef _MSC_VER
+  uintptr_t regval;
+  __asm mov regval, esp;
+  return regval;
+#else
+  return (uintptr_t)__builtin_frame_address(0);
+#endif
+}
+
+/****************************************************************************
+ * Name: up_cpu_index
+ *
+ * Description:
+ *   Return an index in the range of 0 through (CONFIG_SMP_NCPUS-1) that
+ *   corresponds to the currently executing CPU.
+ *
+ * Input Parameters:
+ *   None
+ *
+ * Returned Value:
+ *   An integer index in the range of 0 through (CONFIG_SMP_NCPUS-1) that
+ *   corresponds to the currently executing CPU.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_SMP
+int up_cpu_index(void);
+#else
+#  define up_cpu_index() (0)
+#endif
+
 /* Name: up_irq_save, up_irq_restore, and friends.
  *
  * NOTE: These functions should never be called from application code and,
@@ -77,6 +119,17 @@ extern "C"
 
 irqstate_t up_irq_save(void);
 void up_irq_restore(irqstate_t flags);
+
+/****************************************************************************
+ * Name: up_interrupt_context
+ *
+ * Description:
+ *   Return true is we are currently executing in the interrupt
+ *   handler context.
+ *
+ ****************************************************************************/
+
+bool up_interrupt_context(void);
 
 #undef EXTERN
 #ifdef __cplusplus

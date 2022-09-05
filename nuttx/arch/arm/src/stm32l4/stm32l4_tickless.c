@@ -1,36 +1,20 @@
 /****************************************************************************
  * arch/arm/src/stm32l4/stm32l4_tickless.c
  *
- *   Copyright (C) 2016 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *           dev@ziggurat29.com
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -43,10 +27,10 @@
  *
  *   void up_timer_initialize(void): Initializes the timer facilities.
  *     Called early in the initialization sequence (by up_initialize()).
- *   int up_timer_gettime(FAR struct timespec *ts):  Returns the current
+ *   int up_timer_gettime(struct timespec *ts):  Returns the current
  *     time from the platform specific time source.
  *   int up_timer_cancel(void):  Cancels the interval timer.
- *   int up_timer_start(FAR const struct timespec *ts): Start (or re-starts)
+ *   int up_timer_start(const struct timespec *ts): Start (or re-starts)
  *     the interval timer.
  *
  * The RTOS will provide the following interfaces for use by the platform-
@@ -89,6 +73,7 @@
 #include <stdbool.h>
 
 #include <nuttx/arch.h>
+#include <assert.h>
 #include <debug.h>
 
 #include "stm32l4_oneshot.h"
@@ -154,7 +139,7 @@ static struct stm32l4_tickless_s g_tickless;
  *
  ****************************************************************************/
 
-static void stm32l4_oneshot_handler(FAR void *arg)
+static void stm32l4_oneshot_handler(void *arg)
 {
   tmrinfo("Expired...\n");
   nxsched_timer_expiration();
@@ -250,7 +235,7 @@ void up_timer_initialize(void)
  *   up_timer_initialize() was called).  This function is functionally
  *   equivalent to:
  *
- *      int clock_gettime(clockid_t clockid, FAR struct timespec *ts);
+ *      int clock_gettime(clockid_t clockid, struct timespec *ts);
  *
  *   when clockid is CLOCK_MONOTONIC.
  *
@@ -275,7 +260,7 @@ void up_timer_initialize(void)
  *
  ****************************************************************************/
 
-int up_timer_gettime(FAR struct timespec *ts)
+int up_timer_gettime(struct timespec *ts)
 {
   return stm32l4_freerun_counter(&g_tickless.freerun, ts);
 }
@@ -316,7 +301,7 @@ int up_timer_gettime(FAR struct timespec *ts)
  *
  ****************************************************************************/
 
-int up_timer_cancel(FAR struct timespec *ts)
+int up_timer_cancel(struct timespec *ts)
 {
   return stm32l4_oneshot_cancel(&g_tickless.oneshot, ts);
 }
@@ -346,7 +331,7 @@ int up_timer_cancel(FAR struct timespec *ts)
  *
  ****************************************************************************/
 
-int up_timer_start(FAR const struct timespec *ts)
+int up_timer_start(const struct timespec *ts)
 {
   return stm32l4_oneshot_start(&g_tickless.oneshot,
                                stm32l4_oneshot_handler, NULL, ts);

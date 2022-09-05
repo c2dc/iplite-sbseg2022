@@ -47,6 +47,7 @@
 #define R_X86_64_PLT32  4
 #define R_X86_64_32     10
 #define R_X86_64_32S    11
+#define R_X86_64_PC64   24
 
 /****************************************************************************
  * Private Data Types
@@ -80,7 +81,7 @@
  *
  ****************************************************************************/
 
-bool up_checkarch(FAR const Elf64_Ehdr *ehdr)
+bool up_checkarch(const Elf64_Ehdr *ehdr)
 {
   /* Make sure it's an x86_64 executable */
 
@@ -139,14 +140,13 @@ bool up_checkarch(FAR const Elf64_Ehdr *ehdr)
  *
  ****************************************************************************/
 
-int up_relocate(FAR const Elf64_Rel *rel, FAR const Elf64_Sym *sym,
-                uintptr_t addr)
+int up_relocate(const Elf64_Rel *rel, const Elf64_Sym *sym, uintptr_t addr)
 {
   berr("Not implemented\n");
   return -ENOSYS;
 }
 
-int up_relocateadd(FAR const Elf64_Rela *rel, FAR const Elf64_Sym *sym,
+int up_relocateadd(const Elf64_Rela *rel, const Elf64_Sym *sym,
                    uintptr_t addr)
 {
   unsigned int relotype;
@@ -180,6 +180,10 @@ int up_relocateadd(FAR const Elf64_Rela *rel, FAR const Elf64_Sym *sym,
           }
 
         *(uint32_t *)addr = value;
+        break;
+      case R_X86_64_PC64:  /* S + A - P */
+        value = sym->st_value + rel->r_addend - addr;
+        *(uint64_t *)addr = value;
         break;
       case R_X86_64_32:  /* S + A */
       case R_X86_64_32S: /* S + A */

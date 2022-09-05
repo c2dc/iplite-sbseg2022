@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <unistd.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <stdio.h>
@@ -48,8 +49,6 @@
 
 /* Character driver methods */
 
-static int     adxl345_open(FAR struct file *filep);
-static int     adxl345_close(FAR struct file *filep);
 static ssize_t adxl345_read(FAR struct file *filep, FAR char *buffer,
                             size_t len);
 
@@ -61,39 +60,17 @@ static ssize_t adxl345_read(FAR struct file *filep, FAR char *buffer,
 
 static const struct file_operations g_adxl345fops =
 {
-  adxl345_open,    /* open */
-  adxl345_close,   /* close */
+  NULL,            /* open */
+  NULL,            /* close */
   adxl345_read,    /* read */
-  0,               /* write */
-  0,               /* seek */
-  0,               /* ioctl */
+  NULL,            /* write */
+  NULL,            /* seek */
+  NULL,            /* ioctl */
+  NULL             /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL           /* unlink */
+#endif
 };
-
-/****************************************************************************
- * Name: adxl345_open
- *
- * Description:
- *   Standard character driver open method.
- *
- ****************************************************************************/
-
-static int adxl345_open(FAR struct file *filep)
-{
-  return OK;
-}
-
-/****************************************************************************
- * Name: adxl345_close
- *
- * Description:
- *   Standard character driver close method.
- *
- ****************************************************************************/
-
-static int adxl345_close(FAR struct file *filep)
-{
-  return OK;
-}
 
 /****************************************************************************
  * Name: adxl345_read
@@ -205,8 +182,8 @@ int adxl345_register(ADXL345_HANDLE handle, int minor)
 
   /* Register the character driver */
 
-  snprintf(devname, DEV_NAMELEN, DEV_FORMAT, minor);
-  ret = register_driver(devname, &g_adxl345fops, 0666, priv);
+  snprintf(devname, sizeof(devname), DEV_FORMAT, minor);
+  ret = register_driver(devname, &g_adxl345fops, 0444, priv);
   if (ret < 0)
     {
       snerr("ERROR: Failed to register driver %s: %d\n", devname, ret);

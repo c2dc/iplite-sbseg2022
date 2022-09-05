@@ -28,6 +28,7 @@
 #include <signal.h>
 #include <aio.h>
 #include <assert.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/signal.h>
@@ -507,7 +508,7 @@ static int lio_waitall(FAR struct aiocb * const *list, int nent)
 int lio_listio(int mode, FAR struct aiocb * const list[], int nent,
                FAR struct sigevent *sig)
 {
-  FAR struct aiocb *aiocbp;
+  FAR struct aiocb *aiocbp = NULL;
   int nqueued;
   int errcode;
   int retcode;

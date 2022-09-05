@@ -50,20 +50,19 @@
 #define FB_FMT_GREY           FB_FMT_Y8 /* BPP=8 */
 #define FB_FMT_Y800           FB_FMT_Y8 /* BPP=8 */
 
-#define FB_ISMONO(f)          (((f) >= FB_FMT_Y4) && (f) <= FB_FMT_Y16)
+#define FB_ISMONO(f)          (((f) >= FB_FMT_Y1) && (f) <= FB_FMT_Y16)
 
 /* RGB video formats ********************************************************/
 
 /* Standard RGB */
 
-#define FB_FMT_RGB1           FB_FMT_Y1   /* BPP=1 */
 #define FB_FMT_RGB4           5           /* BPP=4 */
 #define FB_FMT_RGB8           6           /* BPP=8 RGB palette index */
 #define FB_FMT_RGB8_222       7           /* BPP=8  R=2, G=2, B=2 */
 #define FB_FMT_RGB8_332       8           /* BPP=8  R=3, G=3, B=2 */
 #define FB_FMT_RGB12_444      9           /* BPP=12 R=4, G=4, B=4 */
 #define FB_FMT_RGB16_555      10          /* BPP=16 R=5, G=5, B=5 (1 unused bit) */
-#define FB_FMT_RGB16_565      11          /* BPP=16 R=6, G=6, B=5 */
+#define FB_FMT_RGB16_565      11          /* BPP=16 R=5, G=6, B=5 */
 #define FB_FMT_RGB24          12          /* BPP=24 */
 #define FB_FMT_RGB32          13          /* BPP=32 */
 
@@ -94,7 +93,7 @@
 #define FB_FMT_RGBT16         22          /* BPP=16 */
 #define FB_FMT_RGBT32         23          /* BPP=32 */
 
-#define FB_ISRGB(f)           (((f) >= FB_FMT_RGB1) && (f) <= FB_FMT_RGBT32)
+#define FB_ISRGB(f)           (((f) >= FB_FMT_RGB4) && (f) <= FB_FMT_RGBT32)
 
 /* Packed YUV Formats *******************************************************/
 
@@ -167,7 +166,7 @@
 #define FB_FMT_CXY1           61          /* BPP=12 */
 #define FB_FMT_CXY2           62          /* BPP=16 */
 
-#define FB_ISYUVPLANAR(f)     (((f) >= FB_FMT_AYUV) && (f) <= FB_FMT_YUVP)
+#define FB_ISYUVPLANAR(f)     (((f) >= FB_FMT_YVU9) && (f) <= FB_FMT_CXY2)
 #define FB_ISYUV(f)           (FB_ISYUVPACKED(f) || FB_ISYUVPLANAR(f))
 
 /* Hardware cursor control **************************************************/
@@ -272,6 +271,21 @@
 #endif
 #endif /* CONFIG_FB_OVERLAY */
 
+/* Specific Controls ********************************************************/
+
+#define FBIOSET_POWER         _FBIOC(0x0012)  /* Set panel power
+                                               * Argument:             int */
+#define FBIOGET_POWER         _FBIOC(0x0013)  /* Get panel current power
+                                               * Argument:            int* */
+#define FBIOSET_FRAMERATE     _FBIOC(0x0014)  /* Set frame rate
+                                               * Argument:             int */
+#define FBIOGET_FRAMERATE     _FBIOC(0x0015)  /* Get frame rate
+                                               * Argument:            int* */
+
+#define FBIOPAN_DISPLAY       _FBIOC(0x0016)  /* Pan display
+                                               * Argument: read-only struct
+                                               *           fb_planeinfo_s* */
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/
@@ -286,12 +300,15 @@ typedef uint16_t fb_coord_t;
 
 struct fb_videoinfo_s
 {
-  uint8_t    fmt;         /* see FB_FMT_*  */
-  fb_coord_t xres;        /* Horizontal resolution in pixel columns */
-  fb_coord_t yres;        /* Vertical resolution in pixel rows */
-  uint8_t    nplanes;     /* Number of color planes supported */
+  uint8_t    fmt;               /* see FB_FMT_*  */
+  fb_coord_t xres;              /* Horizontal resolution in pixel columns */
+  fb_coord_t yres;              /* Vertical resolution in pixel rows */
+  uint8_t    nplanes;           /* Number of color planes supported */
 #ifdef CONFIG_FB_OVERLAY
-  uint8_t    noverlays;   /* Number of overlays supported */
+  uint8_t    noverlays;         /* Number of overlays supported */
+#endif
+#ifdef CONFIG_FB_MODULEINFO
+  uint8_t    moduleinfo[128];   /* Module information filled by vendor */
 #endif
 };
 
@@ -301,11 +318,15 @@ struct fb_videoinfo_s
 
 struct fb_planeinfo_s
 {
-  FAR void  *fbmem;       /* Start of frame buffer memory */
-  size_t     fblen;       /* Length of frame buffer memory in bytes */
-  fb_coord_t stride;      /* Length of a line in bytes */
-  uint8_t    display;     /* Display number */
-  uint8_t    bpp;         /* Bits per pixel */
+  FAR void  *fbmem;        /* Start of frame buffer memory */
+  size_t     fblen;        /* Length of frame buffer memory in bytes */
+  fb_coord_t stride;       /* Length of a line in bytes */
+  uint8_t    display;      /* Display number */
+  uint8_t    bpp;          /* Bits per pixel */
+  uint32_t   xres_virtual; /* Virtual Horizontal resolution in pixel columns */
+  uint32_t   yres_virtual; /* Virtual Vertical resolution in pixel rows */
+  uint32_t   xoffset;      /* Offset from virtual to visible resolution */
+  uint32_t   yoffset;      /* Offset from virtual to visible resolution */
 };
 
 /* This structure describes an area. */
@@ -429,7 +450,7 @@ struct fb_cursorsize_s
 };
 #endif
 
-/* The following are used to get/get the cursor attributes via IOCTL
+/* The following are used to get/set the cursor attributes via IOCTL
  * command.
  */
 
@@ -569,6 +590,29 @@ struct fb_vtable_s
                FAR const struct fb_overlayblend_s *blend);
 # endif
 #endif
+
+  /* Pan display for multiple buffers. */
+
+  int (*pandisplay)(FAR struct fb_vtable_s *vtable,
+                    FAR struct fb_planeinfo_s *pinfo);
+
+  /* Specific Controls ******************************************************/
+
+  /* Set the frequency of the framebuffer update panel (0: disable refresh) */
+
+  int (*setframerate)(FAR struct fb_vtable_s *vtable, int rate);
+
+  /* Get the frequency of the framebuffer update panel (0: disable refresh) */
+
+  int (*getframerate)(FAR struct fb_vtable_s *vtable);
+
+  /* Get the panel power status (0: full off). */
+
+  int (*getpower)(FAR struct fb_vtable_s *vtable);
+
+  /* Enable/disable panel power (0: full off). */
+
+  int (*setpower)(FAR struct fb_vtable_s *vtable, int power);
 };
 
 /****************************************************************************

@@ -271,7 +271,6 @@ static void ieee802154_meta_data(FAR struct radio_driver_s *radio,
  ****************************************************************************/
 
 static uint16_t ieee802154_sendto_eventhandler(FAR struct net_driver_s *dev,
-                                               FAR void *pvconn,
                                                FAR void *pvpriv,
                                                uint16_t flags)
 {
@@ -295,7 +294,7 @@ static uint16_t ieee802154_sendto_eventhandler(FAR struct net_driver_s *dev,
 
 #warning Missing logic
 
-  pstate = (FAR struct ieee802154_sendto_s *)pvpriv;
+  pstate = pvpriv;
   radio  = (FAR struct radio_driver_s *)dev;
 
   ninfo("flags: %04x sent: %zd\n", flags, pstate->is_sent);
@@ -332,7 +331,7 @@ static uint16_t ieee802154_sendto_eventhandler(FAR struct net_driver_s *dev,
 
       /* Allocate an IOB to hold the frame data */
 
-      iob = net_ioballoc(false, IOBUSER_NET_SOCK_IEEE802154);
+      iob = net_ioballoc(false);
       if (iob == NULL)
         {
           nwarn("WARNING: Failed to allocate IOB\n");
@@ -582,7 +581,7 @@ static ssize_t ieee802154_send(FAR struct socket *psock, FAR const void *buf,
     {
       /* send() may be used only if the socket has been connected. */
 
-      if (!_SS_ISCONNECTED(psock->s_flags) ||
+      if (!_SS_ISCONNECTED(conn->sconn.s_flags) ||
           conn->raddr.s_mode == IEEE802154_ADDRMODE_NONE)
         {
           ret = -ENOTCONN;

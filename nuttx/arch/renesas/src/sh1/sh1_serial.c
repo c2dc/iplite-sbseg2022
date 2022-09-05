@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -37,7 +38,6 @@
 #include <nuttx/serial/serial.h>
 
 #include "chip.h"
-#include "up_arch.h"
 #include "up_internal.h"
 
 /****************************************************************************

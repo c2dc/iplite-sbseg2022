@@ -7,7 +7,7 @@
  *   Ported by: Darcy Gong
  *
  * It derives from the Rhombus OS math library by Nick Johnson which has
- * a compatibile, MIT-style license:
+ * a compatible, MIT-style license:
  *
  * Copyright (C) 2009, 2010 Nick Johnson <nickbjohnson4224 at gmail.com>
  *
@@ -41,6 +41,22 @@
 #ifdef CONFIG_HAVE_DOUBLE
 double pow(double b, double e)
 {
-  return exp(e * log(b));
+  if (b > 0)
+    {
+      return exp(e * log(b));
+    }
+  else if (b < 0 && e == (int)e)
+    {
+      if ((int)e % 2 == 0)
+        {
+          return exp(e * log(fabs(b)));
+        }
+      else
+        {
+          return -exp(e * log(fabs(b)));
+        }
+    }
+
+  return 0;
 }
 #endif

@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -38,9 +39,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "lpc54_config.h"
 #include "hardware/lpc54_usart.h"
@@ -390,7 +389,7 @@ static int  lpc54_setup(struct uart_dev_s *dev);
 static void lpc54_shutdown(struct uart_dev_s *dev);
 static int  lpc54_attach(struct uart_dev_s *dev);
 static void lpc54_detach(struct uart_dev_s *dev);
-static int  lpc54_interrupt(int irq, void *context, FAR void *arg);
+static int  lpc54_interrupt(int irq, void *context, void *arg);
 static int  lpc54_ioctl(struct file *filep, int cmd, unsigned long arg);
 static int  lpc54_receive(struct uart_dev_s *dev, unsigned int *status);
 static void lpc54_rxint(struct uart_dev_s *dev, bool enable);
@@ -1072,7 +1071,7 @@ static void lpc54_detach(struct uart_dev_s *dev)
  *
  ****************************************************************************/
 
-static int lpc54_interrupt(int irq, void *context, FAR void *arg)
+static int lpc54_interrupt(int irq, void *context, void *arg)
 {
   struct uart_dev_s *dev = (struct uart_dev_s *)arg;
   struct lpc54_dev_s *priv;
@@ -1149,7 +1148,7 @@ static int lpc54_ioctl(struct file *filep, int cmd, unsigned long arg)
   struct inode      *inode;
   struct uart_dev_s *dev;
   struct lpc54_dev_s   *priv;
-  int                ret = OK;
+  int                   ret = OK;
 
   DEBUGASSERT(filep, filep->f_inode);
   inode = filep->f_inode;

@@ -56,16 +56,10 @@
  * will be incremented multiple times per tick.
  */
 
-#ifdef CONFIG_SMP
-#  define CPULOAD_TIMECONSTANT \
+#define CPULOAD_TIMECONSTANT \
      (CONFIG_SMP_NCPUS * \
       CONFIG_SCHED_CPULOAD_TIMECONSTANT * \
       CPULOAD_TICKSPERSEC)
-#else
-#  define CPULOAD_TIMECONSTANT \
-     (CONFIG_SCHED_CPULOAD_TIMECONSTANT * \
-      CPULOAD_TICKSPERSEC)
-#endif
 
 /****************************************************************************
  * Private Data
@@ -97,7 +91,8 @@ volatile uint32_t g_cpuload_total;
  *   Collect data that can be used for CPU load measurements.
  *
  * Input Parameters:
- *   cpu - The CPU that we are performing the load operations on.
+ *   cpu   - The CPU that we are performing the load operations on.
+ *   ticks - The ticks that we process in this cpuload.
  *
  * Returned Value:
  *   None
@@ -108,28 +103,19 @@ volatile uint32_t g_cpuload_total;
  *
  ****************************************************************************/
 
-static inline void nxsched_cpu_process_cpuload(int cpu)
+static inline void nxsched_cpu_process_cpuload(int cpu, uint32_t ticks)
 {
-  FAR struct tcb_s *rtcb  = current_task(cpu);
-  int hash_index;
+  FAR struct tcb_s *rtcb = current_task(cpu);
 
-  /* Increment the count on the currently executing thread
-   *
-   * NOTE also that CPU load measurement data is retained in the g_pidhash
-   * table vs. in the TCB which would seem to be the more logic place.  It
-   * is place in the hash table, instead, to facilitate CPU load adjustments
-   * on all threads during timer interrupt handling. nxsched_foreach() could
-   * do this too, but this would require a little more overhead.
-   */
+  /* Increment the count on the currently executing thread */
 
-  hash_index = PIDHASH(rtcb->pid);
-  g_pidhash[hash_index].ticks++;
+  rtcb->ticks += ticks;
 
   /* Increment tick count.  NOTE that the count is increment once for each
    * CPU on each sample interval.
    */
 
-  g_cpuload_total++;
+  g_cpuload_total += ticks;
 }
 
 /****************************************************************************
@@ -137,7 +123,7 @@ static inline void nxsched_cpu_process_cpuload(int cpu)
  ****************************************************************************/
 
 /****************************************************************************
- * Name: nxsched_process_cpuload
+ * Name: nxsched_process_cpuload_ticks
  *
  * Description:
  *   Collect data that can be used for CPU load measurements.  When
@@ -146,7 +132,7 @@ static inline void nxsched_cpu_process_cpuload(int cpu)
  *   interface.
  *
  * Input Parameters:
- *   None
+ *   ticks - The ticks that we increment in this cpuload
  *
  * Returned Value:
  *   None
@@ -157,27 +143,19 @@ static inline void nxsched_cpu_process_cpuload(int cpu)
  *
  ****************************************************************************/
 
-void weak_function nxsched_process_cpuload(void)
+void nxsched_process_cpuload_ticks(uint32_t ticks)
 {
   int i;
-
-#ifdef CONFIG_SMP
   irqstate_t flags;
 
   /* Perform scheduler operations on all CPUs. */
 
   flags = enter_critical_section();
+
   for (i = 0; i < CONFIG_SMP_NCPUS; i++)
     {
-      nxsched_cpu_process_cpuload(i);
+      nxsched_cpu_process_cpuload(i, ticks);
     }
-
-#else
-  /* Perform scheduler operations on the single CPU. */
-
-  nxsched_cpu_process_cpuload(0);
-
-#endif
 
   /* If the accumulated tick value exceed a time constant, then shift the
    * accumulators and recalculate the total.
@@ -191,10 +169,13 @@ void weak_function nxsched_process_cpuload(void)
        * total.
        */
 
-      for (i = 0; i < CONFIG_MAX_TASKS; i++)
+      for (i = 0; i < g_npidhash; i++)
         {
-          g_pidhash[i].ticks >>= 1;
-          total += g_pidhash[i].ticks;
+          if (g_pidhash[i])
+            {
+              g_pidhash[i]->ticks >>= 1;
+              total += g_pidhash[i]->ticks;
+            }
         }
 
       /* Save the new total. */
@@ -202,9 +183,7 @@ void weak_function nxsched_process_cpuload(void)
       g_cpuload_total = total;
     }
 
-#ifdef CONFIG_SMP
   leave_critical_section(flags);
-#endif
 }
 
 /****************************************************************************
@@ -230,7 +209,7 @@ void weak_function nxsched_process_cpuload(void)
 int clock_cpuload(int pid, FAR struct cpuload_s *cpuload)
 {
   irqstate_t flags;
-  int hash_index = PIDHASH(pid);
+  int hash_index;
   int ret = -ESRCH;
 
   DEBUGASSERT(cpuload);
@@ -241,6 +220,7 @@ int clock_cpuload(int pid, FAR struct cpuload_s *cpuload)
    */
 
   flags = enter_critical_section();
+  hash_index = PIDHASH(pid);
 
   /* Make sure that the entry is valid (TCB field is not NULL) and matches
    * the requested PID.  The first check is needed if the thread has exited.
@@ -255,10 +235,10 @@ int clock_cpuload(int pid, FAR struct cpuload_s *cpuload)
    * do this too, but this would require a little more overhead.
    */
 
-  if (g_pidhash[hash_index].tcb && g_pidhash[hash_index].pid == pid)
+  if (g_pidhash[hash_index] && g_pidhash[hash_index]->pid == pid)
     {
       cpuload->total  = g_cpuload_total;
-      cpuload->active = g_pidhash[hash_index].ticks;
+      cpuload->active = g_pidhash[hash_index]->ticks;
       ret = OK;
     }
 

@@ -50,13 +50,24 @@
  *   Argument: int32_t pointer to the location to return the position.
  * QEIOC_RESET - Reset the position to zero.
  *   Argument: None
+ * QEIOC_SETPOSMAX - Set the maximum position for the encoder.
+ *   Argument: uint32_t maximum position
+ * QEIOC_SETINDEX - Set the index position for the encoder.
+ *   Argument: uint32_t index position
+ * QEIOC_GETINDEX - Get the index position and count of the encoder.
+ *   The structure also contains current position so QEIOC_POSITION
+ *   is not required when QEIOC_GETINDEX is used.
+ *   Argment: qe_index_s structure (refer below)
  */
 
 #define QEIOC_POSITION     _QEIOC(0x0001) /* Arg: int32_t* pointer */
 #define QEIOC_RESET        _QEIOC(0x0002) /* Arg: None */
+#define QEIOC_SETPOSMAX    _QEIOC(0x0003) /* Arg: uint32_t */
+#define QEIOC_SETINDEX     _QEIOC(0x0004) /* Arg: uint32_t */
+#define QEIOC_GETINDEX     _QEIOC(0x0005) /* Arg: qe_index_s struct */
 
 #define QE_FIRST           0x0001         /* First required command */
-#define QE_NCMDS           2              /* Two required commands */
+#define QE_NCMDS           5              /* 5 required commands */
 
 /* User defined ioctl commands are also supported. These will be forwarded
  * by the upper-half QE driver to the lower-half QE driver via the ioctl()
@@ -72,13 +83,18 @@
 
 /* See include/nuttx/sensors/as5048b.h */
 
-#define QE_AS5048B_FIRST   (QE_TIVA_FIRST + QEIOC_TIVA_NCMDS)
+#define QE_AS5048B_FIRST   (QE_TIVA_FIRST + QE_TIVA_NCMDS)
 #define QE_AS5048B_NCMDS   4
 
 /* See arch/arm/src/imxrt/imxrt_enc.h */
 
-#define QE_IMXRT_FIRST      (QE_FIRST + QE_NCMDS)
-#define QE_IMXRT_NCMDS      7
+#define QE_IMXRT_FIRST     (QE_AS5048B_FIRST + QE_AS5048B_NCMDS)
+#define QE_IMXRT_NCMDS     7
+
+/* See include/nuttx/sensors/as5048a.h */
+
+#define QE_AS5048A_FIRST   (QE_IMXRT_FIRST + QE_IMXRT_NCMDS)
+#define QE_AS5048A_NCMDS   4
 
 /****************************************************************************
  * Public Types
@@ -109,14 +125,34 @@ struct qe_ops_s
 
   CODE int (*position)(FAR struct qe_lowerhalf_s *lower, FAR int32_t *pos);
 
+  /* Set the maximum encoder position. */
+
+  CODE int (*setposmax)(FAR struct qe_lowerhalf_s *lower, uint32_t pos);
+
   /* Reset the position measurement to zero. */
 
   CODE int (*reset)(FAR struct qe_lowerhalf_s *lower);
+
+  /* Set the index pin position */
+
+  CODE int (*setindex)(FAR struct qe_lowerhalf_s *lower, uint32_t pos);
 
   /* Lower-half logic may support platform-specific ioctl commands */
 
   CODE int (*ioctl)(FAR struct qe_lowerhalf_s *lower,
                     int cmd, unsigned long arg);
+};
+
+/* Structure qe_index_s is used for QEIOC_GETINDEX call. This call returns
+ * current encoder position, the last index position and number of index
+ * occurances.
+ */
+
+struct qe_index_s
+{
+  int32_t qenc_pos;     /* Qencoder actual position */
+  int32_t indx_pos;     /* Index last position */
+  int16_t indx_cnt;     /* Number of index occurances */
 };
 
 /* This is the interface between the lower half quadrature encoder driver

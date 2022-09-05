@@ -120,7 +120,7 @@ NXWidgets.:
       see that setting like:
 
       ```conf
-      CONFIG_USER_ENTRYPOINT="nsh_main"
+      CONFIG_INIT_ENTRYPOINT="nsh_main"
       ```
 
       If you are not using in NSH, then each unit test has a unique entry point.
@@ -129,13 +129,13 @@ NXWidgets.:
       `UnitTests/CButton` would be:
 
       ```conf
-      CONFIG_USER_ENTRYPOINT="cbutton_main"
+      CONFIG_INIT_ENTRYPOINT="cbutton_main"
       ```
 
       And the correct entry point for `UnitTests/nxwm` would be:
 
       ```conf
-      CONFIG_USER_ENTRYPOINT="nxwm_main"
+      CONFIG_INIT_ENTRYPOINT="nxwm_main"
       ```
 
       etc.
@@ -183,7 +183,7 @@ NXWidgets.:
 
    ```makefile
    CXXFLAGS = -m32 $(ARCHWARNINGSXX) $(ARCHOPTIMIZATION) \
-              $(ARCHCPUFLAGSXX) $(ARCHINCLUDESXX) $(ARCHDEFINES) $(EXTRADEFINES) -pipe
+              $(ARCHCXXFLAGS) $(ARCHINCLUDESXX) $(ARCHDEFINES) $(EXTRADEFINES) -pipe
    ```
 
 2. Stack Size Issues with the X11 Simulation
@@ -204,7 +204,7 @@ NXWidgets.:
    requires large stacks. If you are using X11 in the simulation, make sure that
    you set aside a "lot" of stack for the X11 system calls (maybe 8 or 16Kb).
    The stack size for the thread that begins with user start is controlled by
-   the configuration setting `CONFIG_USERMAIN_STACKSIZE`; you may need to
+   the configuration setting `CONFIG_INIT_STACKSIZE`; you may need to
    increase this value to larger number to survive the X11 system calls.
 
    If you are running X11 applications as NSH add-on programs, then the stack

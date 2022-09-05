@@ -189,7 +189,11 @@ int main(int argc, char *argv[])
 
   /* CAN */
 
-  int s, nbytes, i, ret, reccount;
+  int s;
+  int nbytes;
+  int i;
+  int ret;
+  int reccount;
   struct sockaddr_can addr;
   struct canfd_frame frame;
   struct msghdr msg;
@@ -197,7 +201,8 @@ int main(int argc, char *argv[])
   fd_set rdfs;
   char ctrlmsg[CMSG_SPACE(sizeof(struct timeval) +
                           3 * sizeof(struct timespec) + sizeof(int))];
-  char sbuf[40], *sbp;
+  char sbuf[40];
+  char *sbp;
 
   if (argc != 3)
     {
@@ -210,7 +215,7 @@ int main(int argc, char *argv[])
   char *candev = argv[1];
 
   debug_print("Starting slcan on NuttX\n");
-  fd = open(chrdev, O_RDWR | O_BINARY);
+  fd = open(chrdev, O_RDWR);
   if (fd < 0)
     {
       syslog(LOG_ERR, "Failed to open serial channel %s\n", chrdev);
@@ -258,20 +263,20 @@ int main(int argc, char *argv[])
               if (nbytes == CAN_MTU)
                 {
                   reccount++;
-                  debug_print("R%d, Id:0x%X\n", reccount, frame.can_id);
+                  debug_print("R%d, Id:0x%lX\n", reccount, frame.can_id);
                   if (frame.can_id & CAN_EFF_FLAG)
                     {
                       /* 29 bit address */
 
                       frame.can_id = frame.can_id & ~CAN_EFF_FLAG;
-                      sprintf(sbuf, "T%08X%d", frame.can_id, frame.len);
+                      sprintf(sbuf, "T%08lX%d", frame.can_id, frame.len);
                       sbp = &sbuf[10];
                     }
                   else
                     {
                       /* 11 bit address */
 
-                      sprintf(sbuf, "t%03X%d", frame.can_id, frame.len);
+                      sprintf(sbuf, "t%03lX%d", frame.can_id, frame.len);
                       sbp = &sbuf[5];
                     }
 
@@ -396,7 +401,8 @@ int main(int argc, char *argv[])
                           /* Transmit an extended 29 bit CAN frame */
 
                           char tbuf[9];
-                          int idval, val;
+                          int idval;
+                          int val;
 
                           /* get 29bit CAN ID */
 
@@ -441,7 +447,8 @@ int main(int argc, char *argv[])
                           /* Transmit an 11 bit CAN frame */
 
                           char tbuf[9];
-                          int idval, val;
+                          int idval;
+                          int val;
 
                           /* get 11bit CAN ID */
 

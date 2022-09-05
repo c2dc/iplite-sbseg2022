@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <string.h>
@@ -90,9 +91,6 @@ static ssize_t mlx90393_read(FAR struct file *, FAR char *, size_t);
 static ssize_t mlx90393_write(FAR struct file *filep,
                               FAR const char *buffer,
                               size_t buflen);
-static int mlx90393_ioctl(FAR struct file *filep,
-                          int cmd,
-                          unsigned long arg);
 
 /****************************************************************************
  * Private Data
@@ -100,15 +98,15 @@ static int mlx90393_ioctl(FAR struct file *filep,
 
 static const struct file_operations g_mlx90393_fops =
 {
-  mlx90393_open,
-  mlx90393_close,
-  mlx90393_read,
-  mlx90393_write,
-  NULL,
-  mlx90393_ioctl,
-  NULL
+  mlx90393_open,   /* open */
+  mlx90393_close,  /* close */
+  mlx90393_read,   /* read */
+  mlx90393_write,  /* write */
+  NULL,            /* seek */
+  NULL,            /* ioctl */
+  NULL             /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  , NULL
+  , NULL           /* unlink */
 #endif
 };
 
@@ -516,27 +514,6 @@ static ssize_t mlx90393_write(FAR struct file *filep, FAR const char *buffer,
                               size_t buflen)
 {
   return -ENOSYS;
-}
-
-/****************************************************************************
- * Name: mlx90393_ioctl
- ****************************************************************************/
-
-static int mlx90393_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
-{
-  int ret = OK;
-
-  switch (cmd)
-    {
-      /* Command was not recognized */
-
-    default:
-      snerr("ERROR: Unrecognized cmd: %d\n", cmd);
-      ret = -ENOTTY;
-      break;
-    }
-
-  return ret;
 }
 
 /****************************************************************************

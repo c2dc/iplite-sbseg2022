@@ -29,6 +29,7 @@
 #include <nuttx/config.h>
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/list.h>
 
 #include <stdbool.h>
 #include <fixedmath.h>
@@ -61,7 +62,7 @@
  * lower half as summarized below:
  *
  * BATIOC_STATE - Return the current state of the battery (see
- *   enum battery_gauge_status_e).
+ *   enum battery_status_e).
  *   Input value:  A pointer to type int.
  * BATIOC_ONLINE - Return 1 if the battery is online; 0 if offline.
  *   Input value:  A pointer to type bool.
@@ -72,29 +73,25 @@
  *   (SoC).  The returned value is a fixed precision percentage of the
  *   batteries full capacity.
  *   Input value:  A pointer to type b16_t.
+ * BATIOC_CURRENT - Return the current of the battery . The returned value
+ *   is a fixed precision number in units of ma.
+ *   Input value:  A pointer to type b16_t.
+ * BATIOC_TEMPERATURE- Return the current temperature of the battery.
+ *   Input value:  A pointer to type b8_t.
+ * BATIOC_CHIPID- Return the chip id of the gauge.
+ *   Input value:  A pointer to type unsigned int.
  */
 
 /****************************************************************************
  * Public Types
  ****************************************************************************/
 
-/* Battery status */
-
-enum battery_gauge_status_e
-{
-  BATTERY_UNKNOWN = 0, /* Battery state is not known */
-  BATTERY_IDLE,        /* Not full, not charging, not discharging */
-  BATTERY_FULL,        /* Full, not discharging */
-  BATTERY_CHARGING,    /* Not full, charging */
-  BATTERY_DISCHARGING  /* Probably not full, discharging */
-};
-
 /* This structure defines the lower half battery interface */
 
 struct battery_gauge_dev_s;
 struct battery_gauge_operations_s
 {
-  /* Return the current battery state (see enum battery_gauge_status_e) */
+  /* Return the current battery state (see enum battery_status_e) */
 
   int (*state)(struct battery_gauge_dev_s *dev, int *status);
 
@@ -109,6 +106,18 @@ struct battery_gauge_operations_s
   /* Battery capacity */
 
   int (*capacity)(struct battery_gauge_dev_s *dev, b16_t *value);
+
+  /* Battery current */
+
+  int (*current)(struct battery_gauge_dev_s *dev, b16_t *value);
+
+  /* Battery temp */
+
+  int (*temp)(struct battery_gauge_dev_s *dev, b8_t *value);
+
+  /* Battery chipid */
+
+  int (*chipid)(struct battery_gauge_dev_s *dev, unsigned int *value);
 };
 
 /* This structure defines the battery driver state structure */
@@ -119,6 +128,10 @@ struct battery_gauge_dev_s
 
   FAR const struct battery_gauge_operations_s *ops; /* Battery operations */
   sem_t batsem;                                     /* Enforce mutually exclusive access */
+
+  struct list_node flist;
+
+  uint32_t mask;  /* record drive support features */
 
   /* Data fields specific to the lower-half driver may follow */
 };
@@ -140,6 +153,13 @@ extern "C"
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: battery_gauge_changed
+ ****************************************************************************/
+
+int battery_gauge_changed(FAR struct battery_gauge_dev_s *dev,
+                            uint32_t mask);
 
 /****************************************************************************
  * Name: battery_gauge_register

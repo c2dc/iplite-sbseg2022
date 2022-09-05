@@ -52,6 +52,7 @@
 #include <inttypes.h>
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -60,7 +61,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "hardware/sam_lcdc.h"
 #include "hardware/sam_pinmap.h"
 #include "sam_pio.h"
@@ -2475,7 +2476,7 @@ static void sam_show_layer(struct sam_layer_s *layer,
 
   if ((bprow & 7) != 0)
     {
-      bytesprow ++;
+      bytesprow++;
     }
 
   padding = 0;
@@ -3032,7 +3033,7 @@ int up_fbinitialize(int display)
  *
  ****************************************************************************/
 
-FAR struct fb_vtable_s *up_fbgetvplane(int display, int vplane)
+struct fb_vtable_s *up_fbgetvplane(int display, int vplane)
 {
   lcdinfo("vplane: %d\n", vplane);
   if (vplane == 0)

@@ -26,28 +26,13 @@
 
 #include <sys/types.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/arch.h>
 #include <nuttx/tls.h>
 
 #include "up_internal.h"
-
-/****************************************************************************
- * Pre-processor Macros
- ****************************************************************************/
-
-/* Use a stack alignment of 16 bytes.  If necessary frame_size must be
- * rounded up to the next boundary
- */
-
-#define STACK_ALIGNMENT     16
-
-/* Stack alignment macros */
-
-#define STACK_ALIGN_MASK    (STACK_ALIGNMENT-1)
-#define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
-#define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
 
 /****************************************************************************
  * Public Functions
@@ -67,8 +52,8 @@
  *     processor, etc.  This value is retained only for debug
  *     purposes.
  *   - stack_alloc_ptr: Pointer to allocated stack
- *   - adj_stack_ptr: Adjusted stack_alloc_ptr for HW.  The
- *     initial value of the stack pointer.
+ *   - stack_base_ptr: Adjusted stack base pointer after the TLS Data and
+ *     Arguments has been removed from the stack allocation.
  *
  * Input Parameters:
  *   - tcb: The TCB of new task
@@ -81,39 +66,39 @@
  *
  ****************************************************************************/
 
-int up_use_stack(FAR struct tcb_s *tcb, FAR void *stack, size_t stack_size)
+int up_use_stack(struct tcb_s *tcb, void *stack, size_t stack_size)
 {
-  uintptr_t adj_stack_addr;
-  size_t adj_stack_size;
+#if CONFIG_SIM_STACKSIZE_ADJUSTMENT == 0
+  uintptr_t top_of_stack;
+  size_t size_of_stack;
 
 #ifdef CONFIG_TLS_ALIGNED
   /* Make certain that the user provided stack is properly aligned */
 
   DEBUGASSERT(((uintptr_t)stack & TLS_STACK_MASK) == 0);
 #endif
-  /* Move down to next even word boundary within the pre-allocated stack
-   * memory, if necessary.
-   */
 
-  adj_stack_size = STACK_ALIGN_DOWN(stack_size);
+  /* Is there already a stack allocated? */
 
-  /* This is the address of the last word in the allocation.
-   * NOTE that stack_alloc_ptr + adj_stack_size may lie one byte
-   * outside of the stack.  This is okay for an initial state; the
-   * first pushed values will be within the stack allocation.
-   */
+  if (tcb->stack_alloc_ptr)
+    {
+      /* Yes.. Release the old stack allocation */
 
-  adj_stack_addr = STACK_ALIGN_DOWN((uintptr_t)stack + adj_stack_size);
+      up_release_stack(tcb, tcb->flags & TCB_FLAG_TTYPE_MASK);
+    }
 
-  /* Save the values in the TCB */
+  /* Save the new stack allocation */
 
-  tcb->adj_stack_size  = adj_stack_size;
   tcb->stack_alloc_ptr = stack;
-  tcb->adj_stack_ptr   = (FAR void *)adj_stack_addr;
 
-  /* Initialize the TLS data structure */
+  /* Save the adjusted stack values in the struct tcb_s */
 
-  memset(stack, 0, sizeof(struct tls_info_s));
+  top_of_stack = (uintptr_t)tcb->stack_alloc_ptr + stack_size;
+  top_of_stack = STACK_ALIGN_DOWN(top_of_stack);
+  size_of_stack = top_of_stack - (uintptr_t)tcb->stack_alloc_ptr;
+
+  tcb->stack_base_ptr = tcb->stack_alloc_ptr;
+  tcb->adj_stack_size = size_of_stack;
 
 #if defined(CONFIG_STACK_COLORATION)
   /* If stack debug is enabled, then fill the stack with a
@@ -121,10 +106,15 @@ int up_use_stack(FAR struct tcb_s *tcb, FAR void *stack, size_t stack_size)
    * water marks.
    */
 
-  up_stack_color((FAR void *)((uintptr_t)tcb->stack_alloc_ptr +
-                 sizeof(struct tls_info_s)),
-                 adj_stack_size - sizeof(struct tls_info_s));
+  up_stack_color(tcb->stack_base_ptr, tcb->adj_stack_size);
 #endif
 
   return OK;
+#else
+  /* Ignore the stack argument and allocate a new stack instead
+   * since it's impossible to extend a preallocated memory in place.
+   */
+
+  return up_create_stack(tcb, stack_size, tcb->flags & TCB_FLAG_TTYPE_MASK);
+#endif
 }

@@ -24,6 +24,14 @@ ifeq ($(CONFIG_SENSORS),y)
 
 CSRCS += sensor.c
 
+ifeq ($(CONFIG_USENSOR),y)
+CSRCS += usensor.c
+endif
+
+ifeq ($(CONFIG_SENSORS_RPMSG),y)
+CSRCS += sensor_rpmsg.c
+endif
+
 ifeq ($(CONFIG_SENSORS_WTGAHRS2),y)
   CSRCS += wtgahrs2.c
 endif
@@ -96,6 +104,10 @@ ifeq ($(CONFIG_SENSORS_LSM9DS1),y)
   CSRCS += lsm9ds1.c
 endif
 
+ifeq ($(CONFIG_SENSORS_MSA301),y)
+  CSRCS += msa301.c
+endif
+
 ifeq ($(CONFIG_SENSORS_LPS25H),y)
   CSRCS += lps25h.c
 endif
@@ -160,6 +172,10 @@ ifeq ($(CONFIG_SENSORS_MLX90614),y)
   CSRCS += mlx90614.c
 endif
 
+ifeq ($(CONFIG_SENSORS_MS5611),y)
+  CSRCS += ms5611.c
+endif
+
 ifeq ($(CONFIG_SENSORS_MS58XX),y)
   CSRCS += ms58xx.c
 endif
@@ -182,6 +198,10 @@ endif
 
 ifeq ($(CONFIG_SENSORS_SCD30),y)
   CSRCS += scd30.c
+endif
+
+ifeq ($(CONFIG_SENSORS_SCD41),y)
+  CSRCS += scd41.c
 endif
 
 ifeq ($(CONFIG_SENSORS_SGP30),y)
@@ -258,7 +278,21 @@ ifeq ($(CONFIG_SENSORS_ADT7320),y)
   CSRCS += adt7320.c
 endif
 
+ifeq ($(CONFIG_SENSORS_AS5048A),y)
+  CSRCS += as5048a.c
+endif
+
 endif # CONFIG_SPI
+
+# These drivers depend on 1WIRE support
+
+ifeq ($(CONFIG_1WIRE),y)
+
+ifeq ($(CONFIG_SENSORS_DS18B20),y)
+  CSRCS += ds18b20.c
+endif
+
+endif # CONFIG_1WIRE
 
 ifeq ($(CONFIG_SENSORS_MPU60X0),y)
   CSRCS += mpu60x0.c
@@ -268,6 +302,12 @@ endif
 
 ifeq ($(CONFIG_SENSORS_QENCODER),y)
   CSRCS += qencoder.c
+endif
+
+# 3-phase Hall effect sensor upper half
+
+ifeq ($(CONFIG_SENSORS_HALL3PHASE),y)
+  CSRCS += hall3ph.c
 endif
 
 # Vishay VEML6070

@@ -32,6 +32,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -42,7 +43,7 @@
 
 #include <arch/board/board.h>
 
-#include "mips_arch.h"
+#include "mips_internal.h"
 #include "pic32mx.h"
 #include "pic32mx_pmp.h"
 #include "pic32mx7mmb.h"
@@ -124,7 +125,7 @@ struct pic32mx7mmb_dev_s
   bool                   data;     /* true=data selected */
   bool                   selected; /* true=LCD selected */
   bool                   reading;  /* true=We are in a read sequence */
-  FAR struct lcd_dev_s  *drvr;     /* The saved instance of the LCD driver */
+  struct lcd_dev_s      *drvr;     /* The saved instance of the LCD driver */
 };
 
 /****************************************************************************
@@ -133,14 +134,14 @@ struct pic32mx7mmb_dev_s
 
 /* Low Level LCD access */
 
-static void pic32mx_select(FAR struct mio283qt2_lcd_s *dev);
-static void pic32mx_deselect(FAR struct mio283qt2_lcd_s *dev);
-static void pic32mx_index(FAR struct mio283qt2_lcd_s *dev, uint8_t index);
+static void pic32mx_select(struct mio283qt2_lcd_s *dev);
+static void pic32mx_deselect(struct mio283qt2_lcd_s *dev);
+static void pic32mx_index(struct mio283qt2_lcd_s *dev, uint8_t index);
 #ifndef CONFIG_MIO283QT2_WRONLY
-static uint16_t pic32mx_read(FAR struct mio283qt2_lcd_s *dev);
+static uint16_t pic32mx_read(struct mio283qt2_lcd_s *dev);
 #endif
-static void pic32mx_write(FAR struct mio283qt2_lcd_s *dev, uint16_t data);
-static void pic32mx_backlight(FAR struct mio283qt2_lcd_s *dev, int power);
+static void pic32mx_write(struct mio283qt2_lcd_s *dev, uint16_t data);
+static void pic32mx_backlight(struct mio283qt2_lcd_s *dev, int power);
 
 /****************************************************************************
  * Private Data
@@ -176,7 +177,7 @@ static struct pic32mx7mmb_dev_s g_pic32mx7mmb_lcd =
  *
  ****************************************************************************/
 
-static void pic32mx_command(FAR struct pic32mx7mmb_dev_s *priv)
+static void pic32mx_command(struct pic32mx7mmb_dev_s *priv)
 {
   /* Low selects command */
 
@@ -197,7 +198,7 @@ static void pic32mx_command(FAR struct pic32mx7mmb_dev_s *priv)
  *
  ****************************************************************************/
 
-static void pic32mx_data(FAR struct pic32mx7mmb_dev_s *priv)
+static void pic32mx_data(struct pic32mx7mmb_dev_s *priv)
 {
   /* Hi selects data */
 
@@ -231,9 +232,9 @@ static void pic32mx_busywait(void)
  *
  ****************************************************************************/
 
-static void pic32mx_select(FAR struct mio283qt2_lcd_s *dev)
+static void pic32mx_select(struct mio283qt2_lcd_s *dev)
 {
-  FAR struct pic32mx7mmb_dev_s *priv = (FAR struct pic32mx7mmb_dev_s *)dev;
+  struct pic32mx7mmb_dev_s *priv = (struct pic32mx7mmb_dev_s *)dev;
 
   /* CS low selects */
 
@@ -254,9 +255,9 @@ static void pic32mx_select(FAR struct mio283qt2_lcd_s *dev)
  *
  ****************************************************************************/
 
-static void pic32mx_deselect(FAR struct mio283qt2_lcd_s *dev)
+static void pic32mx_deselect(struct mio283qt2_lcd_s *dev)
 {
-  FAR struct pic32mx7mmb_dev_s *priv = (FAR struct pic32mx7mmb_dev_s *)dev;
+  struct pic32mx7mmb_dev_s *priv = (struct pic32mx7mmb_dev_s *)dev;
 
   /* CS high de-selects */
 
@@ -277,9 +278,9 @@ static void pic32mx_deselect(FAR struct mio283qt2_lcd_s *dev)
  *
  ****************************************************************************/
 
-static void pic32mx_index(FAR struct mio283qt2_lcd_s *dev, uint8_t index)
+static void pic32mx_index(struct mio283qt2_lcd_s *dev, uint8_t index)
 {
-  FAR struct pic32mx7mmb_dev_s *priv = (FAR struct pic32mx7mmb_dev_s *)dev;
+  struct pic32mx7mmb_dev_s *priv = (struct pic32mx7mmb_dev_s *)dev;
 
   /* Make sure that the PMP is not busy from the last transaction.
    * Read data is not available until the busy bit becomes zero.
@@ -302,9 +303,9 @@ static void pic32mx_index(FAR struct mio283qt2_lcd_s *dev, uint8_t index)
  ****************************************************************************/
 
 #ifndef CONFIG_MIO283QT2_WRONLY
-static uint16_t pic32mx_read(FAR struct mio283qt2_lcd_s *dev)
+static uint16_t pic32mx_read(struct mio283qt2_lcd_s *dev)
 {
-  FAR struct pic32mx7mmb_dev_s *priv = (FAR struct pic32mx7mmb_dev_s *)dev;
+  struct pic32mx7mmb_dev_s *priv = (struct pic32mx7mmb_dev_s *)dev;
   uint16_t data;
 
   /* Make sure that the PMP is not busy from the last transaction.
@@ -339,9 +340,9 @@ static uint16_t pic32mx_read(FAR struct mio283qt2_lcd_s *dev)
  *
  ****************************************************************************/
 
-static void pic32mx_write(FAR struct mio283qt2_lcd_s *dev, uint16_t data)
+static void pic32mx_write(struct mio283qt2_lcd_s *dev, uint16_t data)
 {
-  FAR struct pic32mx7mmb_dev_s *priv = (FAR struct pic32mx7mmb_dev_s *)dev;
+  struct pic32mx7mmb_dev_s *priv = (struct pic32mx7mmb_dev_s *)dev;
 
   /* Make sure that the PMP is not busy from the last transaction */
 
@@ -365,7 +366,7 @@ static void pic32mx_write(FAR struct mio283qt2_lcd_s *dev, uint16_t data)
  *
  ****************************************************************************/
 
-static void pic32mx_backlight(FAR struct mio283qt2_lcd_s *dev, int power)
+static void pic32mx_backlight(struct mio283qt2_lcd_s *dev, int power)
 {
   /* For now, we just control the backlight as a discrete.
    * Pulse width modulation would be required to vary the backlight level.
@@ -468,7 +469,7 @@ int board_lcd_initialize(void)
  *
  ****************************************************************************/
 
-FAR struct lcd_dev_s *board_lcd_getdev(int lcddev)
+struct lcd_dev_s *board_lcd_getdev(int lcddev)
 {
   DEBUGASSERT(lcddev == 0);
   return g_pic32mx7mmb_lcd.drvr;

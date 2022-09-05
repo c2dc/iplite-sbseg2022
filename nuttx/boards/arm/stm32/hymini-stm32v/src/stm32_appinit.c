@@ -26,7 +26,7 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#include <syslog.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/board.h>
@@ -94,7 +94,7 @@
  ****************************************************************************/
 
 #ifdef CONFIG_MMCSD
-static FAR struct sdio_dev_s *g_sdiodev;
+static struct sdio_dev_s *g_sdiodev;
 #endif
 
 /****************************************************************************
@@ -110,7 +110,7 @@ static FAR struct sdio_dev_s *g_sdiodev;
  ****************************************************************************/
 
 #ifdef NSH_HAVEMMCSD
-static int nsh_cdinterrupt(int irq, FAR void *context, FAR void *arg)
+static int nsh_cdinterrupt(int irq, void *context, void *arg)
 {
   static bool inserted = 0xff; /* Impossible value */
   bool present;

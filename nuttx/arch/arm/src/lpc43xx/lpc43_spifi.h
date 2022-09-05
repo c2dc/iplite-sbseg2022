@@ -102,12 +102,12 @@ extern "C"
  *   None
  *
  * Returned Value:
- *   One success, a reference to the initialized MTD device instance is
+ *   On success, a reference to the initialized MTD device instance is
  *   returned;  NULL is returned on any failure.
  *
  ****************************************************************************/
 
-FAR struct mtd_dev_s *lpc43_spifi_initialize(void);
+struct mtd_dev_s *lpc43_spifi_initialize(void);
 
 #undef EXTERN
 #ifdef __cplusplus

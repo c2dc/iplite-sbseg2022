@@ -71,6 +71,11 @@ static int files_extend(FAR struct filelist *list, size_t row)
       return 0;
     }
 
+  if (row * CONFIG_NFILE_DESCRIPTORS_PER_BLOCK > OPEN_MAX)
+    {
+      return -EMFILE;
+    }
+
   tmp = kmm_realloc(list->fl_files, sizeof(FAR struct file *) * row);
   DEBUGASSERT(tmp);
   if (tmp == NULL)
@@ -98,6 +103,12 @@ static int files_extend(FAR struct filelist *list, size_t row)
 
   list->fl_files = tmp;
   list->fl_rows = row;
+
+  /* Note: If assertion occurs, the fl_rows has a overflow.
+   * And there may be file descriptors leak in system.
+   */
+
+  DEBUGASSERT(list->fl_rows == row);
   return 0;
 }
 
@@ -188,7 +199,7 @@ int files_allocate(FAR struct inode *inode, int oflags, off_t pos,
       return ret;
     }
 
-  /* Calcuate minfd whether is in list->fl_files.
+  /* Calculate minfd whether is in list->fl_files.
    * if not, allocate a new filechunk.
    */
 
@@ -350,7 +361,7 @@ int fs_getfilep(int fd, FAR struct file **filep)
       return -EAGAIN;
     }
 
-  if ((unsigned int)fd >= CONFIG_NFILE_DESCRIPTORS_PER_BLOCK * list->fl_rows)
+  if (fd < 0 || fd >= list->fl_rows * CONFIG_NFILE_DESCRIPTORS_PER_BLOCK)
     {
       return -EBADF;
     }
@@ -362,12 +373,23 @@ int fs_getfilep(int fd, FAR struct file **filep)
   /* And return the file pointer from the list */
 
   ret = _files_semtake(list);
-  if (ret >= 0)
+  if (ret < 0)
     {
-      *filep = &list->fl_files[fd / CONFIG_NFILE_DESCRIPTORS_PER_BLOCK]
-                              [fd % CONFIG_NFILE_DESCRIPTORS_PER_BLOCK];
-      _files_semgive(list);
+      return ret;
     }
+
+  *filep = &list->fl_files[fd / CONFIG_NFILE_DESCRIPTORS_PER_BLOCK]
+                          [fd % CONFIG_NFILE_DESCRIPTORS_PER_BLOCK];
+
+  /* if f_inode is NULL, fd was closed */
+
+  if (!(*filep)->f_inode)
+    {
+      *filep = (FAR struct file *)NULL;
+      ret = -EBADF;
+    }
+
+  _files_semgive(list);
 
   return ret;
 }
@@ -393,7 +415,14 @@ int fs_getfilep(int fd, FAR struct file **filep)
 int nx_dup2(int fd1, int fd2)
 {
   FAR struct filelist *list;
+  FAR struct file     *filep;
+  FAR struct file      file;
   int ret;
+
+  if (fd1 == fd2)
+    {
+      return fd1;
+    }
 
   /* Get the file descriptor list.  It should not be NULL in this context. */
 
@@ -424,13 +453,19 @@ int nx_dup2(int fd1, int fd2)
         }
     }
 
+  filep = &list->fl_files[fd2 / CONFIG_NFILE_DESCRIPTORS_PER_BLOCK]
+                         [fd2 % CONFIG_NFILE_DESCRIPTORS_PER_BLOCK];
+  memcpy(&file, filep, sizeof(struct file));
+  memset(filep, 0,     sizeof(struct file));
+
   /* Perform the dup2 operation */
 
   ret = file_dup2(&list->fl_files[fd1 / CONFIG_NFILE_DESCRIPTORS_PER_BLOCK]
                                  [fd1 % CONFIG_NFILE_DESCRIPTORS_PER_BLOCK],
-                  &list->fl_files[fd2 / CONFIG_NFILE_DESCRIPTORS_PER_BLOCK]
-                                 [fd2 % CONFIG_NFILE_DESCRIPTORS_PER_BLOCK]);
+                  filep);
   _files_semgive(list);
+
+  file_close(&file);
 
   return ret < 0 ? ret : fd2;
 }
@@ -483,6 +518,8 @@ int dup2(int fd1, int fd2)
 int nx_close(int fd)
 {
   FAR struct filelist *list;
+  FAR struct file     *filep;
+  FAR struct file      file;
   int                  ret;
 
   /* Get the thread-specific file list.  It should never be NULL in this
@@ -510,11 +547,14 @@ int nx_close(int fd)
       return -EBADF;
     }
 
-  ret = file_close(&list->fl_files[fd / CONFIG_NFILE_DESCRIPTORS_PER_BLOCK]
-                                  [fd % CONFIG_NFILE_DESCRIPTORS_PER_BLOCK]);
+  filep = &list->fl_files[fd / CONFIG_NFILE_DESCRIPTORS_PER_BLOCK]
+                         [fd % CONFIG_NFILE_DESCRIPTORS_PER_BLOCK];
+  memcpy(&file, filep, sizeof(struct file));
+  memset(filep, 0,     sizeof(struct file));
+
   _files_semgive(list);
 
-  return ret;
+  return file_close(&file);
 }
 
 /****************************************************************************

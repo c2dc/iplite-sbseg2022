@@ -29,8 +29,6 @@
 #include <nuttx/config.h>
 #include <nuttx/streams.h>
 
-#ifdef CONFIG_LIB_KBDCODEC
-
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -196,6 +194,8 @@ struct kbd_getstate_s
  * Public Function Prototypes
  ****************************************************************************/
 
+#ifdef CONFIG_LIBC_KBDCODEC
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -327,5 +327,5 @@ int kbd_decode(FAR struct lib_instream_s *stream,
 }
 #endif
 
-#endif /* CONFIG_LIB_KBDCODEC */
+#endif /* CONFIG_LIBC_KBDCODEC */
 #endif /* __INCLUDE_NUTTX_INPUT_KBD_CODEC_H */

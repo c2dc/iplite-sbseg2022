@@ -1,5 +1,5 @@
 /****************************************************************************
- * testing/nxffs/nxffs_main.c
+ * apps/testing/nxffs/nxffs_main.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -35,9 +35,9 @@
 #include <dirent.h>
 #include <string.h>
 #include <errno.h>
-#include <crc32.h>
 #include <debug.h>
 
+#include <nuttx/crc32.h>
 #include <nuttx/mtd/mtd.h>
 #include <nuttx/fs/nxffs.h>
 
@@ -854,6 +854,7 @@ int main(int argc, FAR char *argv[])
           printf("ERROR: Failed to verify files\n");
           printf("  Number of files: %d\n", g_nfiles);
           printf("  Number deleted:  %d\n", g_ndeleted);
+          exit(ret);
         }
       else
         {
@@ -873,6 +874,7 @@ int main(int argc, FAR char *argv[])
           printf("ERROR: Failed to delete files\n");
           printf("  Number of files: %d\n", g_nfiles);
           printf("  Number deleted:  %d\n", g_ndeleted);
+          exit(ret);
         }
       else
         {
@@ -895,6 +897,7 @@ int main(int argc, FAR char *argv[])
           printf("ERROR: Failed to verify files\n");
           printf("  Number of files: %d\n", g_nfiles);
           printf("  Number deleted:  %d\n", g_ndeleted);
+          exit(ret);
         }
       else
         {

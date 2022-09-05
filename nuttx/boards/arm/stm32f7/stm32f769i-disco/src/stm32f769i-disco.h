@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __BOARDS_ARM_STM32F7_STM32F769I_DISCO_SRC_STM32F769I_DISCO__H
-#define __BOARDS_ARM_STM32F7_STM32F769I_DISCO_SRC_STM32F769I_DISCO__H
+#ifndef __BOARDS_ARM_STM32F7_STM32F769I_DISCO_SRC_STM32F769I_DISCO_H
+#define __BOARDS_ARM_STM32F7_STM32F769I_DISCO_SRC_STM32F769I_DISCO_H
 
 /****************************************************************************
  * Included Files
@@ -108,7 +108,7 @@
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/

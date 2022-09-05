@@ -86,7 +86,7 @@ bool nxsched_remove_readytorun(FAR struct tcb_s *rtcb)
    * is always the g_readytorun list.
    */
 
-  dq_rem((FAR dq_entry_t *)rtcb, (FAR dq_queue_t *)&g_readytorun);
+  dq_rem((FAR dq_entry_t *)rtcb, &g_readytorun);
 
   /* Since the TCB is not in any list, it is now invalid */
 
@@ -209,20 +209,16 @@ bool nxsched_remove_readytorun(FAR struct tcb_s *rtcb)
 
       if (rtrtcb != NULL && rtrtcb->sched_priority >= nxttcb->sched_priority)
         {
-          FAR struct tcb_s *tmptcb;
-
-          /* The TCB at the head of the ready to run list has the higher
-           * priority.  Remove that task from the head of the g_readytorun
+          /* The TCB rtrtcb has the higher priority and it can be run on
+           * target CPU. Remove that task (rtrtcb) from the g_readytorun
            * list and add to the head of the g_assignedtasks[cpu] list.
            */
 
-          tmptcb = (FAR struct tcb_s *)
-            dq_remfirst((FAR dq_queue_t *)&g_readytorun);
+          dq_rem((FAR dq_entry_t *)rtrtcb, &g_readytorun);
+          dq_addfirst((FAR dq_entry_t *)rtrtcb, tasklist);
 
-          dq_addfirst((FAR dq_entry_t *)tmptcb, tasklist);
-
-          tmptcb->cpu = cpu;
-          nxttcb = tmptcb;
+          rtrtcb->cpu = cpu;
+          nxttcb = rtrtcb;
         }
 
       /* Will pre-emption be disabled after the switch?  If the lockcount is

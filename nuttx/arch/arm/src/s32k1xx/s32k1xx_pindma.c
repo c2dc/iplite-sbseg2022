@@ -26,14 +26,13 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
 #include <nuttx/arch.h>
 #include <nuttx/arch.h>
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "s32k1xx_pin.h"
 
 #ifdef CONFIG_S32K1XX_DMA

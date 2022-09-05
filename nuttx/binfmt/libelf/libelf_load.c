@@ -37,7 +37,6 @@
 #include <nuttx/arch.h>
 #include <nuttx/addrenv.h>
 #include <nuttx/elf.h>
-#include <nuttx/mm/mm.h>
 #include <nuttx/binfmt/elf.h>
 
 #include "libelf.h"
@@ -57,6 +56,10 @@
 #ifndef MIN
 #  define MIN(x,y) ((x) < (y) ? (x) : (y))
 #endif
+
+/* _ALIGN_UP: 'a' is assumed to be a power of two */
+
+#define _ALIGN_UP(v, a) (((v) + ((a) - 1)) & ~((a) - 1))
 
 /****************************************************************************
  * Private Constant Data
@@ -105,11 +108,21 @@ static void elf_elfsize(struct elf_loadinfo_s *loadinfo)
 
           if ((shdr->sh_flags & SHF_WRITE) != 0)
             {
+              datasize = _ALIGN_UP(datasize, shdr->sh_addralign);
               datasize += ELF_ALIGNUP(shdr->sh_size);
+              if (loadinfo->dataalign < shdr->sh_addralign)
+                {
+                  loadinfo->dataalign = shdr->sh_addralign;
+                }
             }
           else
             {
+              textsize = _ALIGN_UP(textsize, shdr->sh_addralign);
               textsize += ELF_ALIGNUP(shdr->sh_size);
+              if (loadinfo->textalign < shdr->sh_addralign)
+                {
+                  loadinfo->textalign = shdr->sh_addralign;
+                }
             }
         }
     }
@@ -172,6 +185,8 @@ static inline int elf_loadfile(FAR struct elf_loadinfo_s *loadinfo)
         {
           pptr = &text;
         }
+
+      *pptr = (FAR uint8_t *)_ALIGN_UP((uintptr_t)*pptr, shdr->sh_addralign);
 
       /* SHT_NOBITS indicates that there is no data in the file for the
        * section.
@@ -239,7 +254,7 @@ int elf_load(FAR struct elf_loadinfo_s *loadinfo)
   int ret;
 
   binfo("loadinfo: %p\n", loadinfo);
-  DEBUGASSERT(loadinfo && loadinfo->filfd >= 0);
+  DEBUGASSERT(loadinfo && loadinfo->file.f_inode);
 
   /* Load section headers into memory */
 
@@ -291,13 +306,6 @@ int elf_load(FAR struct elf_loadinfo_s *loadinfo)
       berr("ERROR: elf_addrenv_select() failed: %d\n", ret);
       goto errout_with_buffers;
     }
-
-#ifdef CONFIG_BUILD_KERNEL
-  /* Initialize the user heap */
-
-  umm_initialize((FAR void *)CONFIG_ARCH_HEAP_VBASE,
-                 up_addrenv_heapsize(&loadinfo->addrenv));
-#endif
 #endif
 
   /* Load ELF section data into memory */

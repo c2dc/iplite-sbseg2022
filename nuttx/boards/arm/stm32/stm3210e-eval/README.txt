@@ -427,7 +427,7 @@ STM3210E-EVAL-specific Configuration Options
     CONFIG_STM32_SPI_INTERRUPTS - Select to enable interrupt driven SPI
       support. Non-interrupt-driven, poll-waiting is recommended if the
       interrupt rate would be to high in the interrupt driven case.
-    CONFIG_STM32_SPI_DMA - Use DMA to improve SPI transfer performance.
+    CONFIG_STM32_SPIx_DMA - Use DMA to improve SPIx transfer performance.
       Cannot be used with CONFIG_STM32_SPI_INTERRUPT.
 
     CONFIG_SDIO_DMA - Support DMA data transfers.  Requires CONFIG_STM32_SDIO
@@ -606,7 +606,7 @@ Where <subdir> is one of the following:
     focuses on general window controls, movement, mouse and keyboard
     input.
 
-      CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y : GNU EABI toolchain for Windows
+      CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : GNU EABI toolchain for Windows
       CONFIG_LCD_RPORTRAIT=y              : 240x320 reverse portrait
 
     NOTES:
@@ -638,7 +638,7 @@ Where <subdir> is one of the following:
 
           Provide the new start-up entry point:
 
-            CONFIG_USER_ENTRYPOINT="nxlines_main"
+            CONFIG_INIT_ENTRYPOINT="nxlines_main"
 
           Disable apps/examples/nx:
 
@@ -670,7 +670,7 @@ Where <subdir> is one of the following:
 
           Provide the new start-up entry point:
 
-            CONFIG_USER_ENTRYPOINT="nxtext_main"
+            CONFIG_INIT_ENTRYPOINT="nxtext_main"
 
           Disable apps/examples/nx:
 
@@ -800,7 +800,7 @@ Where <subdir> is one of the following:
 
          CONFIG_HOST_WINDOWS=y                   : Windows
          CONFIG_WINDOWS_CYGWIN=y                 : Cygwin
-         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
     3. CONFIG_ARCH_CUSTOM_PMINIT and CONFIG_ARCH_IDLE_CUSTOM are necessary
        parts of the PM configuration:

@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_LPC43XX_SPI_H
-#define __ARCH_ARM_SRC_LPC43XX_SPI_H
+#ifndef __ARCH_ARM_SRC_LPC43XX_LPC43_SPI_H
+#define __ARCH_ARM_SRC_LPC43XX_LPC43_SPI_H
 
 /****************************************************************************
  * Included Files
@@ -95,7 +95,7 @@ extern "C"
  *
  ****************************************************************************/
 
-FAR struct spi_dev_s *lpc43_spibus_initialize(int port);
+struct spi_dev_s *lpc43_spibus_initialize(int port);
 
 /****************************************************************************
  * Name:  lpc43_spiselect, lpc43_spistatus, and lpc43_spicmddata
@@ -113,12 +113,12 @@ FAR struct spi_dev_s *lpc43_spibus_initialize(int port);
  *
  ****************************************************************************/
 
-void  lpc43_spiselect(FAR struct spi_dev_s *dev, uint32_t devid,
+void  lpc43_spiselect(struct spi_dev_s *dev, uint32_t devid,
                       bool selected);
-uint8_t lpc43_spistatus(FAR struct spi_dev_s *dev, uint32_t devid);
+uint8_t lpc43_spistatus(struct spi_dev_s *dev, uint32_t devid);
 
 #ifdef CONFIG_SPI_CMDDATA
-int lpc43_spicmddata(FAR struct spi_dev_s *dev, uint32_t devid, bool cmd);
+int lpc43_spicmddata(struct spi_dev_s *dev, uint32_t devid, bool cmd);
 #endif
 
 /****************************************************************************
@@ -137,7 +137,7 @@ int lpc43_spicmddata(FAR struct spi_dev_s *dev, uint32_t devid, bool cmd);
  *
  ****************************************************************************/
 
-void spi_flush(FAR struct spi_dev_s *dev);
+void spi_flush(struct spi_dev_s *dev);
 
 /****************************************************************************
  * Name: lpc43_spi/spiregister
@@ -160,7 +160,7 @@ void spi_flush(FAR struct spi_dev_s *dev);
  ****************************************************************************/
 
 #ifdef CONFIG_SPI_CALLBACK
-int lpc43_spiregister(FAR struct spi_dev_s *dev,
+int lpc43_spiregister(struct spi_dev_s *dev,
                       spi_mediachange_t callback, void *arg);
 #endif
 
@@ -171,4 +171,4 @@ int lpc43_spiregister(FAR struct spi_dev_s *dev,
 
 #endif /* __ASSEMBLY__ */
 #endif /* CONFIG_LPC43_SPI */
-#endif /* __ARCH_ARM_SRC_LPC43XX_SPI_H */
+#endif /* __ARCH_ARM_SRC_LPC43XX_LPC43_SPI_H */

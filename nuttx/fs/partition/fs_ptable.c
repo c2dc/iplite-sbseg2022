@@ -60,25 +60,6 @@ struct ptable_s
 };
 
 /****************************************************************************
- * Private Functions
- ****************************************************************************/
-
-static int read_partition_block(FAR struct partition_state_s *state,
-                                FAR void *buffer, size_t startblock,
-                                size_t nblocks)
-{
-  if (state->blk)
-    {
-      return state->blk->u.i_bops->read(state->blk,
-                                        buffer, startblock, nblocks);
-    }
-  else
-    {
-      return state->mtd->bread(state->mtd, startblock, nblocks, buffer);
-    }
-}
-
-/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -148,7 +129,7 @@ int parse_ptable_partition(FAR struct partition_state_s *state,
 
       /* Convert the entry to partition */
 
-      strncpy(part.name, entry->name, sizeof(part.name));
+      strlcpy(part.name, entry->name, sizeof(part.name));
       part.index      = entry - ptable->entries;
       part.firstblock = entry->offset / state->blocksize;
       part.nblocks    = entry->length / state->blocksize;

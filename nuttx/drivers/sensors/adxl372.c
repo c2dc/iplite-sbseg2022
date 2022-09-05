@@ -27,6 +27,7 @@
 #if defined(CONFIG_SPI) && defined(CONFIG_SENSORS_ADXL372) \
     && defined(CONFIG_SPI_EXCHANGE)
 
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <string.h>
@@ -118,15 +119,15 @@ static void     adxl372_dvr_exchange(FAR void *instance,
 
 static const struct file_operations g_adxl372_fops =
 {
-  adxl372_open,
-  adxl372_close,
-  adxl372_read,
-  adxl372_write,
-  adxl372_seek,
-  adxl372_ioctl,
-  NULL
+  adxl372_open,    /* open */
+  adxl372_close,   /* close */
+  adxl372_read,    /* read */
+  adxl372_write,   /* write */
+  adxl372_seek,    /* seek */
+  adxl372_ioctl,   /* ioctl */
+  NULL             /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  , NULL
+  , NULL           /* unlink */
 #endif
 };
 

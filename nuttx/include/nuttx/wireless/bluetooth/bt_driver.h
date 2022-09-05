@@ -1,12 +1,5 @@
 /****************************************************************************
  * include/nuttx/wireless/bluetooth/bt_driver.h
- * Bluetooth HCI driver API.
- *
- *   Copyright (C) 2018 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *
- * Ported from the Intel/Zephyr arduino101_firmware_source-v1.tar package
- * where the code was released with a compatible 3-clause BSD license:
  *
  *   Copyright (c) 2016, Intel Corporation
  *   All rights reserved.
@@ -50,6 +43,13 @@
 #include <nuttx/wireless/bluetooth/bt_buf.h>
 
 /****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+#define bt_netdev_receive(btdev, type, data, len) \
+        (btdev)->receive(btdev, type, data, len)
+
+/****************************************************************************
  * Public Types
  ****************************************************************************/
 
@@ -61,12 +61,32 @@ struct bt_driver_s
 
   /* Open the HCI transport */
 
-  CODE int (*open)(FAR const struct bt_driver_s *btdev);
+  CODE int (*open)(FAR struct bt_driver_s *btdev);
 
   /* Send data to HCI */
 
-  CODE int (*send)(FAR const struct bt_driver_s *btdev,
-                   FAR struct bt_buf_s *buf);
+  CODE int (*send)(FAR struct bt_driver_s *btdev,
+                   enum bt_buf_type_e type,
+                   FAR void *data, size_t len);
+
+  /* Close the HCI transport */
+
+  CODE void (*close)(FAR struct bt_driver_s *btdev);
+
+  /* Filled by register function but called by bt_driver_s */
+
+  CODE int (*receive)(FAR struct bt_driver_s *btdev,
+                      enum bt_buf_type_e type,
+                      FAR void *data, size_t len);
+
+  /* Lower-half logic may support platform-specific ioctl commands */
+
+  CODE int (*ioctl)(FAR struct bt_driver_s *btdev, int cmd,
+                    unsigned long arg);
+
+  /* Filled by register function, shouldn't be touched by bt_driver_s */
+
+  FAR void *priv;
 };
 
 /****************************************************************************
@@ -89,24 +109,6 @@ struct bt_driver_s
  *
  ****************************************************************************/
 
-int bt_netdev_register(FAR const struct bt_driver_s *btdev);
-
-/****************************************************************************
- * Name: bt_hci_receive
- *
- * Description:
- *   Called by the Bluetooth low-level driver when new data is received from
- *   the radio.  This may be called from the low-level driver and is part of
- *   the driver interface
- *
- * Input Parameters:
- *   buf - An instance of the buffer structure providing the received frame.
- *
- * Returned Value:
- *  None
- *
- ****************************************************************************/
-
-void bt_hci_receive(FAR struct bt_buf_s *buf);
+int bt_netdev_register(FAR struct bt_driver_s *btdev);
 
 #endif /* __INCLUDE_NUTTX_WIRELESS_BLUETOOTH_BT_DRIVER_H */

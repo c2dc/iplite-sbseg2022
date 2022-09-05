@@ -37,6 +37,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <debug.h>
 #include <errno.h>
 #include <hex2bin.h>
 
@@ -44,7 +45,7 @@
 
 #include "libc.h"
 
-#ifdef CONFIG_LIB_HEX2BIN
+#ifdef CONFIG_LIBC_HEX2BIN
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -263,38 +264,11 @@ static int readstream(FAR struct lib_instream_s *instream,
 
   while (ch != EOF && nbytes < (MAXRECORD_ASCSIZE - 1))
     {
-#if defined(CONFIG_EOL_IS_LF)
-      if (ch == '\n')
-        {
-          *line = '\0';
-          return nbytes;
-        }
-
-#elif defined(CONFIG_EOL_IS_BOTH_CRLF)
-      if (ch == '\r')
-        {
-          continue;
-        }
-      else if (ch == '\n')
-        {
-          *line = '\0';
-          return nbytes;
-        }
-
-#elif defined(CONFIG_EOL_IS_CR)
-      if (ch == '\r')
-        {
-          *line = '\0';
-          return nbytes;
-        }
-
-#elif defined(CONFIG_EOL_IS_EITHER_CRLF)
       if (ch == '\n' || ch == '\r')
         {
           *line = '\0';
           return nbytes;
         }
-#endif
 
       /* Only hex data goes into the line buffer */
 
@@ -709,4 +683,4 @@ exit_with_buffers:
   return ret;
 }
 
-#endif /* CONFIG_LIB_HEX2BIN */
+#endif /* CONFIG_LIBC_HEX2BIN */

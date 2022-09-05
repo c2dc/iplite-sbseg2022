@@ -75,7 +75,6 @@ pointer to a write-able instance of :c:struct:`binfmt_s`.
       int (*load)(FAR struct binary_s *bin); /* Verify and load binary into memory */
     };
 
-
   The ``load`` method is used to load the binary format into memory. It
   returns either ``OK`` (0) meaning that the binary object was loaded
   successfully, or a negated ``errno`` indicating why the object was not
@@ -180,7 +179,7 @@ Basic module management
     The ``filename`` field will be used
     in order to locate the module to be loaded from the file system.
     The filename must be the full, absolute path to the file to be executed
-    unless ``CONFIG_LIB_ENVPATH`` is defined. In that case, filename may be
+    unless ``CONFIG_LIBC_ENVPATH`` is defined. In that case, filename may be
     a relative path; a set of candidate absolute paths will be generated using
     the ``PATH`` environment variable and ``load_module()`` will attempt to load each
     file that is found at those absolute paths.

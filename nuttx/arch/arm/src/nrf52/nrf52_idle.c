@@ -25,6 +25,8 @@
 #include <arch/board/board.h>
 #include <nuttx/config.h>
 
+#include <debug.h>
+
 #include <nuttx/arch.h>
 #include <nuttx/board.h>
 #include <nuttx/power/pm.h>
@@ -48,8 +50,6 @@
 #  define BEGIN_IDLE()
 #  define END_IDLE()
 #endif
-
-#define PM_IDLE_DOMAIN 0 /* Revisit */
 
 /****************************************************************************
  * Private Functions

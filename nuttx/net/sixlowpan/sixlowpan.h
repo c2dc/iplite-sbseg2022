@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef _NET_SIXLOWPAN_SIXLOWPAN_H
-#define _NET_SIXLOWPAN_SIXLOWPAN_H
+#ifndef __NET_SIXLOWPAN_SIXLOWPAN_H
+#define __NET_SIXLOWPAN_SIXLOWPAN_H
 
 /****************************************************************************
  * Included Files
@@ -106,7 +106,7 @@ ssize_t psock_6lowpan_tcp_send(FAR struct socket *psock, FAR const void *buf,
  *   3. TCP output resulting from TX or timer polling
  *
  *   Cases 2 and 3 will be handled here.  Logic in ipv6_tcp_input(),
- *   devif_poll(), and devif_timer() detect if (1) an attempt to return with
+ *   and devif_poll() detect if (1) an attempt to return with
  *   d_len > 0 and (2) that the device is an IEEE802.15.4 MAC network
  *   driver. Under those conditions, this function will be called to create
  *   the IEEE80215.4 frames.
@@ -260,4 +260,4 @@ void sixlowpan_udp_send(FAR struct net_driver_s *dev,
 #endif
 
 #endif /* CONFIG_NET_6LOWPAN */
-#endif /* _NET_SIXLOWPAN_SIXLOWPAN_H */
+#endif /* __NET_SIXLOWPAN_SIXLOWPAN_H */

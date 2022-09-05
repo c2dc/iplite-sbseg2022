@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __BOARDS_ARM_STM32_NUCLEOF103RB_INCLUDE_BOARD_H
-#define __BOARDS_ARM_STM32_NUCLEOF103RB_INCLUDE_BOARD_H
+#ifndef __BOARDS_ARM_STM32_NUCLEO_F103RB_INCLUDE_BOARD_H
+#define __BOARDS_ARM_STM32_NUCLEO_F103RB_INCLUDE_BOARD_H
 
 /****************************************************************************
  * Included Files
@@ -172,5 +172,45 @@
 /* ADC */
 
 #define ADC1_DMA_CHAN DMACHAN_ADC1     /* DMA1_CH1 */
+
+#ifdef CONFIG_BOARD_STM32_IHM07M1
+
+/* Configuration specific for the X-NUCLEO-IHM07M1 expansion board with
+ * the L6230 gate drivers.
+ */
+
+/* TIM1 configuration *******************************************************/
+
+/* Configured in stm32/hardware/stm32f103r_pinmap.h */
+
+/* UVW ENABLE */
+
+#  define GPIO_FOC_EN_U (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz|  \
+                         GPIO_OUTPUT_CLEAR|GPIO_PORTC|GPIO_PIN10)
+#  define GPIO_FOC_EN_V (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz|  \
+                         GPIO_OUTPUT_CLEAR|GPIO_PORTC|GPIO_PIN11)
+#  define GPIO_FOC_EN_W (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz|  \
+                         GPIO_OUTPUT_CLEAR|GPIO_PORTC|GPIO_PIN12)
+
+/* DIAG/ENABLE */
+
+#  define GPIO_FOC_DIAGEN (GPIO_OUTPUT|GPIO_CNF_OUTOD|GPIO_MODE_50MHz|  \
+                           GPIO_OUTPUT_CLEAR|GPIO_PORTA|GPIO_PIN11)
+
+#  define GPIO_FOC_LED2   (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz| \
+                           GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN2)
+
+/* Debug pins */
+
+#  define GPIO_FOC_DEBUG0 (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz| \
+                           GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN8)
+#  define GPIO_FOC_DEBUG1 (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz| \
+                           GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN9)
+#  define GPIO_FOC_DEBUG2 (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz| \
+                           GPIO_OUTPUT_CLEAR|GPIO_PORTC|GPIO_PIN6)
+#  define GPIO_FOC_DEBUG3 (GPIO_OUTPUT|GPIO_CNF_OUTPP|GPIO_MODE_50MHz| \
+                           GPIO_OUTPUT_CLEAR|GPIO_PORTC|GPIO_PIN5)
+
+#endif  /* CONFIG_BOARD_STM32_IHM07M1 */
 
 #endif /* __BOARDS_ARM_STM32_NUCLEO_F103RB_INCLUDE_BOARD_H */

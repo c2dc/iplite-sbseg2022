@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __UP_INTERNAL_H
-#define __UP_INTERNAL_H
+#ifndef __ARCH_AVR_SRC_COMMON_UP_INTERNAL_H
+#define __ARCH_AVR_SRC_COMMON_UP_INTERNAL_H
 
 /****************************************************************************
  * Included Files
@@ -29,6 +29,8 @@
 
 #ifndef __ASSEMBLY__
 #  include <stdint.h>
+#  include <nuttx/arch.h>
+#  include <nuttx/irq.h>
 #endif
 
 #ifdef CONFIG_ARCH_FAMILY_AVR32
@@ -55,6 +57,13 @@
 #define INTSTACK_COLOR 's'
 #define HEAP_COLOR     'h'
 
+#define getreg8(a)     (*(volatile uint8_t *)(a))
+#define putreg8(v,a)   (*(volatile uint8_t *)(a) = (v))
+#define getreg16(a)    (*(volatile uint16_t *)(a))
+#define putreg16(v,a)  (*(volatile uint16_t *)(a) = (v))
+#define getreg32(a)    (*(volatile uint32_t *)(a))
+#define putreg32(v,a)  (*(volatile uint32_t *)(a) = (v))
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/
@@ -71,7 +80,8 @@ typedef void (*up_vector_t)(void);
 /* Address of the saved user stack pointer */
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
-extern void g_intstackbase;
+extern void g_intstackalloc;
+extern void g_intstacktop;
 #endif
 
 /* These 'addresses' of these values are setup by the linker script.  They
@@ -79,10 +89,10 @@ extern void g_intstackbase;
  * in the following way:
  *
  *  - The linker script defines, for example, the symbol_sdata.
- *  - The declareion extern uint32_t _sdata; makes C happy.  C will believe
+ *  - The declaration extern uint32_t _sdata; makes C happy.  C will believe
  *    that the value _sdata is the address of a uint32_t variable _data
  *    (it is not!).
- *  - We can recoved the linker value then by simply taking the address of
+ *  - We can recover the linker value then by simply taking the address of
  *    of _data.  like:  uint32_t *pdata = &_sdata;
  */
 
@@ -105,6 +115,11 @@ extern uint32_t _ebss;            /* End+1 of .bss */
  ****************************************************************************/
 
 #ifndef __ASSEMBLY__
+/* Atomic modification of registers */
+
+void modifyreg8(unsigned int addr, uint8_t clearbits, uint8_t setbits);
+void modifyreg16(unsigned int addr, uint16_t clearbits, uint16_t setbits);
+void modifyreg32(unsigned int addr, uint32_t clearbits, uint32_t setbits);
 
 /* Defined in files with the same name as the function */
 
@@ -113,7 +128,6 @@ void weak_function up_dma_initialize(void);
 #endif
 void up_sigdeliver(void);
 void up_lowputc(char ch);
-void up_puts(const char *str);
 void up_lowputs(const char *str);
 void up_dumpstate(void);
 
@@ -140,10 +154,6 @@ void up_earlyserialinit(void);
 void up_serialinit(void);
 #endif
 
-#ifdef CONFIG_RPMSG_UART
-void rpmsg_serialinit(void);
-#endif
-
 /* Defined in chip/xxx_ethernet.c */
 
 #if defined(CONFIG_NET) && !defined(CONFIG_NETDEV_LATEINIT)
@@ -162,5 +172,9 @@ void up_usbuninitialize(void);
 # define up_usbuninitialize()
 #endif
 
+#ifdef CONFIG_STACK_COLORATION
+size_t avr_stack_check(uintptr_t alloc, size_t size);
+#endif
+
 #endif /* __ASSEMBLY__ */
-#endif /* __UP_INTERNAL_H */
+#endif /* __ARCH_AVR_SRC_COMMON_UP_INTERNAL_H */

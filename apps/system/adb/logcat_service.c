@@ -1,5 +1,5 @@
 /****************************************************************************
- * system/adb/logcat_service_uv.c
+ * apps/system/adb/logcat_service.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -105,7 +105,7 @@ static const adb_service_ops_t logcat_ops =
   .on_write_frame = alog_on_write,
   .on_ack_frame   = alog_on_ack,
   .on_kick        = alog_on_kick,
-  .close          = alog_close
+  .on_close       = alog_close
 };
 
 static void logcat_on_data_available(uv_poll_t * handle,
@@ -133,9 +133,10 @@ static void logcat_on_data_available(uv_poll_t * handle,
       goto exit_stop_service;
     }
 
-  assert(uv_fileno((uv_handle_t *)handle, &fd) == 0);
-  ret = read(fd, ap->p.data, CONFIG_ADBD_PAYLOAD_SIZE);
+  ret = uv_fileno((uv_handle_t *)handle, &fd);
+  assert(ret == 0);
 
+  ret = read(fd, ap->p.data, CONFIG_ADBD_PAYLOAD_SIZE);
   if (ret < 0)
     {
       adb_log("frame read failed %d %d\n", ret, errno);

@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #ifdef CONFIG_SERIAL_TERMIOS
@@ -42,9 +43,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "hardware/am335x_uart.h"
 #include "am335x_gpio.h"
@@ -1006,7 +1005,7 @@ static int up_ioctl(struct file *filep, int cmd, unsigned long arg)
   struct inode      *inode = filep->f_inode;
   struct uart_dev_s *dev   = inode->i_private;
   struct up_dev_s   *priv  = (struct up_dev_s *)dev->priv;
-  int                ret    = OK;
+  int                ret   = OK;
 
   switch (cmd)
     {

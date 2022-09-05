@@ -26,12 +26,12 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include <nuttx/compiler.h>
 
 /****************************************************************************
  * Public Types
  ****************************************************************************/
 
-#if defined(CONFIG_ARCH_ARMV7M) || defined(CONFIG_ARCH_ARMV8M)
 struct setjmp_buf_s
 {
   /* Note: core registers r0-r3 are caller-saved */
@@ -75,15 +75,24 @@ struct setjmp_buf_s
 
 typedef struct setjmp_buf_s jmp_buf[1];
 
-#else
-#  error "setjmp() not compiled!"
-#endif /* CONFIG_ARCH_ARMV7M */
-
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
 
+#ifdef __cplusplus
+#define EXTERN extern "C"
+extern "C"
+{
+#else
+#define EXTERN extern
+#endif
+
 int setjmp(jmp_buf env);
 void longjmp(jmp_buf env, int val) noreturn_function;
+
+#undef EXTERN
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __ARCH_ARM_INCLUDE_SETJUMP_H */

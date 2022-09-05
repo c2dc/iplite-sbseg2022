@@ -63,19 +63,16 @@
  ****************************************************************************/
 
 #ifdef CONFIG_DUMP_ON_EXIT
-static void _xtensa_dumponexit(FAR struct tcb_s *tcb, FAR void *arg)
+static void _xtensa_dumponexit(struct tcb_s *tcb, void *arg)
 {
-  FAR struct filelist *filelist;
-#ifdef CONFIG_FILE_STREAM
-  FAR struct file_struct *filep;
-#endif
+  struct filelist *filelist;
   int i;
   int j;
 
-  sinfo("  TCB=%p name=%s pid=%d\n", tcb, tcb->argv[0], tcb->pid);
+  sinfo("  TCB=%p name=%s pid=%d\n", tcb, tcb->name, tcb->pid);
   sinfo("    priority=%d state=%d\n", tcb->sched_priority, tcb->task_state);
 
-  filelist = tcb->group->tg_filelist;
+  filelist = &tcb->group->tg_filelist;
   for (i = 0; i < filelist->fl_rows; i++)
     {
       for (j = 0; j < CONFIG_NFILE_DESCRIPTORS_PER_BLOCK; j++)
@@ -89,28 +86,6 @@ static void _xtensa_dumponexit(FAR struct tcb_s *tcb, FAR void *arg)
             }
         }
     }
-
-#ifdef CONFIG_FILE_STREAM
-  filep = tcb->group->tg_streamlist->sl_head;
-  for (; filep != NULL; filep = filep->fs_next)
-    {
-      if (filep->fs_fd >= 0)
-        {
-#ifndef CONFIG_STDIO_DISABLE_BUFFERING
-          if (filep->fs_bufstart != NULL)
-            {
-              sinfo("      fd=%d nbytes=%d\n",
-                    filep->fs_fd,
-                    filep->fs_bufpos - filep->fs_bufstart);
-            }
-          else
-#endif
-            {
-              sinfo("      fd=%d\n", filep->fs_fd);
-            }
-        }
-    }
-#endif
 }
 #endif
 
@@ -141,20 +116,14 @@ void up_exit(int status)
 
   sinfo("TCB=%p exiting\n", tcb);
 
+  /* Destroy the task at the head of the ready to run list. */
+
+  nxtask_exit();
+
 #ifdef CONFIG_DUMP_ON_EXIT
   sinfo("Other tasks:\n");
   nxsched_foreach(_xtensa_dumponexit, NULL);
 #endif
-
-#if XCHAL_CP_NUM > 0
-  /* Disable co-processor support for the task that is exit-ing. */
-
-  xtensa_coproc_disable(&tcb->xcp.cpstate, XTENSA_CP_ALLSET);
-#endif
-
-  /* Destroy the task at the head of the ready to run list. */
-
-  nxtask_exit();
 
   /* Now, perform the context switch to the new ready-to-run task at the
    * head of the list.
@@ -168,29 +137,13 @@ void up_exit(int status)
 
   nxsched_resume_scheduler(tcb);
 
-#if XCHAL_CP_NUM > 0
-  /* Set up the co-processor state for the newly started thread. */
-
-  xtensa_coproc_restorestate(&tcb->xcp.cpstate);
-#endif
-
-#ifdef CONFIG_ARCH_ADDRENV
-  /* Make sure that the address environment for the previously running
-   * task is closed down gracefully (data caches dump, MMU flushed) and
-   * set up the address environment for the new thread at the head of
-   * the ready-to-run list.
-   */
-
-  group_addrenv(tcb);
-#endif
-
   /* Then switch contexts */
 
   xtensa_context_restore(tcb->xcp.regs);
 
-  /* xtensa_full_context_restore() should not return but could if the
+  /* xtensa_context_restore() should not return but could if the
    * software interrupts are disabled.
    */
 
-  DEBUGPANIC();
+  PANIC();
 }

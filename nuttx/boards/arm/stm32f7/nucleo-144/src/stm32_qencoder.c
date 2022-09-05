@@ -31,7 +31,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32_qencoder.h"
 #include "nucleo-144.h"
 
@@ -48,7 +48,7 @@
  *
  ****************************************************************************/
 
-int stm32f7_qencoder_initialize(FAR const char *devpath, int timer)
+int stm32f7_qencoder_initialize(const char *devpath, int timer)
 {
   int ret = 0;
 

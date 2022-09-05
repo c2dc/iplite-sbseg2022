@@ -24,8 +24,14 @@
 
 #include <nuttx/config.h>
 #include <sched/sched.h>
+#include <debug.h>
 #include <stdlib.h>
-#include <nuttx/board.h>
+#include <nuttx/syslog/syslog.h>
+
+#ifdef CONFIG_BOARD_CRASHDUMP
+#  include <nuttx/board.h>
+#endif
+
 #include "up_internal.h"
 
 /****************************************************************************
@@ -65,25 +71,55 @@
  *
  ****************************************************************************/
 
-void up_assert(const char *filename, int line)
+void up_assert(const char *filename, int lineno)
 {
+  struct tcb_s *rtcb = running_task();
+
+  /* Flush any buffered SYSLOG data (prior to the assertion) */
+
+  syslog_flush();
+
   /* Show the location of the failed assertion */
 
 #ifdef CONFIG_SMP
-  syslog(LOG_ERR, "CPU%d: Assertion failed at file:%s line: %d\n",
-          up_cpu_index(), filename, line);
+#if CONFIG_TASK_NAME_SIZE > 0
+  _alert("Assertion failed CPU%d at file:%s line: %d task: %s\n",
+         up_cpu_index(), filename, lineno, rtcb->name);
 #else
-  syslog(LOG_ERR, "Assertion failed at file:%s line: %d\n",
-          filename, line);
+  _alert("Assertion failed CPU%d at file:%s line: %d\n",
+         up_cpu_index(), filename, lineno);
 #endif
+#else
+#if CONFIG_TASK_NAME_SIZE > 0
+  _alert("Assertion failed at file:%s line: %d task: %s\n",
+         filename, lineno, rtcb->name);
+#else
+  _alert("Assertion failed at file:%s line: %d\n",
+         filename, lineno);
+#endif
+#endif
+
+  /* Show back trace */
+
+#ifdef CONFIG_SCHED_BACKTRACE
+  sched_dumpstack(rtcb->pid);
+#endif
+
+  /* Flush any buffered SYSLOG data (from the above) */
+
+  syslog_flush();
 
   /* Allow for any board/configuration specific crash information */
 
 #ifdef CONFIG_BOARD_CRASHDUMP
-  board_crashdump(sim_getsp(), this_task(), filename, line);
+  board_crashdump(up_getsp(), rtcb, filename, lineno);
 #endif
 
-  if (CURRENT_REGS || (running_task())->flink == NULL)
+  /* Flush any buffered SYSLOG data */
+
+  syslog_flush();
+
+  if (CURRENT_REGS || rtcb->flink == NULL)
     {
       /* Exit the simulation */
 

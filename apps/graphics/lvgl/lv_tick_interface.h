@@ -1,5 +1,5 @@
 /****************************************************************************
- * graphics/lvgl/lv_tick_interface.h
+ * apps/graphics/lvgl/lv_tick_interface.h
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __LV_TICK_INTERFACE_H__
-#define __LV_TICK_INTERFACE_H__
+#ifndef __APPS_GRAPHICS_LV_TICK_INTERFACE_H
+#define __APPS_GRAPHICS_LV_TICK_INTERFACE_H
 
 /****************************************************************************
  * Included Files
@@ -59,4 +59,4 @@ uint32_t lv_tick_interface(void);
 }
 #endif
 
-#endif // __LV_TICK_INTERFACE_H__
+#endif // __APPS_GRAPHICS_LV_TICK_INTERFACE_H

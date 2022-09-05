@@ -1,13 +1,6 @@
 /****************************************************************************
  * include/nuttx/mtd/nand.h
  *
- *   Copyright (C) 2013 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *
- * This logic was based largely on Atmel sample code with modifications for
- * better integration with NuttX.  The Atmel sample code has a BSD
- * compatible license that requires this copyright notice:
- *
  *   Copyright (c) 2012, Atmel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
@@ -104,7 +97,7 @@ extern "C"
  *   raw      - Lower-half, raw NAND FLASH interface
  *
  * Returned Value:
- *   A non-NULL MTD driver intstance is returned on success.  NULL is
+ *   A non-NULL MTD driver instance is returned on success.  NULL is
  *   returned on any failaure.
  *
  ****************************************************************************/

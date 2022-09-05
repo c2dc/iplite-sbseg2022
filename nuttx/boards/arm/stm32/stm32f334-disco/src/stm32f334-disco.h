@@ -107,7 +107,7 @@ void weak_function stm32_spidev_initialize(void);
  ****************************************************************************/
 
 #ifdef CONFIG_TIMER
-int stm32_timer_driver_setup(FAR const char *devpath, int timer);
+int stm32_timer_driver_setup(const char *devpath, int timer);
 #endif
 
 /****************************************************************************
@@ -154,7 +154,7 @@ int stm32_adc_setup(void);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_CAN
+#ifdef CONFIG_STM32_CAN_CHARDRIVER
 int stm32_can_setup(void);
 #endif
 

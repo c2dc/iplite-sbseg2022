@@ -1,5 +1,5 @@
 ############################################################################
-# interpreters/quickjs/Makefile
+# apps/interpreters/quickjs/Makefile
 #
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -77,17 +77,23 @@ $(QUICKJS_UNPACK): $(QUICKJS_TARBALL)
 $(QUICKJS_UNPACK)/.patch: $(QUICKJS_UNPACK)
 	$(Q) touch $(QUICKJS_UNPACK)/.patch
 
+# Download and unpack tarball if no git repo found
+ifeq ($(wildcard $(QUICKJS_UNPACK)/.git),)
+
+distclean::
+	$(call DELDIR, $(QUICKJS_UNPACK))
+	$(call DELFILE, $(QUICKJS_TARBALL))
+
 build_host: $(QUICKJS_UNPACK)/.patch
-	make -C $(QUICKJS_UNPACK) \
+else
+build_host:
+endif
+	$(MAKE) -C $(QUICKJS_UNPACK) \
 		CONFIG_BIGNUM=$(CONFIG_INTERPRETERS_QUICKJS_BIGNUM)
 
 context:: build_host
 
 clean::
-	$(Q) test ! -d $(QUICKJS_UNPACK) || make -C $(QUICKJS_UNPACK) clean
-
-distclean::
-	$(call DELDIR, $(QUICKJS_UNPACK))
-	$(call DELFILE, $(QUICKJS_TARBALL))
+	$(Q) test ! -d $(QUICKJS_UNPACK) || $(MAKE) -C $(QUICKJS_UNPACK) clean
 
 include $(APPDIR)/Application.mk

@@ -1,46 +1,20 @@
 /****************************************************************************
  * arch/arm/src/stm32l5/stm32l5_tim.h
  *
- *   Copyright (C) 2019 Gregory Nutt. All rights reserved.
- *   Author: Michael Jung <mijung@gmx.net>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Based on arch/arm/src/stm32l4/stm32l4_tim.h
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *   Copyright (C) 2011 Uros Platise. All rights reserved.
- *   Author: Uros Platise <uros.platise@isotel.eu>
- *
- * With modifications and updates by:
- *
- *   Copyright (C) 2011-2012, 2016, 2018 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *           dev@ziggurat29.com
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -163,7 +137,7 @@ enum stm32l5_tim_channel_e
 #if 0
   STM32L5_TIM_CH_INCAPTURE      = 0x10,
   STM32L5_TIM_CH_INPWM          = 0x20
-  STM32L5_TIM_CH_DRIVE_OC   -- open collector mode
+  STM32L5_TIM_CH_DRIVE_OC       = open collector mode
 #endif
 };
 
@@ -173,30 +147,30 @@ struct stm32l5_tim_ops_s
 {
   /* Basic Timers */
 
-  int  (*setmode)(FAR struct stm32l5_tim_dev_s *dev,
+  int  (*setmode)(struct stm32l5_tim_dev_s *dev,
                   enum stm32l5_tim_mode_e mode);
-  int  (*setclock)(FAR struct stm32l5_tim_dev_s *dev, uint32_t freq);
-  uint32_t (*getclock)(FAR struct stm32l5_tim_dev_s *dev);
-  void (*setperiod)(FAR struct stm32l5_tim_dev_s *dev, uint32_t period);
-  uint32_t (*getperiod)(FAR struct stm32l5_tim_dev_s *dev);
-  uint32_t (*getcounter)(FAR struct stm32l5_tim_dev_s *dev);
+  int  (*setclock)(struct stm32l5_tim_dev_s *dev, uint32_t freq);
+  uint32_t (*getclock)(struct stm32l5_tim_dev_s *dev);
+  void (*setperiod)(struct stm32l5_tim_dev_s *dev, uint32_t period);
+  uint32_t (*getperiod)(struct stm32l5_tim_dev_s *dev);
+  uint32_t (*getcounter)(struct stm32l5_tim_dev_s *dev);
 
   /* General and Advanced Timers Adds */
 
-  int  (*setchannel)(FAR struct stm32l5_tim_dev_s *dev, uint8_t channel,
+  int  (*setchannel)(struct stm32l5_tim_dev_s *dev, uint8_t channel,
                      enum stm32l5_tim_channel_e mode);
-  int  (*setcompare)(FAR struct stm32l5_tim_dev_s *dev, uint8_t channel,
+  int  (*setcompare)(struct stm32l5_tim_dev_s *dev, uint8_t channel,
                      uint32_t compare);
-  int  (*getcapture)(FAR struct stm32l5_tim_dev_s *dev, uint8_t channel);
+  int  (*getcapture)(struct stm32l5_tim_dev_s *dev, uint8_t channel);
 
   /* Timer interrupts */
 
-  int  (*setisr)(FAR struct stm32l5_tim_dev_s *dev,
+  int  (*setisr)(struct stm32l5_tim_dev_s *dev,
                  xcpt_t handler, void *arg, int source);
-  void (*enableint)(FAR struct stm32l5_tim_dev_s *dev, int source);
-  void (*disableint)(FAR struct stm32l5_tim_dev_s *dev, int source);
-  void (*ackint)(FAR struct stm32l5_tim_dev_s *dev, int source);
-  int  (*checkint)(FAR struct stm32l5_tim_dev_s *dev, int source);
+  void (*enableint)(struct stm32l5_tim_dev_s *dev, int source);
+  void (*disableint)(struct stm32l5_tim_dev_s *dev, int source);
+  void (*ackint)(struct stm32l5_tim_dev_s *dev, int source);
+  int  (*checkint)(struct stm32l5_tim_dev_s *dev, int source);
 };
 
 /****************************************************************************
@@ -205,11 +179,11 @@ struct stm32l5_tim_ops_s
 
 /* Power-up timer and get its structure */
 
-FAR struct stm32l5_tim_dev_s *stm32l5_tim_init(int timer);
+struct stm32l5_tim_dev_s *stm32l5_tim_init(int timer);
 
 /* Power-down timer, mark it as unused */
 
-int stm32l5_tim_deinit(FAR struct stm32l5_tim_dev_s *dev);
+int stm32l5_tim_deinit(struct stm32l5_tim_dev_s *dev);
 
 /****************************************************************************
  * Name: stm32l5_timer_initialize
@@ -230,7 +204,7 @@ int stm32l5_tim_deinit(FAR struct stm32l5_tim_dev_s *dev);
  ****************************************************************************/
 
 #ifdef CONFIG_TIMER
-int stm32l5_timer_initialize(FAR const char *devpath, int timer);
+int stm32l5_timer_initialize(const char *devpath, int timer);
 #endif
 
 #undef EXTERN

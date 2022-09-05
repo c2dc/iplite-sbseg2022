@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __BOARDS_ARM_IMXRT_TEENSY_4_INCLUDE_BOARD_H
-#define __BOARDS_ARM_IMXRT_TEENSY_4_INCLUDE_BOARD_H
+#ifndef __BOARDS_ARM_IMXRT_TEENSY_4X_INCLUDE_BOARD_H
+#define __BOARDS_ARM_IMXRT_TEENSY_4X_INCLUDE_BOARD_H
 
 /****************************************************************************
  * Included Files
@@ -276,6 +276,11 @@
 #define GPIO_FLEXCAN3_TX     (GPIO_FLEXCAN3_TX_3|IOMUX_CAN_DEFAULT) /* GPIO_EMC_36 */
 #define GPIO_FLEXCAN3_RX     (GPIO_FLEXCAN3_RX_3|IOMUX_CAN_DEFAULT) /* GPIO_EMC_37 */
 
+/* FlexPWM */
+
+#define GPIO_FLEXPWM2_MOD1_A (GPIO_FLEXPWM2_PWMA00_1|IOMUX_PWM_DEFAULT) /* GPIO_EMC_06 */
+#define GPIO_FLEXPWM2_MOD2_A (GPIO_FLEXPWM2_PWMA01_1|IOMUX_PWM_DEFAULT) /* GPIO_EMC_08 */
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/
@@ -301,4 +306,4 @@ extern "C"
 #endif
 
 #endif /* __ASSEMBLY__ */
-#endif /* __BOARDS_ARM_IMXRT_TEENSY_4_INCLUDE_BOARD_H */
+#endif /* __BOARDS_ARM_IMXRT_TEENSY_4X_INCLUDE_BOARD_H */

@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -34,9 +35,7 @@
 
 #include "nvic.h"
 #include "ram_vectors.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "lpc17_40_gpio.h"
 #include "lpc17_40_clrpend.h"
 
@@ -147,7 +146,7 @@ static void lpc17_40_dumpnvic(const char *msg, int irq)
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG_FEATURES
-static int lpc17_40_nmi(int irq, FAR void *context, FAR void *arg)
+static int lpc17_40_nmi(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! NMI received\n");
@@ -155,7 +154,7 @@ static int lpc17_40_nmi(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int lpc17_40_busfault(int irq, FAR void *context, FAR void *arg)
+static int lpc17_40_busfault(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! Bus fault received\n");
@@ -163,7 +162,7 @@ static int lpc17_40_busfault(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int lpc17_40_usagefault(int irq, FAR void *context, FAR void *arg)
+static int lpc17_40_usagefault(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! Usage fault received\n");
@@ -171,7 +170,7 @@ static int lpc17_40_usagefault(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int lpc17_40_pendsv(int irq, FAR void *context, FAR void *arg)
+static int lpc17_40_pendsv(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! PendSV received\n");
@@ -179,7 +178,7 @@ static int lpc17_40_pendsv(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int lpc17_40_dbgmonitor(int irq, FAR void *context, FAR void *arg)
+static int lpc17_40_dbgmonitor(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! Debug Monitor received\n");
@@ -187,7 +186,7 @@ static int lpc17_40_dbgmonitor(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int lpc17_40_reserved(int irq, FAR void *context, FAR void *arg)
+static int lpc17_40_reserved(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! Reserved interrupt\n");

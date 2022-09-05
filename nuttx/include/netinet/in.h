@@ -30,6 +30,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <stdint.h>
+#include <endian.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -107,6 +108,9 @@
                                                     * the incoming packet */
 #define IP_TOS                (__SO_PROTOCOL + 13) /* Access the Type-Of-Service
                                                     * (TOS) field  */
+#define IP_TTL                (__SO_PROTOCOL + 14) /* The IP TTL (time to live)
+                                                    * of IP packets sent by the
+                                                    * network stack */
 
 /* SOL_IPV6 protocol-level socket options. */
 
@@ -129,9 +133,31 @@
 #define MCAST_EXCLUDE         0
 #define MCAST_INCLUDE         1
 
+/* Definitions of the bits in an Internet address integer.
+ * On subnets, host and network parts are found according to
+ * the subnet mask, not these masks.
+ */
+
+#define IN_CLASSA(a)          ((((in_addr_t)(a)) & 0x80000000) == 0)
+#define IN_CLASSA_NET         0xff000000
+#define IN_CLASSA_NSHIFT      24
+#define IN_CLASSA_HOST        (0xffffffff & ~IN_CLASSA_NET)
+#define IN_CLASSA_MAX         128
+
+#define IN_CLASSB(a)          ((((in_addr_t)(a)) & 0xc0000000) == 0x80000000)
+#define IN_CLASSB_NET         0xffff0000
+#define IN_CLASSB_NSHIFT      16
+#define IN_CLASSB_HOST        (0xffffffff & ~IN_CLASSB_NET)
+#define IN_CLASSB_MAX         65536
+
+#define IN_CLASSC(a)          ((((in_addr_t)(a)) & 0xe0000000) == 0xc0000000)
+#define IN_CLASSC_NET         0xffffff00
+#define IN_CLASSC_NSHIFT      8
+#define IN_CLASSC_HOST        (0xffffffff & ~IN_CLASSC_NET)
+
 /* Test if an IPv4 address is a multicast address */
 
-#define IN_CLASSD(i)          (((uint32_t)(i) & 0xf0000000) == 0xe0000000)
+#define IN_CLASSD(i)          (((in_addr_t)(i) & 0xf0000000) == 0xe0000000)
 #define IN_MULTICAST(i)       IN_CLASSD(i)
 
 /* Special values of in_addr_t */
@@ -188,6 +214,22 @@
   ((a)->s6_addr32[0] == 0 && \
    (a)->s6_addr32[1] == 0 && \
    (a)->s6_addr32[2] == HTONL(0xffff))
+
+/* This macro to convert a 16/32-bit constant values quantity from host byte
+ * order to network byte order.  The 16-bit version of this macro is required
+ * for uIP:
+ */
+
+#ifdef CONFIG_ENDIAN_BIG
+#  define HTONS(ns) (ns)
+#  define HTONL(nl) (nl)
+#else
+#  define HTONS __swap_uint16
+#  define HTONL __swap_uint32
+#endif
+
+#define NTOHS(hs) HTONS(hs)
+#define NTOHL(hl) HTONL(hl)
 
 /****************************************************************************
  * Public Type Definitions
@@ -307,6 +349,22 @@ EXTERN const struct in6_addr in6addr_any;
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
+
+/* Functions to convert between host and network byte ordering.
+ *
+ * REVISIT:  Since network order is defined as big-endian, the following
+ * functions are equivalent to functions declared in endian.h:
+ *
+ *   htonl   htobe32
+ *   htons   htobe16
+ *   ntohl   be32toh
+ *   ntohs   be16toh
+ */
+
+uint32_t    ntohl(uint32_t nl);
+uint16_t    ntohs(uint16_t ns);
+uint32_t    htonl(uint32_t hl);
+uint16_t    htons(uint16_t hs);
 
 #undef EXTERN
 #if defined(__cplusplus)

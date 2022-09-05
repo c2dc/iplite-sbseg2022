@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 #include <nuttx/nuttx.h>
 #include <queue.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -38,6 +39,10 @@
 #include <nuttx/fs/fs.h>
 #include <fcntl.h>
 #include <poll.h>
+
+#ifdef CONFIG_USBADB_BOARD_SERIALSTR
+#include <nuttx/board.h>
+#endif
 
 #ifdef CONFIG_USBADB_COMPOSITE
 #  include <nuttx/usb/composite.h>
@@ -216,8 +221,6 @@ static ssize_t adb_char_read(FAR struct file *filep, FAR char *buffer,
                                size_t len);
 static ssize_t adb_char_write(FAR struct file *filep,
                                 FAR const char *buffer, size_t len);
-static int adb_char_ioctl(FAR struct file *filep, int cmd,
-                            unsigned long arg);
 static int adb_char_poll(FAR struct file *filep, FAR struct pollfd *fds,
                        bool setup);
 
@@ -235,12 +238,12 @@ static void adb_char_on_connect(FAR struct usbdev_adb_s *priv, int connect);
 
 static const struct usbdevclass_driverops_s g_adb_driverops =
 {
-  usbclass_bind,       /* bind       */
-  usbclass_unbind,     /* unbind     */
-  usbclass_setup,      /* setup      */
+  usbclass_bind,       /* bind */
+  usbclass_unbind,     /* unbind */
+  usbclass_setup,      /* setup */
   usbclass_disconnect, /* disconnect */
-  usbclass_suspend,    /* suspend    */
-  usbclass_resume      /* resume     */
+  usbclass_suspend,    /* suspend */
+  usbclass_resume      /* resume */
 };
 
 /* Char device **************************************************************/
@@ -251,9 +254,12 @@ static const struct file_operations g_adb_fops =
   adb_char_close, /* close */
   adb_char_read,  /* read */
   adb_char_write, /* write */
-  0,              /* seek */
-  adb_char_ioctl, /* ioctl */
+  NULL,           /* seek */
+  NULL,           /* ioctl */
   adb_char_poll   /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL          /* unlink */
+#endif
 };
 
 /* USB descriptor ***********************************************************/
@@ -858,6 +864,7 @@ static int16_t usbclass_mkcfgdesc(FAR uint8_t *buf,
 
 static int usbclass_mkstrdesc(uint8_t id, FAR struct usb_strdesc_s *strdesc)
 {
+  FAR uint8_t *data = (FAR uint8_t *)(strdesc + 1);
   FAR const char *str;
   int len;
   int ndata;
@@ -870,10 +877,10 @@ static int usbclass_mkstrdesc(uint8_t id, FAR struct usb_strdesc_s *strdesc)
       {
         /* Descriptor 0 is the language id */
 
-        strdesc->len     = 4;
-        strdesc->type    = USB_DESC_TYPE_STRING;
-        strdesc->data[0] = LSBYTE(USBADB_STR_LANGUAGE);
-        strdesc->data[1] = MSBYTE(USBADB_STR_LANGUAGE);
+        strdesc->len  = 4;
+        strdesc->type = USB_DESC_TYPE_STRING;
+        data[0] = LSBYTE(USBADB_STR_LANGUAGE);
+        data[1] = MSBYTE(USBADB_STR_LANGUAGE);
         return 4;
       }
 
@@ -886,7 +893,11 @@ static int usbclass_mkstrdesc(uint8_t id, FAR struct usb_strdesc_s *strdesc)
       break;
 
     case USBADB_SERIALSTRID:
+#ifdef CONFIG_USBADB_BOARD_SERIALSTR
+      str = board_usbdev_serialstr();
+#else
       str = CONFIG_USBADB_SERIALSTR;
+#endif
       break;
 
     case USBADB_CONFIGSTRID:
@@ -916,8 +927,8 @@ static int usbclass_mkstrdesc(uint8_t id, FAR struct usb_strdesc_s *strdesc)
 
   for (i = 0, ndata = 0; i < len; i++, ndata += 2)
     {
-      strdesc->data[ndata]   = str[i];
-      strdesc->data[ndata + 1] = 0;
+      data[ndata]     = str[i];
+      data[ndata + 1] = 0;
     }
 
   strdesc->len  = ndata + 2;
@@ -1949,12 +1960,6 @@ static ssize_t adb_char_write(FAR struct file *filep,
 errout:
   nxsem_post(&priv->exclsem);
   return ret;
-}
-
-static int adb_char_ioctl(FAR struct file *filep, int cmd,
-                            unsigned long arg)
-{
-  return -EINVAL;
 }
 
 static int adb_char_poll(FAR struct file *filep, FAR struct pollfd *fds,

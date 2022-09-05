@@ -96,6 +96,10 @@
 #  include <nuttx/irq.h>
 #endif
 
+#ifdef CONFIG_BOARDCTL_RESET_CAUSE
+#  include <sys/boardctl.h>
+#endif
+
 /****************************************************************************
  * Public Function Prototypes
  *
@@ -286,6 +290,78 @@ int board_uniqueid(FAR uint8_t *uniqueid);
 #endif
 
 /****************************************************************************
+ * Name: board_uniquekey
+ *
+ * Description:
+ *   Return a unique KEY associated with the board.  The meaning of this
+ *   unique KEY is not specified.  It may be a trusted key or a private
+ *   identity, etc.  The only requirement is that the length of the
+ *   unique KEY be exactly CONFIG_BOARDCTL_UNIQUEKEY_SIZE in length.
+ *
+ * Input Parameters:
+ *   uniquekey - A reference to a writable memory location provided by the
+ *     caller to receive the board unique KEY.  The memory memory referenced
+ *     by this pointer must be at least CONFIG_BOARDCTL_UNIQUEKEY_SIZE in
+ *     length.
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success.  Otherwise a negated errno value is
+ *   returned indicating the nature of the failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_BOARDCTL_UNIQUEKEY
+int board_uniquekey(FAR uint8_t *uniquekey);
+#endif
+
+/****************************************************************************
+ * Name:  board_switch_boot
+ *
+ * Description:
+ *   BOARDIOC_SWITCH_BOOT is required to communicate the boot partition from
+ *   userspace (OTA subsystem) to board, it can be used to change the system
+ *   boot behavior. It's useful for A/B boot or even in the single boot case.
+ *
+ * Input Parameters:
+ *   system - The boot system updated or specified
+ *
+ * Returned Value:
+ *   Zero (OK) is returned on success.  Otherwise a negated errno value is
+ *   returned indicating the nature of the failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_BOARDCTL_SWITCH_BOOT
+int board_switch_boot(FAR const char *system);
+#endif
+
+/****************************************************************************
+ * Name:  board_boot_image
+ *
+ * Description:
+ *   Boot a new application firmware image. Execute the required actions for
+ *   booting a new application firmware image (e.g. deinitialize peripherals,
+ *   load the Program Counter register with the application firmware image
+ *   entry point address).
+ *
+ * Input Parameters:
+ *   path     - Path to the new application firmware image to be booted.
+ *   hdr_size - Image header size in bytes. This value may be useful for
+ *              skipping metadata information preprended to the application
+ *              image.
+ *
+ * Returned Value:
+ *   If this function returns, then it was not possible to load the
+ *   application firmware image due to some constraints. The return value in
+ *   this case is a board-specific reason for the failure.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_BOARDCTL_BOOT_IMAGE
+int board_boot_image(FAR const char *path, uint32_t hdr_size);
+#endif
+
+/****************************************************************************
  * Name:  board_timerhook
  *
  * Description:
@@ -358,6 +434,23 @@ FAR void *board_composite_connect(int port, int configid);
 #endif
 
 /****************************************************************************
+ * Name:  board_usbdev_serialstr
+ *
+ * Description:
+ *   Use board unique serial number string to iSerialNumber field in the
+ *   device descriptor. This is for determining the board when multiple
+ *   boards on the same host.
+ *
+ * Returned Value:
+ *   The board unique serial number string.
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_BOARD_USBDEV_SERIALSTR)
+FAR const char *board_usbdev_serialstr(void);
+#endif
+
+/****************************************************************************
  * Name: board_graphics_setup
  *
  * Description:
@@ -382,7 +475,7 @@ FAR struct fb_vtable_s *board_graphics_setup(unsigned int devno);
  * Name: board_ioctl
  *
  * Description:
- *   If CONFIG_LIB_BOARDCTL=y, boards may also select CONFIG_BOARDCTL_IOCTL=y
+ *   If CONFIG_BOARDCTL=y, boards may also select CONFIG_BOARDCTL_IOCTL=y
  *   enable board specific commands.  In this case, all commands not
  *   recognized by boardctl() will be forwarded to the board-provided
  *   board_ioctl() function.
@@ -602,6 +695,28 @@ void board_userled_all(uint32_t ledset);
 #endif
 
 /****************************************************************************
+ * Name:  board_userled_getall
+ *
+ * Description:
+ *   This interface may be used by application specific logic to read the
+ *   state of all board LEDs.  Definitions for the led set member
+ *   identification is provided in the board-specific board.h header file
+ *   that may be included like:
+ *
+ *     #included <arch/board/board.h>
+ *
+ *   If CONFIG_ARCH_LEDS is defined, then NuttX will control the on-board
+ *   LEDs.  If CONFIG_ARCH_LEDS is not defined, then this interfaces may be
+ *   available to check the LEDs directly from user board logic or indirectly
+ *   user applications (via the common LED character driver).
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_ARCH_HAVE_LEDS) && defined(CONFIG_USERLED_LOWER_READSTATE)
+void board_userled_getall(uint32_t *ledset);
+#endif
+
+/****************************************************************************
  * Name: board_button_initialize
  *
  * Description:
@@ -706,6 +821,20 @@ void board_crashdump(uintptr_t currentsp, FAR void *tcb,
 
 #ifdef CONFIG_BOARD_INITRNGSEED
 void board_init_rngseed(void);
+#endif
+
+/****************************************************************************
+ * Name: board_reset_cause
+ *
+ * Description:
+ *   This interface may be used by application specific logic to get the
+ *   cause of last reset. Support for this function is required by
+ *   board-level logic if CONFIG_BOARDCTL_RESET is selected.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_BOARDCTL_RESET_CAUSE
+int board_reset_cause(FAR struct boardioc_reset_cause_s *cause);
 #endif
 
 #undef EXTERN

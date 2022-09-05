@@ -34,7 +34,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "lpc17_40_pwm.h"
 #include "lpc17_40_timer.h"
 #include "lpcxpresso-lpc1768.h"
@@ -45,9 +45,9 @@
 
 #ifdef CONFIG_PWM
 
-FAR struct pwm_lowerhalf_s *lpc17_40_pwminitialize(int timer);
-FAR struct pwm_lowerhalf_s *lpc17_40_mcpwminitialize(int timer);
-FAR struct pwm_lowerhalf_s *lpc17_40_timerinitialize(int timer);
+struct pwm_lowerhalf_s *lpc17_40_pwminitialize(int timer);
+struct pwm_lowerhalf_s *lpc17_40_mcpwminitialize(int timer);
+struct pwm_lowerhalf_s *lpc17_40_timerinitialize(int timer);
 
 /****************************************************************************
  * Public Functions

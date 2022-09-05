@@ -27,7 +27,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <assert.h>
 #include <errno.h>
+
+#include <nuttx/pthread.h>
 
 #include "sched/sched.h"
 #include "task/task.h"
@@ -43,7 +46,7 @@ int pthread_cancel(pthread_t thread)
 
   /* First, make sure that the handle references a valid thread */
 
-  if (thread == 0)
+  if ((pid_t)thread == IDLE_PROCESS_ID)
     {
       /* pid == 0 is the IDLE task (in a single CPU configuration).  Callers
        * cannot cancel the IDLE task.
@@ -85,28 +88,15 @@ int pthread_cancel(pthread_t thread)
       pthread_exit(PTHREAD_CANCELED);
     }
 
-#ifdef CONFIG_PTHREAD_CLEANUP
-  /* Perform any stack pthread clean-up callbacks.
-   *
-   * REVISIT: In this case, the clean-up callback will execute on the
-   * thread of the caller of pthread cancel, not on the thread of
-   * the thread-to-be-canceled.  This is a problem when deferred
-   * cancellation is not supported because, for example, the clean-up
-   * function will be unable to unlock its own mutexes.
-   */
+  /* Refer to tls_get_info() */
 
-  pthread_cleanup_popall(tcb);
+#ifdef CONFIG_PTHREAD_CLEANUP
+  pthread_cleanup_popall(tcb->stack_alloc_ptr);
 #endif
 
   /* Complete pending join operations */
 
   pthread_completejoin((pid_t)thread, PTHREAD_CANCELED);
-
-#ifndef CONFIG_PTHREAD_MUTEX_UNSAFE
-  /* Recover any mutexes still held by the canceled thread */
-
-  pthread_mutex_inconsistent(tcb);
-#endif
 
   /* Then let nxtask_terminate do the real work */
 

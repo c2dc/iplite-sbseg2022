@@ -18,14 +18,14 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_XTENSA_SRC_ESP32_HARDWARE_XTENSA_ESP32_H
-#define __ARCH_XTENSA_SRC_ESP32_HARDWARE_XTENSA_ESP32_H
+#ifndef __ARCH_XTENSA_SRC_ESP32_HARDWARE_ESP32_RTCCNTL_H
+#define __ARCH_XTENSA_SRC_ESP32_HARDWARE_ESP32_RTCCNTL_H
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
-#include "hardware/esp32_soc.h"
+#include "esp32_soc.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -46,6 +46,12 @@
 #define RCLK_CONF_REG_OFFSET        0x0070
 #define RWDT_INT_ENA_REG_OFFSET     0x003c
 #define RWDT_INT_CLR_REG_OFFSET     0x0048
+
+/* The value that needs to be written to RTC_CNTL_WDT_WKEY to
+ * write-enable the wdt registers
+ */
+
+#define RTC_CNTL_WDT_WKEY_VALUE     0x50d83aa1
 
 /* CLK */
 #define CK_XTAL_32K_MASK            (BIT(30))
@@ -3191,4 +3197,4 @@
 #define RTC_IO_DBIAS_XTAL_32K_V  0x3
 #define RTC_IO_DBIAS_XTAL_32K_S  1
 
-#endif /* __ARCH_XTENSA_SRC_ESP32_HARDWARE_XTENSA_ESP32_H */
+#endif /* __ARCH_XTENSA_SRC_ESP32_HARDWARE_ESP32_RTCCNTL_H */

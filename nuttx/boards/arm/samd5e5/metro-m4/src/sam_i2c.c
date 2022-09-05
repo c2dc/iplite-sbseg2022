@@ -1,10 +1,6 @@
 /****************************************************************************
  * boards/arm/samd5e5/metro-m4/src/sam_i2c.c
  *
- *   Copyright 2020 Falker Automacao Agricola LTDA.
- *   Author: Leomar Mateus Radke <leomar@falker.com.br>
- *   Author: Ricardo Wartchow <wartchow@gmail.com>
- *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.  The
@@ -35,7 +31,7 @@
 
 #include <nuttx/i2c/i2c_master.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include "metro-m4.h"
 #include "sam_config.h"

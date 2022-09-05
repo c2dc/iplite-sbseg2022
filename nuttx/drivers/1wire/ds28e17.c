@@ -1,35 +1,20 @@
 /****************************************************************************
  * drivers/1wire/ds28e17.c
  *
- *   Copyright (C) 2018 Haltian Ltd. All rights reserved.
- *   Author: Juha Niskanen <juha.niskanen@haltian.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -39,13 +24,16 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <string.h>
 
 #include <nuttx/kmalloc.h>
 #include <nuttx/i2c/i2c_master.h>
-#include <nuttx/drivers/1wire.h>
+#include <nuttx/1wire/1wire_master.h>
+#include <nuttx/1wire/1wire_crc.h>
+#include <nuttx/1wire/1wire.h>
 
 #include <nuttx/1wire/ds28e17.h>
 
@@ -130,7 +118,9 @@ struct ds_i2c_inst_s                   /* Must be cast-compatible with i2c_maste
  * Private Function Prototypes
  ****************************************************************************/
 
+#ifdef CONFIG_I2C_RESET
 static int ds_i2c_reset(FAR struct i2c_master_s *i2cdev);
+#endif
 static int ds_i2c_transfer(FAR struct i2c_master_s *i2cdev,
                            FAR struct i2c_msg_s *msgs, int count);
 
@@ -142,9 +132,9 @@ static int ds_i2c_transfer(FAR struct i2c_master_s *i2cdev,
 
 static const struct i2c_ops_s ds_i2c_ops =
 {
-  .transfer = ds_i2c_transfer
+  ds_i2c_transfer
 #ifdef CONFIG_I2C_RESET
-  , .reset  = ds_i2c_reset
+  , ds_i2c_reset
 #endif
 };
 
@@ -165,7 +155,7 @@ static inline int ds_i2c_sem_wait(FAR struct i2c_master_s *i2cdev)
   FAR struct ds_i2c_inst_s *inst = (FAR struct ds_i2c_inst_s *)i2cdev;
   FAR struct onewire_master_s *master = inst->master;
 
-  return onewire_sem_wait(master);
+  return nxrmutex_lock(&master->devlock);
 }
 
 /****************************************************************************
@@ -181,7 +171,7 @@ static inline void ds_i2c_sem_post(FAR struct i2c_master_s *i2cdev)
   FAR struct ds_i2c_inst_s *inst = (FAR struct ds_i2c_inst_s *)i2cdev;
   FAR struct onewire_master_s *master = inst->master;
 
-  onewire_sem_post(master);
+  nxrmutex_unlock(&master->devlock);
 }
 
 static int ds_error(uint8_t buf[])
@@ -579,15 +569,15 @@ static int ds_i2c_setfrequency(FAR struct ds_i2c_inst_s *inst,
         break;
 
       default:
-        i2cerr("ERROR: bad I2C freq %u\n", frequency);
+        i2cerr("ERROR: bad I2C freq %lu\n", frequency);
         return -EINVAL;
     }
 
-  i2cinfo("Changing I2C freq %u -> %u\n", inst->frequency, frequency);
+  i2cinfo("Changing I2C freq %lu -> %lu\n", inst->frequency, frequency);
 
   /* Select DS28E17 */
 
-  ret = onewire_reset_select(&inst->slave);
+  ret = onewire_reset_select(master, inst->slave.romcode);
   if (ret < 0)
     {
       i2cerr("ERROR: cannot change I2C freq\n");
@@ -638,7 +628,7 @@ static int ds_i2c_process(FAR struct i2c_master_s *i2cdev,
 
   /* Select DS28E17 */
 
-  i = onewire_reset_select(&inst->slave);
+  i = onewire_reset_select(master, inst->slave.romcode);
   if (i < 0)
     {
       goto errout;
@@ -712,7 +702,7 @@ static int ds_i2c_process(FAR struct i2c_master_s *i2cdev,
             }
           else
             {
-              ret = onewire_reset_select(&inst->slave);
+              ret = onewire_reset_select(master, inst->slave.romcode);
             }
 
           if (ret < 0)
@@ -875,20 +865,10 @@ int ds28e17_search(FAR struct ds28e17_dev_s *priv,
                    void *arg)
 {
   FAR struct onewire_master_s *master = (FAR struct onewire_master_s *)priv;
-  int ret;
 
   DEBUGASSERT(master != NULL && cb_search != NULL);
 
-  ret = onewire_sem_wait(master);
-  if (ret < 0)
-    {
-      return ret;
-    }
-
-  ret = onewire_search(master, DS_FAMILY, false, cb_search, arg);
-  onewire_sem_post(master);
-
-  return ret;
+  return onewire_search(master, DS_FAMILY, false, cb_search, arg);
 }
 
 /****************************************************************************
@@ -937,7 +917,7 @@ FAR struct i2c_master_s *
 
   /* We need a recursive lock as this may be called from a search callback. */
 
-  ret = onewire_sem_wait(master);
+  ret = nxrmutex_lock(&master->devlock);
   if (ret < 0)
     {
       kmm_free(inst);
@@ -949,7 +929,7 @@ FAR struct i2c_master_s *
     {
       kmm_free(inst);
       i2cerr("ERROR: Failed to add slave\n");
-      onewire_sem_post(master);
+      nxrmutex_unlock(&master->devlock);
       return NULL;
     }
 
@@ -967,7 +947,7 @@ FAR struct i2c_master_s *
       ds28e17_selftest(inst);
     }
 
-  onewire_sem_post(master);
+  nxrmutex_unlock(&master->devlock);
   return (struct i2c_master_s *)inst;
 }
 
@@ -993,7 +973,7 @@ int ds28e17_lower_half_unregister(FAR struct ds28e17_dev_s *priv,
   FAR struct onewire_master_s *master = inst->master;
   int ret;
 
-  ret = onewire_sem_wait(master);
+  ret = nxrmutex_lock(&master->devlock);
   if (ret < 0)
     {
       return ret;
@@ -1004,12 +984,12 @@ int ds28e17_lower_half_unregister(FAR struct ds28e17_dev_s *priv,
     {
       kmm_free(inst);
       i2cerr("ERROR: Failed to remove slave\n");
-      onewire_sem_post(master);
+      nxrmutex_unlock(&master->devlock);
       return ret;
     }
 
   kmm_free(inst);
-  onewire_sem_post(master);
+  nxrmutex_unlock(&master->devlock);
 
   return OK;
 }

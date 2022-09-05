@@ -1,5 +1,5 @@
 /****************************************************************************
- * system/cu/cu_main.c
+ * apps/system/cu/cu_main.c
  *
  *   Copyright (C) 2014 sysmocom - s.f.m.c. GmbH. All rights reserved.
  *   Author: Harald Welte <hwelte@sysmocom.de>
@@ -129,11 +129,7 @@ static FAR void *cu_listener(FAR void *parameter)
 
 static void sigint(int sig)
 {
-  pthread_cancel(g_cu.listener);
-  tcflush(g_cu.outfd, TCIOFLUSH);
-  close(g_cu.outfd);
-  close(g_cu.infd);
-  exit(0);
+  g_cu.force_exit = true;
 }
 
 #ifdef CONFIG_SERIAL_TERMIOS
@@ -146,14 +142,16 @@ static int set_termios(int fd, int rate, enum parity_mode parity,
 
   tio = g_tio_dev;
 
+  tio.c_cflag &= ~(PARENB | PARODD | CRTSCTS);
+
   switch (parity)
     {
       case PARITY_EVEN:
-        tio.c_cflag = PARENB;
+        tio.c_cflag |= PARENB;
         break;
 
       case PARITY_ODD:
-        tio.c_cflag = PARENB | PARODD;
+        tio.c_cflag |= PARENB | PARODD;
         break;
 
       case PARITY_NONE:
@@ -457,7 +455,7 @@ int main(int argc, FAR char *argv[])
 
   /* Send messages and get responses -- forever */
 
-  for (; ; )
+  while (!g_cu.force_exit)
     {
       int ch = getc(stdin);
 

@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <sys/stat.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdarg.h>
@@ -31,6 +32,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sched.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/kmalloc.h>
@@ -73,7 +75,7 @@
  *        unless one of this name already exists.
  *   Optional parameters.  When the O_CREAT flag is specified, two optional
  *     parameters are expected:
- *     1. mode_t mode (ignored), and
+ *     1. mode_t mode, and
  *     2. unsigned int value.  This initial value of the semaphore. Valid
  *        initial values of the semaphore must be less than or equal to
  *        SEM_VALUE_MAX.
@@ -85,7 +87,7 @@
  *
  ****************************************************************************/
 
-FAR sem_t *sem_open (FAR const char *name, int oflags, ...)
+FAR sem_t *sem_open(FAR const char *name, int oflags, ...)
 {
   FAR struct inode *inode;
   FAR struct nsem_inode_s *nsem;
@@ -112,7 +114,8 @@ FAR sem_t *sem_open (FAR const char *name, int oflags, ...)
 
   /* Get the full path to the semaphore */
 
-  snprintf(fullpath, MAX_SEMPATH, CONFIG_FS_NAMED_SEMPATH "/%s", name);
+  snprintf(fullpath, MAX_SEMPATH,
+           CONFIG_FS_NAMED_SEMAPHORES_VFS_PATH "/%s", name);
 
   /* Get the inode for this semaphore.  This should succeed if the
    * semaphore has already been created.  In this case, inode_find()
@@ -173,11 +176,9 @@ FAR sem_t *sem_open (FAR const char *name, int oflags, ...)
        */
 
       va_start(ap, oflags);
-      mode  = va_arg(ap, mode_t);
+      mode  = va_arg(ap, mode_t) & ~getumask();
       value = va_arg(ap, unsigned);
       va_end(ap);
-
-      UNUSED(mode);
 
       /* Check the semaphore value */
 
@@ -198,7 +199,7 @@ FAR sem_t *sem_open (FAR const char *name, int oflags, ...)
           goto errout_with_lock;
         }
 
-      ret = inode_reserve(fullpath, &inode);
+      ret = inode_reserve(fullpath, mode, &inode);
       inode_semgive();
 
       if (ret < 0)

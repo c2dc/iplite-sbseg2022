@@ -36,18 +36,6 @@
 #if CONFIG_NETDB_DNSCLIENT_ENTRIES > 0
 
 /****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-/* Use clock monotonic, if possible */
-
-#ifdef CONFIG_CLOCK_MONOTONIC
-#  define DNS_CLOCK CLOCK_MONOTONIC
-#else
-#  define DNS_CLOCK CLOCK_REALTIME
-#endif
-
-/****************************************************************************
  * Private Types
  ****************************************************************************/
 
@@ -148,19 +136,44 @@ void dns_save_answer(FAR const char *hostname,
   entry = &g_dns_cache[ndx];
 
 #if CONFIG_NETDB_DNSCLIENT_LIFESEC > 0
-  /* Get the current time, using CLOCK_MONOTONIC if possible */
+  /* Get the current time */
 
-  clock_gettime(DNS_CLOCK, &now);
+  clock_gettime(CLOCK_MONOTONIC, &now);
   entry->ctime = (time_t)now.tv_sec;
 #endif
 
-  strncpy(entry->name, hostname, CONFIG_NETDB_DNSCLIENT_NAMESIZE);
+  strlcpy(entry->name, hostname, CONFIG_NETDB_DNSCLIENT_NAMESIZE);
   memcpy(&entry->addr, addr, naddr * sizeof(*addr));
   entry->naddr = naddr;
 
   /* Save the updated head index */
 
   g_dns_head = next;
+  dns_semgive();
+}
+
+/****************************************************************************
+ * Name: dns_clear_answer
+ *
+ * Description:
+ *   Clear the resolved hostname in the DNS cache
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+void dns_clear_answer(void)
+{
+  /* Get exclusive access to the DNS cache */
+
+  dns_semtake();
+
+  /* Reset the circular of DNS cache */
+
+  g_dns_head = 0;
+  g_dns_tail = 0;
+
   dns_semgive();
 }
 
@@ -203,9 +216,9 @@ int dns_find_answer(FAR const char *hostname, FAR union dns_addr_u *addr,
   dns_semtake();
 
 #if CONFIG_NETDB_DNSCLIENT_LIFESEC > 0
-  /* Get the current time, using CLOCK_MONOTONIC if possible */
+  /* Get the current time */
 
-  ret = clock_gettime(DNS_CLOCK, &now);
+  ret = clock_gettime(CLOCK_MONOTONIC, &now);
 #endif
 
   for (ndx = g_dns_tail; ndx != g_dns_head; ndx = next)

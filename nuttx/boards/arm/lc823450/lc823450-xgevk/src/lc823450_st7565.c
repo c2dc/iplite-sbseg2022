@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -36,7 +37,7 @@
 #include <nuttx/lcd/lcd.h>
 #include <nuttx/lcd/st7565.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "lc823450_gpio.h"
 #include "lc823450_spi.h"
 #include "lc823450-xgevk.h"
@@ -57,19 +58,19 @@
  * Private Data
  ****************************************************************************/
 
-static void lc823450_st7565_reset(FAR struct st7565_lcd_s *lcd, bool on);
-static void lc823450_st7565_select(FAR struct st7565_lcd_s *lcd);
-static void lc823450_st7565_deselect(FAR struct st7565_lcd_s *lcd);
-static void lc823450_st7565_cmddata(FAR struct st7565_lcd_s *lcd,
+static void lc823450_st7565_reset(struct st7565_lcd_s *lcd, bool on);
+static void lc823450_st7565_select(struct st7565_lcd_s *lcd);
+static void lc823450_st7565_deselect(struct st7565_lcd_s *lcd);
+static void lc823450_st7565_cmddata(struct st7565_lcd_s *lcd,
                                     const uint8_t cmd);
-static int lc823450_st7565_senddata(FAR struct st7565_lcd_s *lcd,
-                                    FAR const uint8_t *data,
+static int lc823450_st7565_senddata(struct st7565_lcd_s *lcd,
+                                    const uint8_t *data,
                                     int size);
-static int lc823450_st7565_backlight(FAR struct st7565_lcd_s *lcd,
+static int lc823450_st7565_backlight(struct st7565_lcd_s *lcd,
                                      int level);
 
-static FAR struct spi_dev_s *g_spidev;
-static FAR struct lcd_dev_s *g_lcddev;
+static struct spi_dev_s *g_spidev;
+static struct lcd_dev_s *g_lcddev;
 
 static struct st7565_lcd_s g_st7565_dev =
 {
@@ -89,7 +90,7 @@ static struct st7565_lcd_s g_st7565_dev =
  * Name: lc823450_st7565_reset
  ****************************************************************************/
 
-static void lc823450_st7565_reset(FAR struct st7565_lcd_s *lcd, bool on)
+static void lc823450_st7565_reset(struct st7565_lcd_s *lcd, bool on)
 {
   if (on)
     {
@@ -105,7 +106,7 @@ static void lc823450_st7565_reset(FAR struct st7565_lcd_s *lcd, bool on)
  * Name: lc823450_st7565_select
  ****************************************************************************/
 
-static void lc823450_st7565_select(FAR struct st7565_lcd_s *lcd)
+static void lc823450_st7565_select(struct st7565_lcd_s *lcd)
 {
   lc823450_gpio_write(GPIO_LCD_CS, false);
 }
@@ -114,7 +115,7 @@ static void lc823450_st7565_select(FAR struct st7565_lcd_s *lcd)
  * Name: lc823450_st7565_deselect
  ****************************************************************************/
 
-static void lc823450_st7565_deselect(FAR struct st7565_lcd_s *lcd)
+static void lc823450_st7565_deselect(struct st7565_lcd_s *lcd)
 {
   lc823450_gpio_write(GPIO_LCD_CS, true);
 }
@@ -123,7 +124,7 @@ static void lc823450_st7565_deselect(FAR struct st7565_lcd_s *lcd)
  * Name: lc823450_st7565_cmddata
  ****************************************************************************/
 
-static void lc823450_st7565_cmddata(FAR struct st7565_lcd_s *lcd,
+static void lc823450_st7565_cmddata(struct st7565_lcd_s *lcd,
                                     const uint8_t cmd)
 {
   lc823450_gpio_write(GPIO_LCD_A0, !cmd);
@@ -133,8 +134,8 @@ static void lc823450_st7565_cmddata(FAR struct st7565_lcd_s *lcd,
  * Name: lc823450_st7565_senddata
  ****************************************************************************/
 
-static int lc823450_st7565_senddata(FAR struct st7565_lcd_s *lcd,
-                                    FAR const uint8_t *data,
+static int lc823450_st7565_senddata(struct st7565_lcd_s *lcd,
+                                    const uint8_t *data,
                                     int size)
 {
   SPI_SNDBLOCK(g_spidev, data, size);
@@ -145,7 +146,7 @@ static int lc823450_st7565_senddata(FAR struct st7565_lcd_s *lcd,
  * Name: lc823450_st7565_backlight
  ****************************************************************************/
 
-static int lc823450_st7565_backlight(FAR struct st7565_lcd_s *lcd, int level)
+static int lc823450_st7565_backlight(struct st7565_lcd_s *lcd, int level)
 {
   return 0;
 }
@@ -174,7 +175,7 @@ int board_lcd_initialize(void)
  * Name: board_lcd_getdev
  ****************************************************************************/
 
-FAR struct lcd_dev_s *board_lcd_getdev(int lcddev)
+struct lcd_dev_s *board_lcd_getdev(int lcddev)
 {
   g_lcddev = st7565_initialize(&g_st7565_dev, lcddev);
   if (!g_lcddev)

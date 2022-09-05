@@ -35,8 +35,9 @@
 #include <stdlib.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/spinlock.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "lc823450_dma.h"
 #include "lc823450_syscontrol.h"
 #include <arch/chip/clk.h>
@@ -170,7 +171,7 @@ static int dma_interrupt_core(void *context)
  * Name: dma_interrupt
  ****************************************************************************/
 
-static int dma_interrupt(int irq, FAR void *context, FAR void *arg)
+static int dma_interrupt(int irq, void *context, void *arg)
 {
   int i;
   uint32_t stat;
@@ -495,9 +496,9 @@ void lc823450_dmareauest_dir(DMA_HANDLE handle, uint8_t dmarequest, int m2p)
  *   gives the caller exclusive access to the DMA channel.
  *
  * Returned Value:
- *   One success, this function returns a non-NULL, void* DMA channel
- *   handle.  NULL is returned on any failure.  This function can fail only
- *   if no DMA channel is available.
+ *   On success, this function returns a non-NULL, void* DMA channel handle.
+ *   NULL is returned on any failure.  This function can fail only if no DMA
+ *   channel is available.
  *
  ****************************************************************************/
 

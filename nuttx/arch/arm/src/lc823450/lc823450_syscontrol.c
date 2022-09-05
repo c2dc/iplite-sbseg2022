@@ -23,17 +23,16 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
-#include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/spinlock.h>
 #include <stdint.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "lc823450_gpio.h"
 #include "lc823450_syscontrol.h"
 #include <arch/chip/clk.h>
@@ -66,16 +65,16 @@ uint32_t get_cpu_ver(void)
   switch (reg)
     {
       case MODEM_MAV_ES1:
-        sinfo("ES1 \n");
+        sinfo("ES1\n");
         break;
 
       case MODEM_MAV_ES2:
-        sinfo("ES2 \n");
+        sinfo("ES2\n");
         ret = 1;
         break;
 
       default:
-        sinfo("??? \n");
+        sinfo("???\n");
         break;
     }
 
@@ -118,7 +117,7 @@ void mod_stby_regs(uint32_t enabits, uint32_t disbits)
       modifyreg32(ISOCNT, 0, enabits);
     }
 
-  /* sinfo("ISOCNT=0x%x, LSISTBY=0x%x \n",
+  /* sinfo("ISOCNT=0x%x, LSISTBY=0x%x\n",
    * getreg32(ISOCNT), getreg32(LSISTBY));
    */
 }

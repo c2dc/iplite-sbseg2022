@@ -33,21 +33,6 @@
 
 #include "sched/sched.h"
 #include "up_internal.h"
-#include "up_arch.h"
-
-#ifndef CONFIG_DISABLE_SIGNALS
-
-/****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-/****************************************************************************
- * Private Data
- ****************************************************************************/
-
-/****************************************************************************
- * Private Functions
- ****************************************************************************/
 
 /****************************************************************************
  * Public Functions
@@ -87,8 +72,8 @@
 
 void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
 {
-  sinfo("tcb=0x%p sigdeliver=0x%p\n", tcb, sigdeliver);
-  sinfo("rtcb=0x%p g_current_regs=0x%p\n", this_task(), g_current_regs);
+  sinfo("tcb=%p sigdeliver=%p\n", tcb, sigdeliver);
+  sinfo("rtcb=%p g_current_regs=%p\n", this_task(), g_current_regs);
 
   /* Refuse to handle nested signal actions */
 
@@ -179,5 +164,3 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
         }
     }
 }
-
-#endif /* !CONFIG_DISABLE_SIGNALS */

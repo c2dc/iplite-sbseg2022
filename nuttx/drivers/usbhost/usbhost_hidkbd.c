@@ -119,7 +119,7 @@
  * CODEC is enabled.
  */
 
-#ifndef CONFIG_LIB_KBDCODEC
+#ifndef CONFIG_LIBC_KBDCODEC
 #  undef CONFIG_HIDKBD_ENCODED
 #endif
 
@@ -329,32 +329,35 @@ static int  usbhost_poll(FAR struct file *filep, FAR struct pollfd *fds,
 
 static const struct usbhost_id_s g_hidkbd_id =
 {
-  USB_CLASS_HID,            /* base     */
+  USB_CLASS_HID,            /* base */
   USBHID_SUBCLASS_BOOTIF,   /* subclass */
-  USBHID_PROTOCOL_KEYBOARD, /* proto    */
-  0,                        /* vid      */
-  0                         /* pid      */
+  USBHID_PROTOCOL_KEYBOARD, /* proto */
+  0,                        /* vid */
+  0                         /* pid */
 };
 
 /* This is the USB host storage class's registry entry */
 
 static struct usbhost_registry_s g_hidkbd =
 {
-  NULL,                     /* flink     */
-  usbhost_create,           /* create    */
-  1,                        /* nids      */
-  &g_hidkbd_id              /* id[]      */
+  NULL,                     /* flink */
+  usbhost_create,           /* create */
+  1,                        /* nids */
+  &g_hidkbd_id              /* id[] */
 };
 
 static const struct file_operations g_hidkbd_fops =
 {
-  usbhost_open,             /* open      */
-  usbhost_close,            /* close     */
-  usbhost_read,             /* read      */
-  usbhost_write,            /* write     */
-  NULL,                     /* seek      */
-  NULL,                     /* ioctl     */
-  usbhost_poll              /* poll      */
+  usbhost_open,             /* open */
+  usbhost_close,            /* close */
+  usbhost_read,             /* read */
+  usbhost_write,            /* write */
+  NULL,                     /* seek */
+  NULL,                     /* ioctl */
+  usbhost_poll              /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL                    /* unlink */
+#endif
 };
 
 /* This is a bitmap that is used to allocate device names /dev/kbda-z. */
@@ -693,7 +696,7 @@ static void usbhost_pollnotify(FAR struct usbhost_state_s *priv)
           fds->revents |= (fds->events & POLLIN);
           if (fds->revents != 0)
             {
-              uinfo("Report events: %02x\n", fds->revents);
+              uinfo("Report events: %08" PRIx32 "\n", fds->revents);
               nxsem_post(fds->sem);
             }
         }
@@ -1735,20 +1738,20 @@ static inline int usbhost_devinit(FAR struct usbhost_state_s *priv)
 
   g_priv = priv;
 
-  priv->pollpid = kthread_create("kbdpoll", CONFIG_HIDKBD_DEFPRIO,
-                                 CONFIG_HIDKBD_STACKSIZE,
-                                 (main_t)usbhost_kbdpoll,
-                                 (FAR char * const *)NULL);
-  if (priv->pollpid < 0)
+  ret = kthread_create("kbdpoll", CONFIG_HIDKBD_DEFPRIO,
+                       CONFIG_HIDKBD_STACKSIZE, (main_t)usbhost_kbdpoll,
+                       (FAR char * const *)NULL);
+  if (ret < 0)
     {
       /* Failed to started the poll thread...
        * probably due to memory resources
        */
 
       usbhost_givesem(&g_exclsem);
-      ret = (int)priv->pollpid;
       goto errout;
     }
+
+  priv->pollpid = (pid_t)ret;
 
   /* Now wait for the poll task to get properly initialized */
 

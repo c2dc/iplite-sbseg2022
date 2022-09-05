@@ -20,6 +20,8 @@
 
 include $(TOPDIR)/Make.defs
 
+CSRCS = drivers_initialize.c
+
 # Include support for various drivers.  Each Make.defs file will add its
 # files to the source file list, add its DEPPATH info, and will add
 # the appropriate paths to the VPATH variable
@@ -28,15 +30,19 @@ include analog/Make.defs
 include audio/Make.defs
 include bch/Make.defs
 include can/Make.defs
+include clk/Make.defs
 include crypto/Make.defs
+include math/Make.defs
 include motor/Make.defs
 include i2c/Make.defs
 include i2s/Make.defs
+include ipcc/Make.defs
 include input/Make.defs
 include ioexpander/Make.defs
 include lcd/Make.defs
 include leds/Make.defs
 include loop/Make.defs
+include misc/Make.defs
 include mmcsd/Make.defs
 include modem/Make.defs
 include mtd/Make.defs
@@ -62,33 +68,10 @@ include contactless/Make.defs
 include 1wire/Make.defs
 include rf/Make.defs
 include rc/Make.defs
+include segger/Make.defs
 
 ifeq ($(CONFIG_SPECIFIC_DRIVERS),y)
-include platform/Make.defs
-endif
-
-ifeq ($(CONFIG_DEV_SIMPLE_ADDRENV),y)
-  CSRCS += addrenv.c
-endif
-
-CSRCS += dev_null.c dev_zero.c
-
-ifeq ($(CONFIG_LWL_CONSOLE),y)
-  CSRCS += lwl_console.c
-endif
-
-ifneq ($(CONFIG_DISABLE_MOUNTPOINT),y)
-  CSRCS += ramdisk.c
-ifeq ($(CONFIG_DRVR_MKRD),y)
-  CSRCS += mkrd.c
-endif
-ifeq ($(CONFIG_DRVR_WRITEBUFFER),y)
-  CSRCS += rwbuffer.c
-else
-ifeq ($(CONFIG_DRVR_READAHEAD),y)
-  CSRCS += rwbuffer.c
-endif
-endif
+-include platform/Make.defs
 endif
 
 AOBJS = $(ASRCS:.S=$(OBJEXT))
@@ -100,7 +83,7 @@ OBJS = $(AOBJS) $(COBJS)
 BIN = libdrivers$(LIBEXT)
 
 all: $(BIN)
-.PHONY: depend clean distclean
+.PHONY: context depend clean distclean
 
 $(AOBJS): %$(OBJEXT): %.S
 	$(call ASSEMBLE, $<, $@)
@@ -110,6 +93,8 @@ $(COBJS): %$(OBJEXT): %.c
 
 $(BIN): $(OBJS)
 	$(call ARCHIVE, $@, $(OBJS))
+
+context::
 
 makedepfile: $(CSRCS:.c=.ddc) $(ASRCS:.S=.dds)
 	$(call CATFILE, Make.dep, $^)
@@ -125,7 +110,7 @@ clean:
 	$(call DELFILE, $(BIN))
 	$(call CLEAN)
 
-distclean: clean
+distclean:: clean
 	$(call DELFILE, Make.dep)
 	$(call DELFILE, .depend)
 

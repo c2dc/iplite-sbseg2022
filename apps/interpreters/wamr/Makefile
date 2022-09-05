@@ -1,5 +1,5 @@
 ############################################################################
-# interpreters/wamr/Makefile
+# apps/interpreters/wamr/Makefile
 #
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -23,16 +23,7 @@ include $(APPDIR)/Make.defs
 WAMR_VERSION  = $(patsubst "%",%,$(strip $(CONFIG_INTERPRETERS_WAMR_VERSION)))
 WAMR_UNPACK   = wamr
 
-# Tarball of main branch and tagged release have little difference
-# in name after unpack and URL
-
-ifeq ($(WAMR_VERSION), main)
-WAMR_VERSION_STUB  = 
-else
-WAMR_VERSION_STUB  = WAMR-
-endif
-
-WAMR_TARBALL  = $(WAMR_VERSION_STUB)$(WAMR_VERSION).zip
+WAMR_TARBALL  = $(WAMR_VERSION).zip
 WAMR_URL_BASE = https://github.com/bytecodealliance/wasm-micro-runtime/archive/
 WAMR_URL      = $(WAMR_URL_BASE)/$(WAMR_TARBALL)
 
@@ -40,12 +31,14 @@ WAMR_URL      = $(WAMR_URL_BASE)/$(WAMR_TARBALL)
 
 VPATH += $(WAMR_UNPACK)/product-mini/platforms/nuttx
 
+ifeq ($(CONFIG_INTERPRETERS_IWASM_TASK),y)
 MAINSRC = main.c
 
 PROGNAME  = iwasm
 PRIORITY  = $(CONFIG_INTERPRETERS_WAMR_PRIORITY)
 STACKSIZE = $(CONFIG_INTERPRETERS_WAMR_STACKSIZE)
 MODULE    = $(CONFIG_INTERPRETERS_WAMR)
+endif
 
 $(WAMR_TARBALL):
 	$(Q) echo "Downloading $(WAMR_TARBALL)"
@@ -54,12 +47,16 @@ $(WAMR_TARBALL):
 $(WAMR_UNPACK): $(WAMR_TARBALL)
 	$(Q) echo "Unpacking $(WAMR_TARBALL) to $(WAMR_UNPACK)"
 	$(Q) unzip $(WAMR_TARBALL)
-	$(Q) mv wasm-micro-runtime-$(WAMR_VERSION_STUB)$(WAMR_VERSION) $(WAMR_UNPACK)
+	$(Q) mv wasm-micro-runtime-$(WAMR_VERSION) $(WAMR_UNPACK)
+	$(Q) touch $(WAMR_UNPACK)
 
+# Download and unpack tarball if no git repo found
+ifeq ($(wildcard $(WAMR_UNPACK)/.git),)
 context:: $(WAMR_UNPACK)
 
 distclean::
 	$(call DELDIR, $(WAMR_UNPACK))
 	$(call DELFILE, $(WAMR_TARBALL))
+endif
 
 include $(APPDIR)/Application.mk

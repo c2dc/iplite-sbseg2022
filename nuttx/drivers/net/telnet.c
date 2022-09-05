@@ -227,7 +227,7 @@ static const struct file_operations g_factory_fops =
  * characters received via Telenet (via Ctrl-C SIGINT, in particular).
  */
 
-static pid_t                g_telnet_io_kthread;
+static pid_t                g_telnet_io_kthread = INVALID_PROCESS_ID;
 static struct telnet_dev_s *g_telnet_clients[CONFIG_TELNET_MAXLCLIENTS];
 static sem_t                g_iosem       = SEM_INITIALIZER(0);
 static sem_t                g_clients_sem = SEM_INITIALIZER(1);
@@ -866,6 +866,13 @@ static ssize_t telnet_read(FAR struct file *filep, FAR char *buffer,
     }
   while (nread == 0);
 
+  /* Notify the I/O thread the rxbuffer is available */
+
+  if (nread > 0)
+    {
+      nxsem_post(&g_iosem);
+    }
+
   /* Returned Value:
    *
    * nread > 0:  The number of characters copied into the user buffer by
@@ -999,7 +1006,7 @@ static int telnet_session(FAR struct telnet_session_s *session)
   priv->td_pending   = 0;
   priv->td_offset    = 0;
 #ifdef HAVE_SIGNALS
-  priv->td_pid       = -1;
+  priv->td_pid       = INVALID_PROCESS_ID;
 #endif
 #ifdef CONFIG_TELNET_SUPPORT_NAWS
   priv->td_rows      = 25;
@@ -1085,7 +1092,7 @@ static int telnet_session(FAR struct telnet_session_s *session)
 
   /* Has the I/O thread been started? */
 
-  if (g_telnet_io_kthread == (pid_t)0)
+  if (g_telnet_io_kthread == INVALID_PROCESS_ID)
     {
       /* g_iosem is used for signaling and, hence, must not participate in
        * priority inheritance.
@@ -1095,10 +1102,13 @@ static int telnet_session(FAR struct telnet_session_s *session)
 
       /* Start the I/O thread */
 
-      g_telnet_io_kthread =
-        kthread_create("telnet_io", CONFIG_TELNET_IOTHREAD_PRIORITY,
-                       CONFIG_TELNET_IOTHREAD_STACKSIZE, telnet_io_main,
-                       NULL);
+      ret = kthread_create("telnet_io", CONFIG_TELNET_IOTHREAD_PRIORITY,
+                           CONFIG_TELNET_IOTHREAD_STACKSIZE, telnet_io_main,
+                           NULL);
+      if (ret > 0)
+        {
+          g_telnet_io_kthread = ret;
+        }
     }
 
   /* Save ourself in the list of Telnet client threads */
@@ -1270,7 +1280,10 @@ static int telnet_io_main(int argc, FAR char** argv)
       for (i = 0; i < CONFIG_TELNET_MAXLCLIENTS; i++)
         {
           priv = g_telnet_clients[i];
-          if (priv != NULL && !(priv->td_fds.revents & (POLLHUP | POLLERR)))
+          if (priv != NULL &&
+              !(priv->td_fds.revents & (POLLHUP | POLLERR)) &&
+              (CONFIG_TELNET_RXBUFFER_SIZE -
+               priv->td_pending - priv->td_offset) > 0)
             {
               priv->td_fds.sem     = &g_iosem;
               priv->td_fds.events  = POLLIN | POLLHUP | POLLERR;

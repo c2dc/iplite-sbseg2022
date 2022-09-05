@@ -43,7 +43,6 @@
 #include <nuttx/spi/qspi.h>
 
 #include "arm_internal.h"
-#include "arm_arch.h"
 #include "barriers.h"
 
 #include "sam_gpio.h"
@@ -55,7 +54,7 @@
 #include "hardware/sam_qspi.h"
 #include "hardware/sam_pinmap.h"
 
-#ifdef CONFIG_SAMV7_QSPI
+#if defined(CONFIG_SAMV7_QSPI) && !defined(CONFIG_SAMV7_QSPI_SPI_MODE)
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -257,7 +256,7 @@ static void     qspi_memcpy(uint8_t *dest, const uint8_t *src,
 #ifdef QSPI_USE_INTERRUPTS
 static int     qspi_interrupt(struct sam_qspidev_s *priv);
 #ifdef CONFIG_SAMV7_QSPI
-static int     qspi0_interrupt(int irq, void *context, FAR void *arg);
+static int     qspi0_interrupt(int irq, void *context, void *arg);
 #endif
 #endif
 
@@ -272,8 +271,8 @@ static int      qspi_command(struct qspi_dev_s *dev,
                   struct qspi_cmdinfo_s *cmdinfo);
 static int      qspi_memory(struct qspi_dev_s *dev,
                   struct qspi_meminfo_s *meminfo);
-static FAR void *qspi_alloc(FAR struct qspi_dev_s *dev, size_t buflen);
-static void     qspi_free(FAR struct qspi_dev_s *dev, FAR void *buffer);
+static void *qspi_alloc(struct qspi_dev_s *dev, size_t buflen);
+static void     qspi_free(struct qspi_dev_s *dev, void *buffer);
 
 /* Initialization */
 
@@ -1581,7 +1580,7 @@ static int qspi_memory(struct qspi_dev_s *dev,
  *
  ****************************************************************************/
 
-static FAR void *qspi_alloc(FAR struct qspi_dev_s *dev, size_t buflen)
+static void *qspi_alloc(struct qspi_dev_s *dev, size_t buflen)
 {
   /* Here we exploit the internal knowledge the kmm_malloc() will return
    * memory aligned to 64-bit addresses.  The buffer length must be large
@@ -1606,7 +1605,7 @@ static FAR void *qspi_alloc(FAR struct qspi_dev_s *dev, size_t buflen)
  *
  ****************************************************************************/
 
-static void qspi_free(FAR struct qspi_dev_s *dev, FAR void *buffer)
+static void qspi_free(struct qspi_dev_s *dev, void *buffer)
 {
   if (buffer)
     {

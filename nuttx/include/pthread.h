@@ -29,15 +29,12 @@
 #include <nuttx/compiler.h>  /* Compiler settings, noreturn_function */
 
 #include <sys/types.h>       /* Needed for general types */
-#include <sys/prctl.h>       /* Needed by pthread_[set|get]name_np */
-
 #include <stdint.h>          /* C99 fixed width integer types */
 #include <stdbool.h>         /* C99 boolean types */
 #include <unistd.h>          /* For getpid */
 #include <signal.h>          /* Needed for sigset_t, includes this file */
 #include <time.h>            /* Needed for struct timespec */
-
-#include <nuttx/semaphore.h> /* For sem_t and SEM_PRIO_* defines */
+#include <semaphore.h>       /* For sem_t and SEM_PRIO_* defines */
 
 #ifdef CONFIG_PTHREAD_SPINLOCKS
 /* The architecture specific spinlock.h header file must provide the
@@ -189,18 +186,6 @@
 #define _PTHREAD_MFLAGS_INCONSISTENT  (1 << 1) /* Mutex is in an inconsistent state */
 #define _PTHREAD_MFLAGS_NRECOVERABLE  (1 << 2) /* Inconsistent mutex has been unlocked */
 
-/* Definitions to map some non-standard, BSD thread management interfaces to
- * the non-standard Linux-like prctl() interface.  Since these are simple
- * mappings to prctl, they will return 0 on success and -1 on failure with the
- * error number in errno.  This is an inconsistency with the pthread interfaces.
- */
-
-#define pthread_setname_np(thread, name) \
-  prctl((int)PR_SET_NAME_EXT, (char*)name, (int)thread)
-
-#define pthread_getname_np(thread, name) \
-  prctl((int)PR_GET_NAME_EXT, (char*)name, (int)thread)
-
 /********************************************************************************
  * Public Type Definitions
  ********************************************************************************/
@@ -224,6 +209,8 @@ typedef FAR void *pthread_addr_t;
 
 typedef CODE pthread_addr_t (*pthread_startroutine_t)(pthread_addr_t);
 typedef pthread_startroutine_t pthread_func_t;
+
+typedef void (*pthread_trampoline_t)(pthread_startroutine_t, pthread_addr_t);
 
 struct pthread_attr_s
 {
@@ -481,6 +468,11 @@ int pthread_attr_setstack(FAR pthread_attr_t *attr,
 int pthread_attr_getstack(FAR pthread_attr_t *attr,
                           FAR void **stackaddr, FAR long *stacksize);
 
+/* Set or get the name of a thread */
+
+int pthread_setname_np(pthread_t thread, FAR const char *name);
+int pthread_getname_np(pthread_t thread, FAR char *name, size_t len);
+
 /* Get run-time stack address and size */
 
 FAR void *pthread_get_stackaddr_np(pthread_t thread);
@@ -693,6 +685,10 @@ int pthread_spin_lock(FAR pthread_spinlock_t *lock);
 int pthread_spin_trylock(FAR pthread_spinlock_t *lock);
 int pthread_spin_unlock(FAR pthread_spinlock_t *lock);
 #endif
+
+int pthread_atfork(CODE void (*prepare)(void),
+                   CODE void (*parent)(void),
+                   CODE void (*child)(void));
 
 #ifdef __cplusplus
 }

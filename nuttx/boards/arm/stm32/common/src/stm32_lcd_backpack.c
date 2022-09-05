@@ -58,9 +58,9 @@
 
 int board_lcd_backpack_init(int devno, int busno, int rows, int cols)
 {
-  FAR struct pcf8574_lcd_backpack_config_s cfg =
+  struct pcf8574_lcd_backpack_config_s cfg =
              LCD_I2C_BACKPACK_CFG_SAINSMART;
-  FAR struct i2c_master_s *i2c;
+  struct i2c_master_s *i2c;
   char devpath[12];
   int ret;
 
@@ -82,7 +82,7 @@ int board_lcd_backpack_init(int devno, int busno, int rows, int cols)
       return -ENODEV;
     }
 
-  /* Regiter the Segment LCD */
+  /* Register the Segment LCD */
 
   snprintf(devpath, 12, "/dev/slcd%d", devno);
   ret = pcf8574_lcd_backpack_register(devpath, i2c, &cfg);

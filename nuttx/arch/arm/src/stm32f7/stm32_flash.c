@@ -61,7 +61,7 @@
 #include "barriers.h"
 
 #include "hardware/stm32_flash.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -454,4 +454,9 @@ ssize_t up_progmem_write(size_t addr, const void *buf, size_t count)
 
   sem_unlock();
   return written;
+}
+
+uint8_t up_progmem_erasestate(void)
+{
+  return FLASH_ERASEDVALUE;
 }

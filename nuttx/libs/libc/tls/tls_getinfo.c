@@ -27,11 +27,9 @@
 #include <stdint.h>
 #include <assert.h>
 
-#include <nuttx/arch.h>
 #include <nuttx/tls.h>
-#include <arch/tls.h>
 
-#ifndef CONFIG_TLS_ALIGNED
+#if !defined(up_tls_info) && (defined(__KERNEL__) || !defined(CONFIG_TLS_ALIGNED))
 
 /****************************************************************************
  * Public Functions
@@ -43,7 +41,7 @@
  * Description:
  *   Return a reference to the tls_info_s structure.  This is used as part
  *   of the internal implementation of tls_get/set_elem() and ONLY for the
- *   where CONFIG_TLS_ALIGNED is *not* defined
+ *   where CONFIG_TLS_ALIGNED is *not* defined or __KERNEL__ is defined.
  *
  * Input Parameters:
  *   None
@@ -63,8 +61,8 @@ FAR struct tls_info_s *tls_get_info(void)
   ret = nxsched_get_stackinfo(0, &stackinfo);
   if (ret >= 0)
     {
-      /* This currently assumes a push-down stack.  The TLS data lies at the
-       * lowest address of the stack allocation.
+      /* The TLS data lies at the lowest address of the stack allocation.
+       * This is true for both push-up and push-down stacks.
        */
 
       info = (FAR struct tls_info_s *)stackinfo.stack_alloc_ptr;
@@ -73,4 +71,4 @@ FAR struct tls_info_s *tls_get_info(void)
   return info;
 }
 
-#endif /* !CONFIG_TLS_ALIGNED */
+#endif /* !defined(up_tls_info) && (defined(__KERNEL__) || !defined(CONFIG_TLS_ALIGNED)) */

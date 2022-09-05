@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
@@ -35,10 +36,7 @@
 #include <nuttx/semaphore.h>
 
 #include "up_internal.h"
-#include "up_arch.h"
-
 #include "chip.h"
-#include "up_arch.h"
 #include "rx65n_definitions.h"
 #include "rx65n_dtc.h"
 
@@ -1251,7 +1249,7 @@ void rx65n_dtc_srcdeactivation(DTC_HANDLE handle, uint8_t src)
 
   if (dtchandle->initialized)
     {
-      /* Disable the interrupt soure */
+      /* Disable the interrupt source */
 
       ICU.DTCER[act_source].BIT.DTCE = 0;
     }
@@ -1325,6 +1323,7 @@ dtc_err_t rx65n_dtc_setup_seq_dynamic_transferdata(DTC_HANDLE handle,
   ret = rx65n_dtc_validate_dynamic_params(p_dtransfer_cfg, p_transfer_data);
   if (DTC_SUCCESS != ret)
     {
+      leave_critical_section(flags);
       return ret;
     }
 
@@ -1344,12 +1343,13 @@ dtc_err_t rx65n_dtc_setup_seq_dynamic_transferdata(DTC_HANDLE handle,
           if (rx65n_dtc_set_dynamic_transfer_data(p_dtransfer_cfg,
                                   p_transfer_data) != DTC_SUCCESS)
             {
+              leave_critical_section(flags);
               return DTC_ERR_INVALID_ARG;
             }
 
           p_dtransfer_cfg++;
           p_transfer_data++;
-          count --;
+          count--;
         }
     }
 
@@ -1535,6 +1535,7 @@ dtc_err_t rx65n_dtc_setup_dynamic_transferdata(DTC_HANDLE handle,
   ret = rx65n_dtc_validate_dynamic_params(p_dtransfer_cfg, p_transfer_data);
   if (DTC_SUCCESS != ret)
     {
+      leave_critical_section(flags);
       return ret;
     }
 
@@ -1545,12 +1546,13 @@ dtc_err_t rx65n_dtc_setup_dynamic_transferdata(DTC_HANDLE handle,
       if (rx65n_dtc_set_dynamic_transfer_data(p_dtransfer_cfg,
                                   p_transfer_data) != DTC_SUCCESS)
         {
+          leave_critical_section(flags);
           return DTC_ERR_INVALID_ARG;
         }
 
       p_dtransfer_cfg++;
       p_transfer_data++;
-      count --;
+      count--;
     }
 
   /* Restore RRS bit */
@@ -1751,7 +1753,7 @@ void rx65n_dtc_initialize(void)
 
 #if defined(CONFIG_RX65N_DTC_SEQUENCE_TRANSFER_MODE)
 
-      /* In sequence transfer mode, set full addresss mode */
+      /* In sequence transfer mode, set full address mode */
 
       DTC.DTCADMOD.BIT.SHORT = 0;
       dtchandle->addmode = 0;

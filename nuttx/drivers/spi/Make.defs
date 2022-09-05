@@ -29,10 +29,22 @@ ifeq ($(CONFIG_SPI_EXCHANGE),y)
   endif
 endif
 
+ifeq ($(CONFIG_SPI_SLAVE_DRIVER),y)
+  CSRCS += spi_slave_driver.c
+endif
+
 # Include the selected SPI drivers
 
 ifeq ($(CONFIG_SPI_BITBANG),y)
   CSRCS += spi_bitbang.c
+endif
+
+ifeq ($(CONFIG_SPI_FLASH),y)
+  CSRCS += spi_flash.c
+endif
+
+ifeq ($(CONFIG_QSPI_FLASH),y)
+  CSRCS += qspi_flash.c
 endif
 
 # Include SPI device driver build support

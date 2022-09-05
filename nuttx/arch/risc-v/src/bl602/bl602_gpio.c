@@ -24,8 +24,7 @@
 
 #include <stdint.h>
 
-#include "riscv_arch.h"
-
+#include "riscv_internal.h"
 #include "hardware/bl602_glb.h"
 #include "bl602_gpio.h"
 
@@ -129,6 +128,14 @@ int bl602_configgpio(gpio_pinset_t cfgset)
     }
 
   modifyreg32(regaddr, mask, cfg);
+
+  /* Enable pin output if requested */
+
+  if (!(cfgset & GPIO_INPUT))
+    {
+      modifyreg32(BL602_GPIO_CFGCTL34, 0, (1 << pin));
+    }
+
   return OK;
 }
 

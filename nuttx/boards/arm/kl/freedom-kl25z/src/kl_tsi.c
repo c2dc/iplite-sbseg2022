@@ -36,7 +36,7 @@
 
 #include <nuttx/fs/fs.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "kl_gpio.h"
 #include "hardware/kl_tsi.h"
 #include "hardware/kl_pinmux.h"
@@ -61,8 +61,8 @@
  ****************************************************************************/
 
 static void    tsi_calibrate(void);
-static ssize_t tsi_read(FAR struct file *filep,
-                        FAR char *buffer, size_t buflen);
+static ssize_t tsi_read(struct file *filep,
+                        char *buffer, size_t buflen);
 
 /****************************************************************************
  * Private Data
@@ -83,12 +83,16 @@ static uint8_t const g_chsensor[NSENSORS] =
 
 static const struct file_operations tsi_ops =
 {
-  0,           /* open */
-  0,           /* close */
+  NULL,        /* open */
+  NULL,        /* close */
   tsi_read,    /* read */
-  0,           /* write */
-  0,           /* seek */
-  0,           /* ioctl */
+  NULL,        /* write */
+  NULL,        /* seek */
+  NULL,        /* ioctl */
+  NULL         /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL       /* unlink */
+#endif
 };
 
 /****************************************************************************
@@ -133,7 +137,7 @@ static void tsi_calibrate(void)
  * Name: tsi_read
  ****************************************************************************/
 
-static ssize_t tsi_read(FAR struct file *filep, FAR char *buf, size_t buflen)
+static ssize_t tsi_read(struct file *filep, char *buf, size_t buflen)
 {
   static int deltacap = 0;
   uint32_t regval;

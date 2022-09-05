@@ -44,12 +44,11 @@
  *   Create a mutex
  *
  * Input Parameters:
- *   None
+ *   mutex - A reference to the mutex to be initialized
+ *   attr - Mutex attribute object to be used
  *
  * Returned Value:
- *   None
- *
- * Assumptions:
+ *   0 if successful.  Otherwise, an error code.
  *
  ****************************************************************************/
 
@@ -61,19 +60,23 @@ int pthread_mutex_init(FAR pthread_mutex_t *mutex,
   uint8_t type = PTHREAD_MUTEX_DEFAULT;
 #endif
 #ifdef CONFIG_PRIORITY_INHERITANCE
+#  ifdef CONFIG_PTHREAD_MUTEX_DEFAULT_PRIO_INHERIT
   uint8_t proto = PTHREAD_PRIO_INHERIT;
+#  else
+  uint8_t proto = PTHREAD_PRIO_NONE;
+#  endif
 #endif
 #ifndef CONFIG_PTHREAD_MUTEX_UNSAFE
 #ifdef CONFIG_PTHREAD_MUTEX_DEFAULT_UNSAFE
-  uint8_t robust = PTHREAD_MUTEX_STALLED;
+  uint8_t flags = 0;
 #else
-  uint8_t robust = PTHREAD_MUTEX_ROBUST;
+  uint8_t flags = _PTHREAD_MFLAGS_ROBUST;
 #endif
 #endif
   int ret = OK;
   int status;
 
-  sinfo("mutex=0x%p attr=0x%p\n", mutex, attr);
+  sinfo("mutex=%p attr=%p\n", mutex, attr);
 
   if (!mutex)
     {
@@ -93,13 +96,14 @@ int pthread_mutex_init(FAR pthread_mutex_t *mutex,
           type    = attr->type;
 #endif
 #ifdef CONFIG_PTHREAD_MUTEX_BOTH
-          robust  = attr->robust;
+          flags  = attr->robust == PTHREAD_MUTEX_ROBUST ?
+                   _PTHREAD_MFLAGS_ROBUST : 0;
 #endif
         }
 
       /* Indicate that the semaphore is not held by any thread. */
 
-      mutex->pid = -1;
+      mutex->pid = INVALID_PROCESS_ID;
 
       /* Initialize the mutex like a semaphore with initial count = 1 */
 
@@ -123,8 +127,8 @@ int pthread_mutex_init(FAR pthread_mutex_t *mutex,
       /* Initial internal fields of the mutex */
 
       mutex->flink  = NULL;
-      mutex->flags  = (robust == PTHREAD_MUTEX_ROBUST ?
-                       _PTHREAD_MFLAGS_ROBUST : 0);
+
+      mutex->flags  = flags;
 #endif
 
 #ifdef CONFIG_PTHREAD_MUTEX_TYPES

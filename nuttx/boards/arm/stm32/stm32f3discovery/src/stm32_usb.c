@@ -34,7 +34,7 @@
 #include <nuttx/usb/usbdev.h>
 #include <nuttx/usb/usbdev_trace.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32.h"
 #include "stm32f3discovery.h"
 
@@ -89,7 +89,7 @@ void stm32_usbinitialize(void)
  *
  ****************************************************************************/
 
-int stm32_usbpullup(FAR struct usbdev_s *dev, bool enable)
+int stm32_usbpullup(struct usbdev_s *dev, bool enable)
 {
   usbtrace(TRACE_DEVPULLUP, (uint16_t)enable);
   return OK;
@@ -106,7 +106,7 @@ int stm32_usbpullup(FAR struct usbdev_s *dev, bool enable)
  *
  ****************************************************************************/
 
-void stm32_usbsuspend(FAR struct usbdev_s *dev, bool resume)
+void stm32_usbsuspend(struct usbdev_s *dev, bool resume)
 {
   uinfo("Resume: %d\n", resume);
 }

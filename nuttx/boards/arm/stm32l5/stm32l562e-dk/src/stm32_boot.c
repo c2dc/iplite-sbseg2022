@@ -28,7 +28,7 @@
 
 #include <nuttx/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32l562e-dk.h"
 #include "stm32l5_pwr.h"
 
@@ -43,7 +43,7 @@
  *
  * Description:
  *   All STM32 architectures must provide the following entry point.  This
- *   entry point is called early in the intitialization -- after all memory
+ *   entry point is called early in the initialization -- after all memory
  *   has been configured and mapped but before any devices have been
  *   initialized.
  *
@@ -85,6 +85,6 @@ void board_late_initialize(void)
 {
   /* Perform board-specific initialization here if so configured */
 
-  (void)stm32_bringup();
+  stm32_bringup();
 }
 #endif

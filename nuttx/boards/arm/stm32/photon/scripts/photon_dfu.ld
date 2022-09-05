@@ -48,11 +48,10 @@ SECTIONS
         *(.fixup)
         *(.gnu.warning)
 
-        . = ALIGN(0x4);
         wlan_firmware_image_location = .;
         *(.wlan_firmware_image .wlan_firmware_image.*)
         wlan_firmware_image_end = .;
-        . = ALIGN(0x4);
+
         wlan_nvram_image_location = .;
         *(.wlan_nvram_image .wlan_nvram_image.*)
         wlan_nvram_image_end = .;
@@ -82,6 +81,18 @@ SECTIONS
         *(.ARM.exidx*)
     } > flash
     __exidx_end = ABSOLUTE(.);
+
+    .tdata : {
+        _stdata = ABSOLUTE(.);
+        *(.tdata .tdata.* .gnu.linkonce.td.*);
+        _etdata = ABSOLUTE(.);
+    } > flash
+
+    .tbss : {
+        _stbss = ABSOLUTE(.);
+        *(.tbss .tbss.* .gnu.linkonce.tb.* .tcommon);
+        _etbss = ABSOLUTE(.);
+    } > flash
 
     _eronly = ABSOLUTE(.);
 

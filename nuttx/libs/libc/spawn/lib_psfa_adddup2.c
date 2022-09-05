@@ -28,6 +28,8 @@
 #include <spawn.h>
 #include <assert.h>
 #include <errno.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 #include <nuttx/spawn.h>
 
@@ -51,7 +53,7 @@
  * Input Parameters:
  *   file_actions - The posix_spawn_file_actions_t to append the action.
  *   fd1 - The first file descriptor to be argument to dup2.
- *   fd2 - The first file descriptor to be argument to dup2.
+ *   fd2 - The second file descriptor to be argument to dup2.
  *
  * Returned Value:
  *   On success, these functions return 0; on failure they return an error
@@ -64,13 +66,14 @@ int posix_spawn_file_actions_adddup2(
                          int fd1, int fd2)
 {
   FAR struct spawn_dup2_file_action_s *entry;
+  int flags;
 
   DEBUGASSERT(file_actions && fd1 >= 0 && fd2 >= 0);
 
   /* Allocate the action list entry */
 
   entry = (FAR struct spawn_dup2_file_action_s *)
-    lib_zalloc(sizeof(struct spawn_close_file_action_s));
+    lib_zalloc(sizeof(struct spawn_dup2_file_action_s));
 
   if (!entry)
     {
@@ -82,6 +85,12 @@ int posix_spawn_file_actions_adddup2(
   entry->action = SPAWN_FILE_ACTION_DUP2;
   entry->fd1    = fd1;
   entry->fd2    = fd2;
+
+  /* NOTE: Workaround to avoid an error when executing dup2 action */
+
+  flags = fcntl(fd1, F_GETFD);
+  flags &= ~FD_CLOEXEC;
+  fcntl(fd1, F_SETFD, flags);
 
   /* And add it to the file action list */
 

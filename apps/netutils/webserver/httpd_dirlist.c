@@ -1,5 +1,5 @@
 /****************************************************************************
- * netutils/webserver/httpd_dirlist.c
+ * apps/netutils/webserver/httpd_dirlist.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -32,6 +32,7 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <string.h>
@@ -192,11 +193,8 @@ ssize_t httpd_dirlist(int outfd, FAR struct httpd_fs_file *file)
           break;
         }
 
-      path = malloc(CONFIG_NAME_MAX);
-      ASSERT(path);
-
-      snprintf(path, CONFIG_NAME_MAX, "%s/%s",
-               file->path, dent->d_name);
+      ret = asprintf(&path, "%s/%s", file->path, dent->d_name);
+      ASSERT(ret > 0 && path);
 
       /* call stat() to obtain modified time and size */
 

@@ -34,7 +34,6 @@
 #include <nuttx/spinlock.h>
 #include <nuttx/sched_note.h>
 
-#include "arm_arch.h"
 #include "sched/sched.h"
 #include "arm_internal.h"
 #include "lc823450_intc.h"
@@ -123,7 +122,7 @@ bool up_cpu_pausereq(int cpu)
 
 int up_cpu_paused(int cpu)
 {
-  FAR struct tcb_s *tcb = this_task();
+  struct tcb_s *tcb = this_task();
 
   /* Update scheduler parameters */
 
@@ -187,7 +186,7 @@ int up_cpu_paused(int cpu)
  *
  ****************************************************************************/
 
-int lc823450_pause_handler(int irq, void *c, FAR void *arg)
+int lc823450_pause_handler(int irq, void *c, void *arg)
 {
   int cpu = up_cpu_index();
 
@@ -266,10 +265,12 @@ int up_cpu_pause(int cpu)
    * handler from returning until up_cpu_resume() is called; g_cpu_paused
    * is a handshake that will prefent this function from returning until
    * the CPU is actually paused.
+   * Note that we might spin before getting g_cpu_wait, this just means that
+   * the other CPU still hasn't finished responding to the previous resume
+   * request.
    */
 
-  DEBUGASSERT(!spin_islocked(&g_cpu_wait[cpu]) &&
-              !spin_islocked(&g_cpu_paused[cpu]));
+  DEBUGASSERT(!spin_islocked(&g_cpu_paused[cpu]));
 
   spin_lock(&g_cpu_wait[cpu]);
   spin_lock(&g_cpu_paused[cpu]);

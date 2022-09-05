@@ -1,35 +1,20 @@
 /****************************************************************************
  * fs/vfs/fs_epoll.c
  *
- *   Copyright (C) 2015 Anton D. Kachalov. All rights reserved.
- *   Author: Anton D. Kachalov <mouse@mayc.ru>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -47,6 +32,7 @@
 #include <errno.h>
 #include <string.h>
 #include <debug.h>
+#include <semaphore.h>
 
 #include <nuttx/clock.h>
 #include <nuttx/fs/fs.h>
@@ -62,6 +48,8 @@ struct epoll_head
 {
   int size;
   int occupied;
+  int crefs;
+  sem_t sem;
   struct file fp;
   struct inode in;
   FAR epoll_data_t *data;
@@ -72,6 +60,7 @@ struct epoll_head
  * Private Function Prototypes
  ****************************************************************************/
 
+static int epoll_do_open(FAR struct file *filep);
 static int epoll_do_close(FAR struct file *filep);
 static int epoll_do_poll(FAR struct file *filep,
                          FAR struct pollfd *fds, bool setup);
@@ -82,8 +71,28 @@ static int epoll_do_poll(FAR struct file *filep,
 
 static const struct file_operations g_epoll_ops =
 {
-  .close = epoll_do_close,
-  .poll  = epoll_do_poll
+  epoll_do_open,    /* open */
+  epoll_do_close,   /* close */
+  NULL,             /* read */
+  NULL,             /* write */
+  NULL,             /* seek */
+  NULL,             /* ioctl */
+  epoll_do_poll     /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL            /* unlink */
+#endif
+};
+
+static struct inode g_epoll_inode =
+{
+  NULL,                   /* i_parent */
+  NULL,                   /* i_peer */
+  NULL,                   /* i_child */
+  1,                      /* i_crefs */
+  FSNODEFLAG_TYPE_DRIVER, /* i_flags */
+  {
+    &g_epoll_ops          /* u */
+  }
 };
 
 /****************************************************************************
@@ -106,21 +115,50 @@ static FAR struct epoll_head *epoll_head_from_fd(int fd)
 
   /* Check fd come from us */
 
-  if (filep->f_inode->u.i_ops != &g_epoll_ops)
+  if (!filep->f_inode || filep->f_inode->u.i_ops != &g_epoll_ops)
     {
       set_errno(EBADF);
       return NULL;
     }
 
-  return (FAR struct epoll_head *)filep->f_inode->i_private;
+  return (FAR struct epoll_head *)filep->f_priv;
+}
+
+static int epoll_do_open(FAR struct file *filep)
+{
+  FAR struct epoll_head *eph = filep->f_priv;
+  int ret;
+
+  ret = nxsem_wait(&eph->sem);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  eph->crefs++;
+  nxsem_post(&eph->sem);
+  return ret;
 }
 
 static int epoll_do_close(FAR struct file *filep)
 {
-  FAR struct epoll_head *eph = filep->f_inode->i_private;
+  FAR struct epoll_head *eph = filep->f_priv;
+  int ret;
 
-  kmm_free(eph);
-  return OK;
+  ret = nxsem_wait(&eph->sem);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  eph->crefs--;
+  nxsem_post(&eph->sem);
+  if (eph->crefs <= 0)
+    {
+      kmm_free(eph);
+    }
+
+  return ret;
 }
 
 static int epoll_do_poll(FAR struct file *filep,
@@ -145,6 +183,8 @@ static int epoll_do_create(int size, int flags)
       return -1;
     }
 
+  nxsem_init(&eph->sem, 0, 0);
+  nxsem_set_protocol(&eph->sem, SEM_PRIO_NONE);
   eph->size = size;
   eph->data = (FAR epoll_data_t *)(eph + 1);
   eph->poll = (FAR struct pollfd *)(eph->data + reserve);
@@ -159,14 +199,17 @@ static int epoll_do_create(int size, int flags)
 
   /* Alloc the file descriptor */
 
-  fd = files_allocate(&eph->in, flags, 0, eph, 0);
+  fd = files_allocate(&g_epoll_inode, flags, 0, eph, 0);
   if (fd < 0)
     {
+      nxsem_destroy(&eph->sem);
       kmm_free(eph);
       set_errno(-fd);
       return -1;
     }
 
+  inode_addref(&g_epoll_inode);
+  nxsem_post(&eph->sem);
   return fd;
 }
 
@@ -357,12 +400,7 @@ int epoll_pwait(int epfd, FAR struct epoll_event *evs,
       expire.tv_sec  = timeout / 1000;
       expire.tv_nsec = timeout % 1000 * 1000;
 
-#ifdef CONFIG_CLOCK_MONOTONIC
-      clock_gettime(CLOCK_MONOTONIC, &curr);
-#else
-      clock_gettime(CLOCK_REALTIME, &curr);
-#endif
-
+      clock_systime_timespec(&curr);
       clock_timespec_add(&curr, &expire, &expire);
     }
 
@@ -373,11 +411,7 @@ again:
     }
   else
     {
-#ifdef CONFIG_CLOCK_MONOTONIC
-      clock_gettime(CLOCK_MONOTONIC, &curr);
-#else
-      clock_gettime(CLOCK_REALTIME, &curr);
-#endif
+      clock_systime_timespec(&curr);
       clock_timespec_subtract(&expire, &curr, &diff);
 
       rc = ppoll(eph->poll, eph->occupied + 1, &diff, sigmask);

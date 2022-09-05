@@ -1,38 +1,20 @@
 /****************************************************************************
  * drivers/video/max7456.c
  *
- * Support for the Maxim MAX7456 Single-Channel Monochrome On-Screen
- * Display with Integrated EEPROM (datasheet 19-0576; Rev 1; 8/08).
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- *   Copyright (C) 2019 Bill Gatliff. All rights reserved.
- *   Author: Bill Gatliff <bgat@billgatliff.com>
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -329,17 +311,12 @@ struct mx7_dev_s
  ****************************************************************************/
 
 static int mx7_open(FAR struct file *filep);
-static int mx7_close(FAR struct file *filep);
 static ssize_t mx7_read(FAR struct file *filep,
                         FAR char *buf, size_t len);
 static ssize_t mx7_write(FAR struct file *filep,
                          FAR const char *buf, size_t len);
-static int mx7_ioctl(FAR struct file *filep,
-                     int cmd, unsigned long arg);
 
 #if defined(DEBUG)
-static int mx7_debug_open(FAR struct file *filep);
-static int mx7_debug_close(FAR struct file *filep);
 static ssize_t mx7_debug_read(FAR struct file *filep,
                               FAR char *buf, size_t len);
 static ssize_t mx7_debug_write(FAR struct file *filep,
@@ -354,15 +331,16 @@ static ssize_t mx7_debug_write(FAR struct file *filep,
 
 static const struct file_operations g_mx7_fops =
 {
-  .poll   = NULL,
+  mx7_open,      /* open */
+  NULL,          /* close */
+  mx7_read,      /* read */
+  mx7_write,     /* write */
+  NULL,          /* seek */
+  NULL,          /* ioctl */
+  NULL           /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  .unlink = NULL,
+  , NULL         /* unlink */
 #endif
-  .open   = mx7_open,
-  .close  = mx7_close,
-  .read   = mx7_read,
-  .write  = mx7_write,
-  .ioctl  = mx7_ioctl
 };
 
 #if defined(DEBUG)
@@ -371,14 +349,16 @@ static const struct file_operations g_mx7_fops =
 
 static const struct file_operations g_mx7_debug_fops =
 {
-  .poll   = NULL,
+  NULL,                /* open */
+  NULL,                /* close */
+  mx7_debug_read,      /* read */
+  mx7_debug_write,     /* write */
+  NULL,                /* seek */
+  NULL,                /* ioctl */
+  NULL                 /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  .unlink = NULL,
+  , NULL               /* unlink */
 #endif
-  .open   = mx7_debug_open,
-  .close  = mx7_debug_close,
-  .read   = mx7_debug_read,
-  .write  = mx7_debug_write,
 };
 #endif
 
@@ -1303,19 +1283,6 @@ static int mx7_open(FAR struct file *filep)
 }
 
 /****************************************************************************
- * Name: mx7_close
- *
- * Description:
- *   The usual file-operations close() method.
- ****************************************************************************/
-
-static int mx7_close(FAR struct file *filep)
-{
-  UNUSED(filep);
-  return 0;
-}
-
-/****************************************************************************
  * Name: mx7_read_cm
  *
  * Description:
@@ -1489,24 +1456,6 @@ static ssize_t mx7_write(FAR struct file *filep,
   return ret;
 }
 
-/****************************************************************************
- * Name: mx7_ioctl
- *
- * Description:
- *   Does nothing, because I don't like ioctls.
- *
- ****************************************************************************/
-
-static int mx7_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
-{
-  FAR struct inode *inode = filep->f_inode;
-  FAR struct mx7_dev_s *dev = inode->i_private;
-
-  UNUSED(inode);
-  UNUSED(dev);
-  return -ENOTTY;               /* unsupported ioctl */
-}
-
 #if defined(DEBUG)
 
 /****************************************************************************
@@ -1553,39 +1502,6 @@ static int hex_to_uint8(FAR const char *buf)
   /* Interpret as hex even without the leading "0x". */
 
   return strtol(buf, NULL, 16);
-}
-
-/****************************************************************************
- * Name: mx7_debug_open
- *
- * Description:
- *   Ordinary file-operations open() for debug-related interfaces.
- *
- ****************************************************************************/
-
-static int mx7_debug_open(FAR struct file *filep)
-{
-  FAR struct inode *inode = filep->f_inode;
-  FAR struct mx7_dev_s *dev = inode->i_private;
-  FAR const char *name = inode->i_name;
-
-  UNUSED(inode);
-  UNUSED(dev);
-  UNUSED(name);
-  return 0;
-}
-
-/****************************************************************************
- * Name: mx7_debug_close
- *
- * Description:
- *   Ordinary file-operations close() for debug-related interfaces.
- *
- ****************************************************************************/
-
-static int mx7_debug_close(FAR struct file *filep)
-{
-  return 0;
 }
 
 /****************************************************************************

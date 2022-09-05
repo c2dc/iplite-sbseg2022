@@ -1,35 +1,20 @@
 /****************************************************************************
  * apps/netutils/telnetd/telnetd_daemon.c
  *
- *   Copyright (C) 2012, 2017 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name Gregory Nutt nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -53,8 +38,10 @@
 #include <signal.h>
 #include <semaphore.h>
 #include <sched.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
+#include <spawn.h>
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -68,22 +55,12 @@
  * Private Types
  ****************************************************************************/
 
-/* This structure represents the overall state of one telnet daemon instance
- * (Yes, multiple telnet daemons are supported).
- */
-
-struct telnetd_s
-{
-  uint16_t              port;      /* The port to listen on (in network byte order) */
-  sa_family_t           family;    /* Address family */
-  uint8_t               priority;  /* The execution priority of the spawned task, */
-  size_t                stacksize; /* The stack size needed by the spawned task */
-  main_t                entry;     /* The entrypoint of the task to spawn when a new
-                                    * connection is accepted. */
-};
-
 /****************************************************************************
  * Private Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Public Functions
  ****************************************************************************/
 
 /****************************************************************************
@@ -101,8 +78,10 @@ struct telnetd_s
  *
  ****************************************************************************/
 
-static int telnetd_daemon(int argc, FAR char *argv[])
+int telnetd_daemon(int argc, FAR char *argv[])
 {
+  UNUSED(argc);
+
   FAR struct telnetd_s *daemon;
   union
   {
@@ -115,6 +94,11 @@ static int telnetd_daemon(int argc, FAR char *argv[])
 #endif
   } addr;
 
+#ifdef CONFIG_NETUTILS_TELNETD_USE_POSIX_SPAWNP
+  posix_spawn_file_actions_t file_actions;
+  posix_spawnattr_t attr;
+  FAR char *argv1[2];
+#endif
   struct telnet_session_s session;
 #ifdef CONFIG_NET_SOLINGER
   struct linger ling;
@@ -330,6 +314,29 @@ static int telnetd_daemon(int argc, FAR char *argv[])
           close(drvrfd);
         }
 
+#ifdef CONFIG_NETUTILS_TELNETD_USE_POSIX_SPAWNP
+      posix_spawn_file_actions_init(&file_actions);
+      ret = posix_spawnattr_init(&attr);
+
+      if (ret < 0)
+        {
+          nerr("ERROR in posix_spawnattr_init(): %d\n", errno);
+          goto errout_with_socket;
+        }
+
+      argv1[0] = CONFIG_NETUTILS_TELNETD_SHELL_PATH;
+      argv1[1] = NULL;
+
+      ret = posix_spawnp(&pid,
+                         CONFIG_NETUTILS_TELNETD_SHELL_PATH,
+                         &file_actions, &attr, argv1, NULL);
+
+      if (ret < 0)
+        {
+          nerr("ERROR in posix_spawnp(): %d\n", errno);
+          goto errout_with_attrs;
+        }
+#else
       /* Create a task to handle the connection.  The created task
        * will inherit the new stdin, stdout, and stderr.
        */
@@ -342,6 +349,7 @@ static int telnetd_daemon(int argc, FAR char *argv[])
           nerr("ERROR: Failed start the telnet session: %d\n", errno);
           goto errout_with_socket;
         }
+#endif
 
       /* Forget about the connection. */
 
@@ -353,16 +361,17 @@ static int telnetd_daemon(int argc, FAR char *argv[])
 errout_with_acceptsd:
   close(acceptsd);
 
+#ifdef CONFIG_NETUTILS_TELNETD_USE_POSIX_SPAWNP
+errout_with_attrs:
+  posix_spawnattr_destroy(&attr);
+#endif
+
 errout_with_socket:
   close(listensd);
 errout_with_daemon:
   free(daemon);
   return 1;
 }
-
-/****************************************************************************
- * Public Functions
- ****************************************************************************/
 
 /****************************************************************************
  * Name: telnetd_start
@@ -385,10 +394,46 @@ errout_with_daemon:
 
 int telnetd_start(FAR struct telnetd_config_s *config)
 {
-  FAR struct telnetd_s *daemon;
   FAR char *argv[2];
-  char arg0[16];
   pid_t pid;
+
+#ifdef CONFIG_NETUTILS_TELNETD_USE_POSIX_SPAWNP
+  posix_spawn_file_actions_t file_actions;
+  posix_spawnattr_t attr;
+  int ret = 0;
+
+  posix_spawn_file_actions_init(&file_actions);
+  ret = posix_spawnattr_init(&attr);
+
+  if (ret < 0)
+    {
+      nerr("ERROR in posix_spawnattr_init(): %d\n", errno);
+      pid = -1;
+      goto errout;
+    }
+
+  argv[0] = CONFIG_NETUTILS_TELNETD_PATH;
+  argv[1] = NULL;
+
+  ret = posix_spawnp(&pid,
+                     CONFIG_NETUTILS_TELNETD_PATH,
+                     &file_actions, &attr, argv, NULL);
+
+  if (ret < 0)
+    {
+      nerr("ERROR in posix_spawnp(): %d\n", errno);
+      pid = -1;
+      goto errout_with_attrs;
+    }
+
+errout_with_attrs:
+  posix_spawnattr_destroy(&attr);
+
+errout:
+  return pid;
+#else
+  FAR struct telnetd_s *daemon;
+  char arg0[sizeof("0x1234567812345678")];
 
   /* Allocate a state structure for the new daemon */
 
@@ -408,7 +453,7 @@ int telnetd_start(FAR struct telnetd_config_s *config)
 
   /* Then start the new daemon */
 
-  snprintf(arg0, 16, "0x%" PRIxPTR, (uintptr_t)daemon);
+  snprintf(arg0, sizeof(arg0), "0x%" PRIxPTR, (uintptr_t)daemon);
   argv[0] = arg0;
   argv[1] = NULL;
 
@@ -425,4 +470,5 @@ int telnetd_start(FAR struct telnetd_config_s *config)
   /* Return success */
 
   return pid;
+#endif
 }

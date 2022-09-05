@@ -1,42 +1,20 @@
 /****************************************************************************
  * drivers/sensors/ina3221.c
- * Character driver for the INA3221 Power Sensor
  *
- *   Copyright (C) 2018 Verge Inc. All rights reserved.
- *   Author: Anthony Merlino <anthony@vergeaero.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Adapted from:
- * drivers/sensors/ina219.c
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *   Copyright (C) 2017 Sebastien Lorquet. All rights reserved.
- *   Author: Sebastien Lorquet <sebastien@lorquet.fr>
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -47,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <stdlib.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <string.h>
@@ -124,14 +103,10 @@ static int     ina3221_readpower(FAR struct ina3221_dev_s *priv,
 
 /* Character driver methods */
 
-static int     ina3221_open(FAR struct file *filep);
-static int     ina3221_close(FAR struct file *filep);
 static ssize_t ina3221_read(FAR struct file *filep, FAR char *buffer,
-                           size_t buflen);
+                            size_t buflen);
 static ssize_t ina3221_write(FAR struct file *filep, FAR const char *buffer,
                             size_t buflen);
-static int     ina3221_ioctl(FAR struct file *filep, int cmd,
-                            unsigned long arg);
 
 /****************************************************************************
  * Private Data
@@ -139,15 +114,15 @@ static int     ina3221_ioctl(FAR struct file *filep, int cmd,
 
 static const struct file_operations g_ina3221fops =
 {
-  ina3221_open,
-  ina3221_close,
-  ina3221_read,
-  ina3221_write,
-  NULL,
-  ina3221_ioctl,
-  NULL
+  NULL,            /* open */
+  NULL,            /* close */
+  ina3221_read,    /* read */
+  ina3221_write,   /* write */
+  NULL,            /* seek */
+  NULL,            /* ioctl */
+  NULL             /* poll */
 #ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
-  , NULL
+  , NULL           /* unlink */
 #endif
 };
 
@@ -296,40 +271,6 @@ static int ina3221_readpower(FAR struct ina3221_dev_s *priv,
 }
 
 /****************************************************************************
- * Name: ina3221_open
- *
- * Description:
- *   This function is called whenever the INA3221 device is opened.
- *
- ****************************************************************************/
-
-static int ina3221_open(FAR struct file *filep)
-{
-  FAR struct inode *inode = filep->f_inode;
-  FAR struct ina3221_dev_s *priv = inode->i_private;
-
-  UNUSED(priv);
-  return OK;
-}
-
-/****************************************************************************
- * Name: ina3221_close
- *
- * Description:
- *   This routine is called when the INA3221 device is closed.
- *
- ****************************************************************************/
-
-static int ina3221_close(FAR struct file *filep)
-{
-  FAR struct inode *inode = filep->f_inode;
-  FAR struct ina3221_dev_s *priv = inode->i_private;
-
-  UNUSED(priv);
-  return OK;
-}
-
-/****************************************************************************
  * Name: ina3221_read
  ****************************************************************************/
 
@@ -381,15 +322,6 @@ static ssize_t ina3221_write(FAR struct file *filep, FAR const char *buffer,
                           size_t buflen)
 {
   return -ENOSYS;
-}
-
-/****************************************************************************
- * Name: ina3221_ioctl
- ****************************************************************************/
-
-static int ina3221_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
-{
-  return -ENOTTY;
 }
 
 /****************************************************************************

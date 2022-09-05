@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -32,9 +33,7 @@
 #include <arch/irq.h>
 
 #include "nvic.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "nuc_irq.h"
 
 /****************************************************************************
@@ -123,7 +122,7 @@ static void nuc_dumpnvic(const char *msg, int irq)
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG_FEATURES
-static int nuc_nmi(int irq, FAR void *context, FAR void *arg)
+static int nuc_nmi(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! NMI received\n");
@@ -131,7 +130,7 @@ static int nuc_nmi(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int nuc_pendsv(int irq, FAR void *context, FAR void *arg)
+static int nuc_pendsv(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! PendSV received\n");
@@ -139,7 +138,7 @@ static int nuc_pendsv(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int nuc_reserved(int irq, FAR void *context, FAR void *arg)
+static int nuc_reserved(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! Reserved interrupt\n");

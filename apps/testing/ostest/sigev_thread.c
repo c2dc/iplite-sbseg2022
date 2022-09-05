@@ -1,5 +1,5 @@
 /****************************************************************************
- * testing/ostest/sigev_thread.c
+ * apps/testing/ostest/sigev_thread.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -34,10 +34,6 @@
 /****************************************************************************
  * Private Definitions
  ****************************************************************************/
-
-#ifndef NULL
-# define NULL (void*)0
-#endif
 
 #define MY_TIMER_SIGNAL 17
 #define SIGVALUE_INT  42

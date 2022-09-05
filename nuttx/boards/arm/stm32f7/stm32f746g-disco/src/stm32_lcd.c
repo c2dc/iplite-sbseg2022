@@ -33,7 +33,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32f746g-disco.h"
 #include "stm32_gpio.h"
 #include "stm32_ltdc.h"
@@ -91,7 +91,7 @@ int up_fbinitialize(int display)
  *
  ****************************************************************************/
 
-FAR struct fb_vtable_s *up_fbgetvplane(int display, int vplane)
+struct fb_vtable_s *up_fbgetvplane(int display, int vplane)
 {
   return stm32_ltdcgetvplane(vplane);
 }

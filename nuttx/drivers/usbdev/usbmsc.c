@@ -53,6 +53,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <queue.h>
 #include <debug.h>
@@ -1513,7 +1514,12 @@ int usbmsc_bindlun(FAR void *handle, FAR const char *drvrpath,
 
   if (!priv->iobuffer)
     {
+#ifdef CONFIG_USBMSC_WRMULTIPLE
+      priv->iobuffer = (FAR uint8_t *)kmm_malloc(geo.geo_sectorsize *
+                                                 CONFIG_USBMSC_NWRREQS);
+#else
       priv->iobuffer = (FAR uint8_t *)kmm_malloc(geo.geo_sectorsize);
+#endif
       if (!priv->iobuffer)
         {
           usbtrace(TRACE_CLSERROR(USBMSC_TRACEERR_ALLOCIOBUFFER),
@@ -1521,7 +1527,11 @@ int usbmsc_bindlun(FAR void *handle, FAR const char *drvrpath,
           return -ENOMEM;
         }
 
+#ifdef CONFIG_USBMSC_WRMULTIPLE
+      priv->iosize = geo.geo_sectorsize * CONFIG_USBMSC_NWRREQS;
+#else
       priv->iosize = geo.geo_sectorsize;
+#endif
     }
   else if (priv->iosize < geo.geo_sectorsize)
     {
@@ -1688,15 +1698,16 @@ int usbmsc_exportluns(FAR void *handle)
   g_usbmsc_handoff = priv;
 
   uinfo("Starting SCSI worker thread\n");
-  priv->thpid = kthread_create("scsid", CONFIG_USBMSC_SCSI_PRIO,
-                               CONFIG_USBMSC_SCSI_STACKSIZE,
-                               usbmsc_scsi_main, NULL);
-  if (priv->thpid <= 0)
+  ret = kthread_create("scsid", CONFIG_USBMSC_SCSI_PRIO,
+                       CONFIG_USBMSC_SCSI_STACKSIZE,
+                       usbmsc_scsi_main, NULL);
+  if (ret < 0)
     {
-      usbtrace(TRACE_CLSERROR(USBMSC_TRACEERR_THREADCREATE),
-               (uint16_t)priv->thpid);
+      usbtrace(TRACE_CLSERROR(USBMSC_TRACEERR_THREADCREATE), (uint16_t)ret);
       goto errout_with_lock;
     }
+
+  priv->thpid = (pid_t)ret;
 
   /* Wait for the worker thread to run and initialize */
 

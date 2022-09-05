@@ -1,5 +1,5 @@
 /****************************************************************************
- * examples/watcher/wdt.h
+ * apps/examples/watcher/wdt.h
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __EXAMPLES_WATCHER_WDT_H
-#define __EXAMPLES_WATCHER_WDT_H
+#ifndef __APPS_EXAMPLES_WATCHER_WDT_H
+#define __APPS_EXAMPLES_WATCHER_WDT_H
 
 /****************************************************************************
  * Included Files
@@ -56,4 +56,4 @@ struct wdog_params_s
 int wdt_init(void);
 void wdt_feed_the_dog(void);
 
-#endif                                 /* __EXAMPLES_WATCHER_WDT_H */
+#endif /* __APPS_EXAMPLES_WATCHER_WDT_H */

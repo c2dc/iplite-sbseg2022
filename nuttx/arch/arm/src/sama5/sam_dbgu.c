@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -39,9 +40,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "hardware/sam_dbgu.h"
 #include "hardware/sam_pinmap.h"
@@ -75,7 +74,7 @@ static int  dbgu_setup(struct uart_dev_s *dev);
 static void dbgu_shutdown(struct uart_dev_s *dev);
 static int  dbgu_attach(struct uart_dev_s *dev);
 static void dbgu_detach(struct uart_dev_s *dev);
-static int  dbgu_interrupt(int irq, void *context, FAR void *arg);
+static int  dbgu_interrupt(int irq, void *context, void *arg);
 static int  dbgu_ioctl(struct file *filep, int cmd, unsigned long arg);
 static int  dbgu_receive(struct uart_dev_s *dev, unsigned int *status);
 static void dbgu_rxint(struct uart_dev_s *dev, bool enable);
@@ -313,7 +312,7 @@ static void dbgu_detach(struct uart_dev_s *dev)
  *
  ****************************************************************************/
 
-static int dbgu_interrupt(int irq, void *context, FAR void *arg)
+static int dbgu_interrupt(int irq, void *context, void *arg)
 {
   struct uart_dev_s *dev = (struct uart_dev_s *)arg;
   struct dbgu_dev_s *priv;

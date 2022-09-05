@@ -38,10 +38,7 @@
 #include "chip.h"
 #include "arm.h"
 #include "mmu.h"
-#include "fpu.h"
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "hardware/sam_wdt.h"
 #include "hardware/sam_aximx.h"
 #include "hardware/sam_sfr.h"
@@ -447,11 +444,9 @@ void arm_boot(void)
 
   sam_clockconfig();
 
-#ifdef CONFIG_ARCH_FPU
   /* Initialize the FPU */
 
   arm_fpuconfig();
-#endif
 
   /* Perform board-specific initialization,  This must include:
    *

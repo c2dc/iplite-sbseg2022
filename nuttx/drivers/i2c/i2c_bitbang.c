@@ -24,10 +24,11 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
-#include <nuttx/irq.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/i2c/i2c_master.h>
@@ -73,7 +74,10 @@ static void i2c_bitbang_send(FAR struct i2c_bitbang_dev_s *dev,
 
 static const struct i2c_ops_s g_i2c_ops =
 {
-  .transfer = i2c_bitbang_transfer
+  i2c_bitbang_transfer  /* transfer */
+#ifdef CONFIG_I2C_RESET
+  , NULL                /* reset */
+#endif
 };
 
 /****************************************************************************
@@ -268,6 +272,7 @@ static int i2c_bitbang_wait_ack(FAR struct i2c_bitbang_dev_s *priv)
     {
       ret = -EIO;
     }
+#ifndef CONFIG_I2C_BITBANG_NO_DELAY
   else
     {
       int remaining = priv->delay - i;
@@ -277,6 +282,7 @@ static int i2c_bitbang_wait_ack(FAR struct i2c_bitbang_dev_s *priv)
           up_udelay(remaining);
         }
     }
+#endif
 
   return ret;
 }

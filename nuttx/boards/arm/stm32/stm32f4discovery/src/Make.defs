@@ -28,10 +28,6 @@ else
 CSRCS += stm32_userleds.c
 endif
 
-ifeq ($(CONFIG_SCHED_CRITMONITOR),y)
-CSRCS += stm32_critmon.c
-endif
-
 ifeq ($(CONFIG_AUDIO_CS43L22),y)
 CSRCS += stm32_cs43l22.c
 endif
@@ -40,7 +36,7 @@ ifeq ($(CONFIG_ARCH_BUTTONS),y)
 CSRCS +=  stm32_buttons.c
 endif
 
-ifeq ($(CONFIG_CAN),y)
+ifeq ($(CONFIG_STM32_CAN_CHARDRIVER),y)
 CSRCS += stm32_can.c
 endif
 
@@ -96,7 +92,11 @@ ifeq ($(CONFIG_PWM),y)
 CSRCS += stm32_pwm.c
 endif
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_CAPTURE),y)
+CSRCS += stm32_capture.c
+endif
+
+ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += stm32_appinit.c
 ifeq ($(CONFIG_BOARDCTL_RESET),y)
 CSRCS += stm32_reset.c
@@ -123,6 +123,10 @@ CSRCS += stm32_ssd1289.c
 endif
 endif
 
+ifeq ($(CONFIG_LCD_APA102),y)
+CSRCS += stm32_apa102.c
+endif
+
 ifeq ($(CONFIG_LCD_SSD1351),y)
 CSRCS += stm32_ssd1351.c
 endif
@@ -133,10 +137,6 @@ endif
 
 ifeq ($(CONFIG_LCD_UG2864HSWEG01),y)
 CSRCS += stm32_ug2864hsweg01.c
-endif
-
-ifeq ($(CONFIG_TESTING_OSTEST),y)
-CSRCS += stm32_ostest.c
 endif
 
 ifeq ($(CONFIG_TIMER),y)
@@ -177,6 +177,10 @@ endif
 
 ifeq ($(CONFIG_LCD_ST7789),y)
 CSRCS += stm32_st7789.c
+endif
+
+ifeq ($(CONFIG_INPUT_DJOYSTICK),y)
+  CSRCS += stm32_djoystick.c
 endif
 
 DEPPATH += --dep-path board

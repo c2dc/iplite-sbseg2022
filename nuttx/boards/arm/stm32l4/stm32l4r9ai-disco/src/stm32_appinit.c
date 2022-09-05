@@ -26,7 +26,6 @@
 
 #include <sys/types.h>
 #include <stdio.h>
-#include <syslog.h>
 #include <errno.h>
 #include <debug.h>
 #include <string.h>
@@ -101,11 +100,11 @@ static struct i2c_master_s *g_i2c3;
  *
  ****************************************************************************/
 
-#ifdef CONFIG_LIB_BOARDCTL
+#ifdef CONFIG_BOARDCTL
 int board_app_initialize(uintptr_t arg)
 {
 #ifdef HAVE_RTC_DRIVER
-  FAR struct rtc_lowerhalf_s *rtclower;
+  struct rtc_lowerhalf_s *rtclower;
 #endif
   int ret = OK;
 
@@ -211,7 +210,7 @@ int board_app_initialize(uintptr_t arg)
 
   return ret;
 }
-#endif /* CONFIG_LIB_BOARDCTL */
+#endif /* CONFIG_BOARDCTL */
 
 #ifdef CONFIG_BOARDCTL_IOCTL
 int board_ioctl(unsigned int cmd, uintptr_t arg)
@@ -229,7 +228,7 @@ int board_ioctl(unsigned int cmd, uintptr_t arg)
 #if defined(CONFIG_BOARDCTL_UNIQUEID)
 int board_uniqueid(uint8_t *uniqueid)
 {
-  if (uniqueid == 0)
+  if (uniqueid == NULL)
     {
       return -EINVAL;
     }

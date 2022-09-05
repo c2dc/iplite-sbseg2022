@@ -67,6 +67,7 @@ config ADC_ADS125X
 	default n
 	select SPI
 	select SCHED_HPWORK
+	depends on ALLOW_BSD_COMPONENTS
 
 if ADC_ADS125X
 
@@ -207,6 +208,7 @@ if DAC
 config DAC_AD5410
 	bool "AD5410 support"
 	default n
+	depends on ALLOW_BSD_COMPONENTS
 	select SPI
 
 config DAC7571
@@ -227,6 +229,34 @@ config DAC7554
 	select SPI
 	---help---
 		Enable driver support for the Texas Instruments DAC7554 dac.
+
+config MCP48XX
+	bool "MCP4802/4812/4822 support"
+	default n
+	select SPI
+	---help---
+		Enable driver support for the Microchip MCP4802/4812/4822 dac.
+
+choice
+	prompt "MCP48XX variant"
+	default MCP4802
+	depends on MCP48XX
+
+config MCP4802
+	bool "MCP4802 (8-bit) dac"
+
+config MCP4812
+	bool "MCP4812 (10-bit) dac"
+
+config MCP4822
+	bool "MCP4822 (12-bit) dac"
+
+endchoice # MCP48XX variant
+
+config MCP48XX_SPI_FREQUENCY
+	int "MCP48XX SPI frequency"
+	default 4000000
+	depends on MCP48XX
 
 endif # DAC
 

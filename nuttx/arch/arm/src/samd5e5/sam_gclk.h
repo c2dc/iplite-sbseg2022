@@ -30,7 +30,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam_config.h"
 #include "hardware/sam_gclk.h"
 
@@ -103,7 +103,7 @@ extern "C"
  ****************************************************************************/
 
 void sam_gclk_configure(int gclk,
-                        FAR const struct sam_gclk_config_s *config);
+                        const struct sam_gclk_config_s *config);
 
 /****************************************************************************
  * Name: sam_gclk_chan_enable

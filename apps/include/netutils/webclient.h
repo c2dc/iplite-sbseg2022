@@ -47,6 +47,9 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+
+#include <stdbool.h>
+#include <stdint.h>
 #include <sys/types.h>
 
 /****************************************************************************
@@ -75,6 +78,55 @@
 #  endif
 #endif
 
+/* The following WEBCLIENT_FLAG_xxx constants are for
+ * webclient_context::flags.
+ */
+
+/* WEBCLIENT_FLAG_NON_BLOCKING tells webclient_perform() to
+ * use non-blocking I/O.
+ *
+ * If this flag is set, webclient_perform() returns -EAGAIN
+ * when it would otherwise block for network I/O. In that case,
+ * the application should either retry the operation later by calling
+ * webclient_perform() again, or abort it by calling webclient_abort().
+ * It can also use webclient_get_poll_info() to avoid busy-retrying.
+ *
+ * If this flag is set, it's the application's responsibility to
+ * implement a timeout.
+ *
+ * If the application specifies tls_ops, it's the application's
+ * responsibility to make the TLS implementation to use non-blocking I/O
+ * in addition to specifying this flag.
+ *
+ * Caveat: Even when this flag is set, the current implementation performs
+ * the name resolution in a blocking manner.
+ */
+
+#define	WEBCLIENT_FLAG_NON_BLOCKING	1U
+
+/* WEBCLIENT_FLAG_TUNNEL: Establish a tunnel
+ *
+ * If WEBCLIENT_FLAG_TUNNEL is set, ctx->url is ignored and
+ * tunnel_target_host and tunnel_target_port members are used instead.
+ *
+ * Once a tunnel is established, webclient_perform returns success,
+ * keeping the tunneled connection open.
+ *
+ * After the successful (0-returning) call of webclient_perform,
+ * the user can use webclient_get_tunnel only once.
+ * webclient_get_tunnel effectively detaches the returned
+ * webclient_conn_s from the context. It's users' responsibility
+ * to dispose the connection.
+ */
+#define	WEBCLIENT_FLAG_TUNNEL	2U
+
+/* The following WEBCLIENT_FLAG_xxx constants are for
+ * webclient_poll_info::flags.
+ */
+
+#define	WEBCLIENT_POLL_INFO_WANT_READ	1U
+#define	WEBCLIENT_POLL_INFO_WANT_WRITE	2U
+
 /****************************************************************************
  * Public types
  ****************************************************************************/
@@ -98,12 +150,15 @@
  *   buflen - A pointer to the length of the buffer.  If the callee wishes
  *       to change the size of the buffer, it may write to buflen.
  *   arg    - User argument passed to callback.
+ *
+ * Note: changing buffer address and/or size is only allowed for HTTP 1.0.
+ * It's not allowed for HTTP 1.1.
  */
 
 typedef void (*wget_callback_t)(FAR char **buffer, int offset,
                                 int datend, FAR int *buflen, FAR void *arg);
 
-/* webclient_sink_callback_t: callback to consume data
+/* webclient_sink_callback_t: callback to consume body data
  *
  * Same as wget_callback_t, but allowed to fail.
  *
@@ -118,6 +173,20 @@ typedef void (*wget_callback_t)(FAR char **buffer, int offset,
 typedef CODE int (*webclient_sink_callback_t)(FAR char **buffer, int offset,
                                               int datend, FAR int *buflen,
                                               FAR void *arg);
+
+/* webclient_header_callback_t: callback to consume header data
+ *
+ * Input Parameters:
+ *   line        - A NULL-terminated string containing a header line.
+ *   truncated   - Flag for indicating whether the received header line is
+ *                 truncated for exceeding the CONFIG_WEBCLIENT_MAXHTTPLINE
+ *                 length limit.
+ *   arg         - User argument passed to callback.
+ */
+
+typedef CODE int (*webclient_header_callback_t)(FAR const char *line,
+                                                bool truncated,
+                                                FAR void *arg);
 
 /* webclient_body_callback_t: a callback to provide request body
  *
@@ -165,6 +234,8 @@ typedef CODE int (*webclient_body_callback_t)(
     FAR void *ctx);
 
 struct webclient_tls_connection;
+struct webclient_poll_info;
+struct webclient_conn_s;
 
 struct webclient_tls_ops
 {
@@ -180,31 +251,172 @@ struct webclient_tls_ops
                        FAR void *buf, size_t len);
   CODE int (*close)(FAR void *ctx,
                     FAR struct webclient_tls_connection *conn);
+  CODE int (*get_poll_info)(FAR void *ctx,
+                            FAR struct webclient_tls_connection *conn,
+                            FAR struct webclient_poll_info *info);
+
+  /* init_connection: Initialize TLS over an existing connection
+   *
+   * This method is used for https proxy, which is essentially
+   * tunnelling over http.
+   *
+   * hostname parameter is supposed to be used for server certificate
+   * validation.
+   *
+   * This method can be NULL.
+   * In that case, webclient_perform fails with -ENOTSUP
+   * when it turns out that tunnelling is necessary.
+   */
+
+  CODE int (*init_connection)(FAR void *ctx,
+                              FAR struct webclient_conn_s *conn,
+                              FAR const char *hostname,
+                              unsigned int timeout_second,
+                              FAR struct webclient_tls_connection **connp);
 };
+
+/* Note on webclient_client lifetime
+ *
+ * (uninitialized)
+ *      |
+ * webclient_set_defaults
+ *      |
+ *      v
+ *  INITIALIZED
+ *      |
+ *      |      IN-PROGRESS
+ *      |        |
+ *      |        +-------------+
+ *      |        |             |
+ *      |        |         webclient_abort
+ *      |        |             |
+ *      |        |             v
+ *      |        |         ABORTED
+ *      |        |
+ * webclient_perform
+ *      |
+ *      |
+ *      +-- non-blocking mode, returns -EAGAIN ---> IN-PROGRESS
+ *      |
+ *      +-- returns -errno ---> DONE
+ *      |
+ *     returns 0
+ *      |
+ *      +-- !WEBCLIENT_FLAG_TUNNEL --> DONE
+ *      |
+ *      +-- WEBCLIENT_FLAG_TUNNEL, http_status 2xx -----> TUNNEL_ESTABLISHED
+ *      |
+ *      +-- WEBCLIENT_FLAG_TUNNEL, http_status others --> DONE
+ *
+ *
+ *  TUNNEL_ESTABLISHED
+ *      |
+ * webclient_get_tunnel
+ *      |
+ *      v
+ *     DONE
+ *
+ *
+ * (uninitialized):
+ *   After the memory for webclient_context is allocated,
+ *   it should be initialized with webclient_set_defaults() before
+ *   feeding it to other functions taking a webclient_context.
+ *
+ *   webclient_abort() makes the state back to this state.
+ *   If the application wants to reuse the context for another request,
+ *   it should initialize it with webclient_set_defaults() again.
+ *
+ * INITIALIZED:
+ *   After calling webclient_set_defaults(), the application can set up
+ *   the request parameters by setting the struct fields before the first
+ *   call of webclient_perform().
+ *   E.g. url, method, buffers, and callbacks.
+ *
+ *   webclient_set_static_body() can only be used in this state.
+ *
+ * IN-PROGRESS:
+ *   This state only exists for the non-blocking mode.
+ *
+ *   webclient_get_poll_info() can only be used in this state.
+ *
+ * ABORTED:
+ *   The HTTP operation has been aborted by webclient_abort().
+ *
+ * DONE:
+ *   The HTTP operation has been completed. (Either successfully or not.)
+ *
+ *   The application can examine the struct fields to see the result.
+ *   E.g. http_status and http_reason.
+ *
+ * ABORTED, DONE:
+ *   The application can now dispose the resources associated to the
+ *   context.
+ *   E.g. buffers
+ *
+ *   If the application wants to reuse the context for another request,
+ *   it should initialize it with webclient_set_defaults() again.
+ *
+ * TUNNEL_ESTABLISHED
+ *   webclient_get_tunnel() should be called exactly once to return
+ *   the established tunnel.
+ */
 
 struct webclient_context
 {
   /* request parameters
    *
+   *   protocol_version - HTTP protocol version. HTTP 1.0 by default.
    *   method           - HTTP method like "GET", "POST".
    *                      The default value is "GET".
    *   url              - A pointer to a string containing the full URL.
    *                      (e.g., http://www.nutt.org/index.html, or
    *                       http://192.168.23.1:80/index.html)
+   *   proxy            - A pointer to a string containing the proxy string.
+   *                      (e.g., http://myproxy:1080)
+   *                      NULL means no proxy. This is the default.
+   *                      Only http:// protocol is implemented.
    *   unix_socket_path - If not NULL, the path to an AF_LOCAL socket.
    *   headers          - An array of pointers to the extra headers.
    *   nheaders         - The number of elements in the "headers" array.
+   *   proxy_headers    - An array of pointers to the extra headers for
+   *                      the proxy connection.
+   *   proxy_nheaders   - The number of elements in the "headers" array for
+   *                      the proxy connection.
    *   bodylen          - The size of the request body.
+   *   timeout_sec      - The timeout in second.
+   *                      This is not meant to cover the entire transaction.
+   *                      Instead, this is meant to be an inactive timer.
+   *                      That is, if no progress is made during the
+   *                      specified amount of time, the operation will fail.
+   *                      The default is CONFIG_WEBCLIENT_TIMEOUT, which is
+   *                      10 seconds by default.
    */
+
+  enum webclient_protocol_version_e
+    {
+      WEBCLIENT_PROTOCOL_VERSION_HTTP_1_0, /* HTTP 1.0 */
+      WEBCLIENT_PROTOCOL_VERSION_HTTP_1_1, /* HTTP 1.1 */
+    } protocol_version;
 
   FAR const char *method;
   FAR const char *url;
+  FAR const char *proxy;
 #if defined(CONFIG_WEBCLIENT_NET_LOCAL)
   FAR const char *unix_socket_path;
 #endif
   FAR const char * FAR const *headers;
   unsigned int nheaders;
+
+  FAR const char * FAR const *proxy_headers;
+  unsigned int proxy_nheaders;
+
   size_t bodylen;
+  unsigned int timeout_sec;
+
+  /* Parameters for WEBCLIENT_FLAG_TUNNEL */
+
+  FAR const char *tunnel_target_host;
+  uint16_t tunnel_target_port;
 
   /* other parameters
    *
@@ -224,6 +436,7 @@ struct webclient_context
    *   tls_ops           - A vector to implement TLS operations.
    *                       NULL means no https support.
    *   tls_ctx           - A user pointer to be passed to tls_ops as it is.
+   *   flags             - OR'ed WEBCLIENT_FLAG_xxx values.
    */
 
   FAR char *buffer;
@@ -231,10 +444,13 @@ struct webclient_context
   wget_callback_t callback;
   webclient_sink_callback_t sink_callback;
   FAR void *sink_callback_arg;
+  webclient_header_callback_t header_callback;
+  FAR void *header_callback_arg;
   webclient_body_callback_t body_callback;
   FAR void *body_callback_arg;
   FAR const struct webclient_tls_ops *tls_ops;
   FAR void *tls_ctx;
+  unsigned int flags;
 
   /* results
    *
@@ -249,6 +465,47 @@ struct webclient_context
   unsigned int http_status;
   FAR char *http_reason;
   size_t http_reason_len;
+
+  struct wget_s *ws;
+
+#ifdef CONFIG_DEBUG_ASSERTIONS
+  enum webclient_context_state_e
+  {
+    WEBCLIENT_CONTEXT_STATE_UNINITIALIZED,
+    WEBCLIENT_CONTEXT_STATE_INITIALIZED,
+    WEBCLIENT_CONTEXT_STATE_IN_PROGRESS,
+    WEBCLIENT_CONTEXT_STATE_ABORTED,
+    WEBCLIENT_CONTEXT_STATE_DONE,
+    WEBCLIENT_CONTEXT_STATE_TUNNEL_ESTABLISHED,
+  } state;
+#endif
+};
+
+struct webclient_poll_info
+{
+  /* A file descriptor to wait for i/o. */
+
+  int fd;
+  unsigned int flags; /* OR'ed WEBCLIENT_POLL_INFO_xxx flags */
+};
+
+struct webclient_conn_s
+{
+  bool tls;
+
+  /* for !tls */
+
+  int sockfd;
+  unsigned int flags;
+
+  /* for tls */
+
+  FAR struct webclient_tls_connection *tls_conn;
+
+  /* for tls, same as webclient_context */
+
+  FAR const struct webclient_tls_ops *tls_ops;
+  FAR void *tls_ctx;
 };
 
 /****************************************************************************
@@ -303,9 +560,21 @@ int wget_post(FAR const char *url, FAR const char *posts, FAR char *buffer,
 
 void webclient_set_defaults(FAR struct webclient_context *ctx);
 int webclient_perform(FAR struct webclient_context *ctx);
+void webclient_abort(FAR struct webclient_context *ctx);
 void webclient_set_static_body(FAR struct webclient_context *ctx,
                                FAR const void *body,
                                size_t bodylen);
+int webclient_get_poll_info(FAR struct webclient_context *ctx,
+                            FAR struct webclient_poll_info *info);
+void webclient_get_tunnel(FAR struct webclient_context *ctx,
+                          FAR struct webclient_conn_s **connp);
+
+ssize_t webclient_conn_send(FAR struct webclient_conn_s *conn,
+                            FAR const void *buffer, size_t len);
+ssize_t webclient_conn_recv(FAR struct webclient_conn_s *conn,
+                            FAR void *buffer, size_t len);
+void webclient_conn_close(FAR struct webclient_conn_s *conn);
+void webclient_conn_free(FAR struct webclient_conn_s *conn);
 
 #undef EXTERN
 #ifdef __cplusplus

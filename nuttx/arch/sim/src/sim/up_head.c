@@ -33,19 +33,64 @@
 #include <nuttx/init.h>
 #include <nuttx/arch.h>
 #include <nuttx/board.h>
+#include <nuttx/symtab.h>
 #include <nuttx/syslog/syslog_rpmsg.h>
 
 #include "up_internal.h"
 
 /****************************************************************************
+ * Public Data
+ ****************************************************************************/
+
+int g_argc;
+char **g_argv;
+
+/****************************************************************************
  * Private Data
  ****************************************************************************/
 
-static jmp_buf g_simabort;
-static int g_exitcode = EXIT_SUCCESS;
-
 #ifdef CONFIG_SYSLOG_RPMSG
 static char g_logbuffer[4096];
+#endif
+
+#ifdef CONFIG_ALLSYMS
+extern struct symtab_s g_allsyms[];
+extern int             g_nallsyms;
+#endif
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: allsyms_relocate
+ *
+ * Description:
+ *   Simple relocate to redirect the address from symbol table.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_ALLSYMS
+static void allsyms_relocate(void)
+{
+  uintptr_t offset;
+  int       i;
+
+  for (i = 0; i < g_nallsyms; i++)
+    {
+      if (strcmp("allsyms_relocate", g_allsyms[i].sym_name) == 0)
+        {
+          offset = (uintptr_t)allsyms_relocate -
+                   (uintptr_t)g_allsyms[i].sym_value;
+          for (i = 0; i < g_nallsyms; i++)
+            {
+              g_allsyms[i].sym_value =
+                (void *)((uintptr_t)g_allsyms[i].sym_value + offset);
+            }
+          break;
+        }
+    }
+}
 #endif
 
 /****************************************************************************
@@ -62,43 +107,29 @@ static char g_logbuffer[4096];
 
 int main(int argc, char **argv, char **envp)
 {
+  g_argc = argc;
+  g_argv = argv;
+
+#ifdef CONFIG_ALLSYMS
+  allsyms_relocate();
+#endif
+
 #ifdef CONFIG_SYSLOG_RPMSG
-  syslog_rpmsg_init_early("server", g_logbuffer, sizeof(g_logbuffer));
+  syslog_rpmsg_init_early(g_logbuffer, sizeof(g_logbuffer));
 #endif
 
   /* Start NuttX */
 
-  if (setjmp(g_simabort) == 0)
-    {
 #ifdef CONFIG_SMP
-      /* Start the CPU0 emulation.  This should not return. */
+  /* Start the CPU0 emulation.  This should not return. */
 
-      sim_cpu0_start();
+  sim_cpu0_start();
 #endif
-      /* Start the NuttX emulation.  This should not return. */
+  /* Start the NuttX emulation.  This should not return. */
 
-      nx_start();
-    }
+  nx_start();
 
-  return g_exitcode;
-}
-
-/****************************************************************************
- * Name: host_abort
- *
- * Description:
- *   Abort the simulation
- *
- * Input Parameters:
- *   status - Exit status to set
- ****************************************************************************/
-
-void host_abort(int status)
-{
-  /* Save the return code and exit the simulation */
-
-  g_exitcode = status;
-  longjmp(g_simabort, 1);
+  return EXIT_FAILURE;
 }
 
 /****************************************************************************

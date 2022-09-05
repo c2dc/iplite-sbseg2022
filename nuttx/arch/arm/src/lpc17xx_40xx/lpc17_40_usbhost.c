@@ -1,36 +1,20 @@
 /****************************************************************************
  * arch/arm/src/lpc17xx_40xx/lpc17_40_usbhost.c
  *
- *   Copyright (C) 2010-2012, 2014-2017 Gregory Nutt. All rights reserved.
- *   Authors: Rafael Noronha <rafael@pdsolucoes.com.br>
- *            Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -47,6 +31,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -62,9 +47,7 @@
 
 #include <arch/board/board.h> /* May redefine GPIO settings */
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "hardware/lpc17_40_usb.h"
 #include "hardware/lpc17_40_syscon.h"
@@ -356,7 +339,7 @@ static int lpc17_40_ctrltd(struct lpc17_40_usbhost_s *priv,
 
 /* Interrupt handling *******************************************************/
 
-static int lpc17_40_usbinterrupt(int irq, void *context, FAR void *arg);
+static int lpc17_40_usbinterrupt(int irq, void *context, void *arg);
 
 /* USB host controller operations *******************************************/
 
@@ -403,16 +386,16 @@ static ssize_t lpc17_40_transfer(struct usbhost_driver_s *drvr,
 #ifdef CONFIG_USBHOST_ASYNCH
 static void lpc17_40_asynch_completion(struct lpc17_40_usbhost_s *priv,
                                        struct lpc17_40_ed_s *ed);
-static int lpc17_40_asynch(FAR struct usbhost_driver_s *drvr,
-                           usbhost_ep_t ep, FAR uint8_t *buffer,
+static int lpc17_40_asynch(struct usbhost_driver_s *drvr,
+                           usbhost_ep_t ep, uint8_t *buffer,
                            size_t buflen, usbhost_asynch_t callback,
-                           FAR void *arg);
+                           void *arg);
 #endif
-static int lpc17_40_cancel(FAR struct usbhost_driver_s *drvr,
+static int lpc17_40_cancel(struct usbhost_driver_s *drvr,
                            usbhost_ep_t ep);
 #ifdef CONFIG_USBHOST_HUB
-static int lpc17_40_connect(FAR struct usbhost_driver_s *drvr,
-                            FAR struct usbhost_hubport_s *hport,
+static int lpc17_40_connect(struct usbhost_driver_s *drvr,
+                            struct usbhost_hubport_s *hport,
                             bool connected);
 #endif
 static void lpc17_40_disconnect(struct usbhost_driver_s *drvr,
@@ -1339,9 +1322,9 @@ static inline int lpc17_40_reminted(struct lpc17_40_usbhost_s *priv,
   struct lpc17_40_ed_s *head;
   struct lpc17_40_ed_s *curr;
   struct lpc17_40_ed_s *prev;
-  unsigned int       interval;
-  unsigned int       offset;
-  uint32_t           regval;
+  unsigned int          interval;
+  unsigned int          offset;
+  uint32_t              regval;
 
   /* Disable periodic list processing.  Does this take effect immediately?
    * Or at the next SOF... need to check.
@@ -1697,7 +1680,7 @@ errout_with_xfrinfo:
  *
  ****************************************************************************/
 
-static int lpc17_40_usbinterrupt(int irq, void *context, FAR void *arg)
+static int lpc17_40_usbinterrupt(int irq, void *context, void *arg)
 {
   struct lpc17_40_usbhost_s *priv = &g_usbhost;
   struct lpc17_40_ed_s *ed;
@@ -2158,8 +2141,8 @@ static int lpc17_40_rh_enumerate(struct usbhost_connection_s *conn,
   return OK;
 }
 
-static int lpc17_40_enumerate(FAR struct usbhost_connection_s *conn,
-                           FAR struct usbhost_hubport_s *hport)
+static int lpc17_40_enumerate(struct usbhost_connection_s *conn,
+                              struct usbhost_hubport_s *hport)
 {
   int ret;
 
@@ -2452,7 +2435,7 @@ static int lpc17_40_epfree(struct usbhost_driver_s *drvr, usbhost_ep_t ep)
 {
   struct lpc17_40_usbhost_s *priv = (struct lpc17_40_usbhost_s *)drvr;
   struct lpc17_40_ed_s      *ed   = (struct lpc17_40_ed_s *)ep;
-  int                     ret;
+  int                        ret;
 
   /* There should not be any pending, real TDs linked to this ED */
 
@@ -3469,7 +3452,7 @@ errout_with_sem:
  *
  ****************************************************************************/
 
-static int lpc17_40_cancel(FAR struct usbhost_driver_s *drvr,
+static int lpc17_40_cancel(struct usbhost_driver_s *drvr,
                            usbhost_ep_t ep)
 {
 #ifdef CONFIG_USBHOST_ASYNCH
@@ -3624,8 +3607,8 @@ static int lpc17_40_cancel(FAR struct usbhost_driver_s *drvr,
  ****************************************************************************/
 
 #ifdef CONFIG_USBHOST_HUB
-static int lpc17_40_connect(FAR struct usbhost_driver_s *drvr,
-                            FAR struct usbhost_hubport_s *hport,
+static int lpc17_40_connect(struct usbhost_driver_s *drvr,
+                            struct usbhost_hubport_s *hport,
                             bool connected)
 {
   struct lpc17_40_usbhost_s *priv = (struct lpc17_40_usbhost_s *)drvr;

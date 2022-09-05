@@ -36,6 +36,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -438,9 +439,6 @@ static int slip_txtask(int argc, FAR char *argv[])
 {
   FAR struct slip_driver_s *priv;
   unsigned int index = *(argv[1]) - '0';
-  clock_t start_ticks;
-  clock_t now_ticks;
-  unsigned int hsec;
   int ret;
 
   nerr("index: %d\n", index);
@@ -455,7 +453,6 @@ static int slip_txtask(int argc, FAR char *argv[])
 
   /* Loop forever */
 
-  start_ticks = clock_systime_ticks();
   for (; ; )
     {
       /* Wait for the timeout to expire (or until we are signaled by  */
@@ -487,23 +484,9 @@ static int slip_txtask(int argc, FAR char *argv[])
           net_lock();
           priv->dev.d_buf = priv->txbuf;
 
-          /* Has a half second elapsed since the last timer poll? */
+          /* perform the normal TX poll */
 
-          now_ticks = clock_systime_ticks();
-          hsec = (unsigned int)((now_ticks - start_ticks) / TICK_PER_HSEC);
-          if (hsec > 0)
-            {
-              /* Yes, perform the timer poll */
-
-              devif_timer(&priv->dev, hsec * TICK_PER_HSEC, slip_txpoll);
-              start_ticks += hsec * TICK_PER_HSEC;
-            }
-          else
-            {
-              /* No, perform the normal TX poll */
-
-              devif_timer(&priv->dev, 0, slip_txpoll);
-            }
+          devif_poll(&priv->dev, slip_txpoll);
 
           net_unlock();
         }
@@ -817,6 +800,7 @@ static int slip_ifup(FAR struct net_driver_s *dev)
   /* Mark the interface up */
 
   priv->bifup = true;
+  netdev_carrier_on(dev);
   return OK;
 }
 
@@ -840,6 +824,8 @@ static int slip_ifdown(FAR struct net_driver_s *dev)
 {
   FAR struct slip_driver_s *priv =
     (FAR struct slip_driver_s *)dev->d_private;
+
+  netdev_carrier_off(dev);
 
   /* Mark the device "down" */
 
@@ -1009,14 +995,16 @@ int slip_initialize(int intf, FAR const char *devname)
   argv[0] = buffer;
   argv[1] = NULL;
 
-  priv->rxpid = kthread_create("rxslip", CONFIG_NET_SLIP_DEFPRIO,
-                               CONFIG_NET_SLIP_STACKSIZE, slip_rxtask,
-                               (FAR char * const *)argv);
-  if (priv->rxpid < 0)
+  ret = kthread_create("rxslip", CONFIG_NET_SLIP_DEFPRIO,
+                       CONFIG_NET_SLIP_STACKSIZE, slip_rxtask,
+                       (FAR char * const *)argv);
+  if (ret < 0)
     {
       nerr("ERROR: Failed to start receiver task\n");
-      return priv->rxpid;
+      return ret;
     }
+
+  priv->rxpid = (pid_t)ret;
 
   /* Wait and make sure that the receive task is started. */
 
@@ -1024,14 +1012,16 @@ int slip_initialize(int intf, FAR const char *devname)
 
   /* Start the SLIP transmitter kernel thread */
 
-  priv->txpid = kthread_create("txslip", CONFIG_NET_SLIP_DEFPRIO,
-                               CONFIG_NET_SLIP_STACKSIZE, slip_txtask,
-                               (FAR char * const *)argv);
-  if (priv->txpid < 0)
+  ret = kthread_create("txslip", CONFIG_NET_SLIP_DEFPRIO,
+                       CONFIG_NET_SLIP_STACKSIZE, slip_txtask,
+                       (FAR char * const *)argv);
+  if (ret < 0)
     {
       nerr("ERROR: Failed to start receiver task\n");
-      return priv->txpid;
+      return ret;
     }
+
+  priv->txpid = (pid_t)ret;
 
   /* Wait and make sure that the transmit task is started. */
 

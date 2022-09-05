@@ -168,6 +168,7 @@ typedef uint8_t sockcaps_t;
  */
 
 struct file;    /* Forward reference */
+struct stat;    /* Forward reference */
 struct socket;  /* Forward reference */
 struct pollfd;  /* Forward reference */
 
@@ -195,14 +196,13 @@ struct sock_intf_s
   CODE ssize_t    (*si_recvmsg)(FAR struct socket *psock,
                     FAR struct msghdr *msg, int flags);
   CODE int        (*si_close)(FAR struct socket *psock);
+  CODE int        (*si_ioctl)(FAR struct socket *psock, int cmd,
+                    FAR void *arg, size_t arglen);
+  CODE int        (*si_socketpair)(FAR struct socket *psocks[2]);
 #ifdef CONFIG_NET_SENDFILE
   CODE ssize_t    (*si_sendfile)(FAR struct socket *psock,
                     FAR struct file *infile, FAR off_t *offset,
                     size_t count);
-#endif
-#ifdef CONFIG_NET_USRSOCK
-  CODE int        (*si_ioctl)(FAR struct socket *psock, int cmd,
-                    FAR void *arg, size_t arglen);
 #endif
 };
 
@@ -227,21 +227,10 @@ struct socket_conn_s
    */
 
   FAR struct devif_callback_s *list;
+  FAR struct devif_callback_s *list_tail;
 
-  /* Connection-specific content may follow */
-};
+  /* Definitions of 8-bit socket flags */
 
-/* This is the internal representation of a socket reference by a file
- * descriptor.
- */
-
-struct devif_callback_s;  /* Forward reference */
-
-struct socket
-{
-  uint8_t       s_domain;    /* IP domain */
-  uint8_t       s_type;      /* Protocol type */
-  uint8_t       s_proto;     /* Socket Protocol */
   uint8_t       s_flags;     /* See _SF_* definitions */
 
   /* Socket options */
@@ -257,20 +246,31 @@ struct socket
 #ifdef CONFIG_NET_TIMESTAMP
   int32_t       s_timestamp; /* Socket timestamp enabled/disabled */
 #endif
+#ifdef CONFIG_NET_BINDTODEVICE
+  uint8_t       s_boundto;   /* Index of the interface we are bound to.
+                              * Unbound: 0, Bound: 1-MAX_IFINDEX */
+#endif
 #endif
 
+  /* Connection-specific content may follow */
+};
+
+/* This is the internal representation of a socket reference by a file
+ * descriptor.
+ */
+
+struct devif_callback_s;  /* Forward reference */
+
+struct socket
+{
+  uint8_t       s_domain;    /* IP domain */
+  uint8_t       s_type;      /* Protocol type */
+  uint8_t       s_proto;     /* Socket Protocol */
   FAR void     *s_conn;      /* Connection inherits from struct socket_conn_s */
 
   /* Socket interface */
 
   FAR const struct sock_intf_s *s_sockif;
-
-#if defined(CONFIG_NET_TCP_WRITE_BUFFERS) || \
-    defined(CONFIG_NET_UDP_WRITE_BUFFERS)
-  /* Callback instance for TCP send() or UDP sendto() */
-
-  FAR struct devif_callback_s *s_sndcb;
-#endif
 };
 
 /****************************************************************************
@@ -464,6 +464,34 @@ int net_timedwait_uninterruptible(sem_t *sem, unsigned int timeout);
 
 int net_lockedwait_uninterruptible(sem_t *sem);
 
+#ifdef CONFIG_MM_IOB
+
+/****************************************************************************
+ * Name: net_iobtimedalloc
+ *
+ * Description:
+ *   Allocate an IOB.  If no IOBs are available, then atomically wait for
+ *   for the IOB while temporarily releasing the lock on the network.
+ *   This function is wrapped version of net_ioballoc(), this wait will
+ *   be terminated when the specified timeout expires.
+ *
+ *   Caution should be utilized.  Because the network lock is relinquished
+ *   during the wait, there could be changes in the network state that occur
+ *   before the lock is recovered.  Your design should account for this
+ *   possibility.
+ *
+ * Input Parameters:
+ *   throttled  - An indication of the IOB allocation is "throttled"
+ *   timeout    - The relative time to wait until a timeout is declared.
+ *
+ * Returned Value:
+ *   A pointer to the newly allocated IOB is returned on success.  NULL is
+ *   returned on any allocation failure.
+ *
+ ****************************************************************************/
+
+FAR struct iob_s *net_iobtimedalloc(bool throttled, unsigned int timeout);
+
 /****************************************************************************
  * Name: net_ioballoc
  *
@@ -477,7 +505,7 @@ int net_lockedwait_uninterruptible(sem_t *sem);
  *   possibility.
  *
  * Input Parameters:
- *   throttled - An indication of the IOB allocation is "throttled"
+ *   throttled  - An indication of the IOB allocation is "throttled"
  *
  * Returned Value:
  *   A pointer to the newly allocated IOB is returned on success.  NULL is
@@ -485,8 +513,7 @@ int net_lockedwait_uninterruptible(sem_t *sem);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_MM_IOB
-FAR struct iob_s *net_ioballoc(bool throttled, enum iob_user_e consumerid);
+FAR struct iob_s *net_ioballoc(bool throttled);
 #endif
 
 /****************************************************************************
@@ -496,7 +523,7 @@ FAR struct iob_s *net_ioballoc(bool throttled, enum iob_user_e consumerid);
  *   Allocate a socket descriptor
  *
  * Input Parameters:
- *   psock    A double pointer to socket structure to be allocated.
+ *   psock    A pointer to socket structure.
  *   oflags   Open mode flags.
  *
  * Returned Value:
@@ -505,7 +532,7 @@ FAR struct iob_s *net_ioballoc(bool throttled, enum iob_user_e consumerid);
  *
  ****************************************************************************/
 
-int sockfd_allocate(FAR struct socket **psock, int oflags);
+int sockfd_allocate(FAR struct socket *psock, int oflags);
 
 /****************************************************************************
  * Name: sockfd_socket
@@ -522,6 +549,7 @@ int sockfd_allocate(FAR struct socket **psock, int oflags);
  *
  ****************************************************************************/
 
+FAR struct socket *file_socket(FAR struct file *filep);
 FAR struct socket *sockfd_socket(int sockfd);
 
 /****************************************************************************
@@ -1313,8 +1341,6 @@ int psock_dup2(FAR struct socket *psock1, FAR struct socket *psock2);
  *
  ****************************************************************************/
 
-struct stat;  /* Forward reference.  See sys/stat.h */
-
 int psock_fstat(FAR struct socket *psock, FAR struct stat *buf);
 
 /****************************************************************************
@@ -1335,7 +1361,7 @@ int psock_fstat(FAR struct socket *psock, FAR struct stat *buf);
  *
  * Returned Value:
  *   On success, returns the number of characters sent.  On  error,
- *   -1 is returned, and errno is set appropriately:
+ *   the negative errno is return appropriately:
  *
  *   EAGAIN or EWOULDBLOCK
  *     The socket is marked non-blocking and the requested operation
@@ -1380,50 +1406,30 @@ int psock_fstat(FAR struct socket *psock, FAR struct stat *buf);
  ****************************************************************************/
 
 #ifdef CONFIG_NET_SENDFILE
-struct file;
 ssize_t psock_sendfile(FAR struct socket *psock, FAR struct file *infile,
                        FAR off_t *offset, size_t count);
 #endif
 
 /****************************************************************************
- * Name: psock_vfcntl
+ * Name: psock_socketpair
  *
  * Description:
- *   Performs fcntl operations on socket.
+ * Create an unbound pair of connected sockets in a specified domain, of a
+ * specified type, under the protocol optionally specified by the protocol
+ * argument. The two sockets shall be identical. The file descriptors used
+ * in referencing the created sockets shall be returned in
+ * sv[0] and sv[1].
  *
  * Input Parameters:
- *   psock - An instance of the internal socket structure.
- *   cmd   - The fcntl command.
- *   ap    - Command-specific arguments.
- *
- * Returned Value:
- *   Zero (OK) is returned on success; a negated errno value is returned on
- *   any failure to indicate the nature of the failure.
+ *   domain   (see sys/socket.h)
+ *   type     (see sys/socket.h)
+ *   protocol (see sys/socket.h)
+ *   psocks   A pointer to a user allocated socket structure to be paired.
  *
  ****************************************************************************/
 
-int psock_vfcntl(FAR struct socket *psock, int cmd, va_list ap);
-
-/****************************************************************************
- * Name: psock_fcntl
- *
- * Description:
- *   Similar to the standard fcntl function except that is accepts a struct
- *   struct socket instance instead of a file descriptor.
- *
- * Input Parameters:
- *   psock - An instance of the internal socket structure.
- *   cmd   - Identifies the operation to be performed.  Command specific
- *           arguments may follow.
- *
- * Returned Value:
- *   The nature of the return value depends on the command.  Non-negative
- *   values indicate success.  Failures are reported as negated errno
- *   values.
- *
- ****************************************************************************/
-
-int psock_fcntl(FAR struct socket *psock, int cmd, ...);
+int psock_socketpair(int domain, int type, int protocol,
+                     FAR struct socket *psocks[2]);
 
 /****************************************************************************
  * Name: netdev_register

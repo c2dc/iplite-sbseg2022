@@ -1,35 +1,20 @@
 /****************************************************************************
- * netutils/ntpclient/ntpclient.c
+ * apps/netutils/ntpclient/ntpclient.c
  *
- *   Copyright (C) 2014, 2016, 2020 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -50,6 +35,7 @@
 #include <string.h>
 #include <time.h>
 #include <sched.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -556,18 +542,14 @@ static void ntpc_settime(int64_t offset, FAR struct timespec *start_realtime,
 {
   struct timespec tp;
   struct timespec curr_realtime;
-#ifdef CONFIG_CLOCK_MONOTONIC
   struct timespec curr_monotonic;
   int64_t diffms_real;
   int64_t diffms_mono;
   int64_t diff_diff_ms;
-#endif
 
   /* Get the system times */
 
   clock_gettime(CLOCK_REALTIME, &curr_realtime);
-
-#ifdef CONFIG_CLOCK_MONOTONIC
   clock_gettime(CLOCK_MONOTONIC, &curr_monotonic);
 
   /* Check differences between monotonic and realtime. */
@@ -597,9 +579,6 @@ static void ntpc_settime(int64_t offset, FAR struct timespec *start_realtime,
 
       return;
     }
-#else
-  UNUSED(start_monotonic);
-#endif
 
   /* Apply offset */
 
@@ -1236,8 +1215,8 @@ sock_error:
 
 static int ntpc_daemon(int argc, FAR char **argv)
 {
-  struct ntp_sample_s samples[CONFIG_NETUTILS_NTPCLIENT_NUM_SAMPLES];
-  struct ntp_servers_s srvs;
+  FAR struct ntp_sample_s *samples;
+  FAR struct ntp_servers_s *srvs;
   int exitcode = EXIT_SUCCESS;
   int retries = 0;
   int nsamples;
@@ -1247,7 +1226,19 @@ static int ntpc_daemon(int argc, FAR char **argv)
 
   DEBUGASSERT(argc > 1 && argv[1] != NULL && *argv[1] != '\0');
 
-  memset(&srvs, 0, sizeof(srvs));
+  samples = malloc(sizeof(struct ntp_sample_s) *
+                   CONFIG_NETUTILS_NTPCLIENT_NUM_SAMPLES);
+  if (samples == NULL)
+    {
+      return EXIT_FAILURE;
+    }
+
+  srvs = calloc(1, sizeof(*srvs));
+  if (srvs == NULL)
+    {
+      free(samples);
+      return EXIT_FAILURE;
+    }
 
   /* Indicate that we have started */
 
@@ -1282,20 +1273,20 @@ static int ntpc_daemon(int argc, FAR char **argv)
   sched_lock();
   while (g_ntpc_daemon.state != NTP_STOP_REQUESTED)
     {
-      struct timespec start_realtime, start_monotonic;
+      struct timespec start_realtime;
+      struct timespec start_monotonic;
       int errval = 0;
       int i;
 
-      free(srvs.hostlist_str);
-      memset(&srvs, 0, sizeof(srvs));
-      srvs.ntp_servers = argv[1];
+      free(srvs->hostlist_str);
+      memset(srvs, 0, sizeof(*srvs));
+      srvs->ntp_servers = argv[1];
 
-      memset(samples, 0, sizeof(samples));
+      memset(samples, 0, sizeof(*samples) *
+                         CONFIG_NETUTILS_NTPCLIENT_NUM_SAMPLES);
 
       clock_gettime(CLOCK_REALTIME, &start_realtime);
-#ifdef CONFIG_CLOCK_MONOTONIC
       clock_gettime(CLOCK_MONOTONIC, &start_monotonic);
-#endif
 
       /* Collect samples. */
 
@@ -1304,7 +1295,7 @@ static int ntpc_daemon(int argc, FAR char **argv)
         {
           /* Get next sample. */
 
-          ret = ntpc_get_ntp_sample(&srvs, samples, nsamples);
+          ret = ntpc_get_ntp_sample(srvs, samples, nsamples);
           if (ret < 0)
             {
               errval = errno;
@@ -1431,7 +1422,9 @@ static int ntpc_daemon(int argc, FAR char **argv)
 
   g_ntpc_daemon.state = NTP_STOPPED;
   sem_post(&g_ntpc_daemon.sync);
-  free(srvs.hostlist_str);
+  free(srvs->hostlist_str);
+  free(srvs);
+  free(samples);
   return exitcode;
 }
 

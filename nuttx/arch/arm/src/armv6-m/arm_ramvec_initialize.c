@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <debug.h>
 #include <inttypes.h>
 
@@ -34,7 +35,6 @@
 #include "ram_vectors.h"
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
 
 #ifdef CONFIG_ARCH_RAMVECTORS
@@ -70,7 +70,7 @@
  */
 
 up_vector_t g_ram_vectors[ARMV6M_VECTAB_SIZE]
-  __attribute__ ((section (".ram_vectors"), aligned (RAMVEC_ALIGN)));
+  locate_data(".ram_vectors") aligned_data(RAMVEC_ALIGN);
 
 /****************************************************************************
  * Public Functions
@@ -100,7 +100,7 @@ void arm_ramvec_initialize(void)
    * protect against NULL pointer references.
    */
 
-  src  = (const CODE up_vector_t *)getreg32(ARMV6M_SYSCON_VECTAB);
+  src  = (const up_vector_t *)getreg32(ARMV6M_SYSCON_VECTAB);
   dest = g_ram_vectors;
 
   irqinfo("src=%p dest=%p\n", src, dest);

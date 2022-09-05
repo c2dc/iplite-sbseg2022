@@ -27,6 +27,7 @@
 #include <nuttx/sensors/bmp180.h>
 #include <nuttx/i2c/i2c_master.h>
 #include <stdio.h>
+#include <debug.h>
 #include "stm32_i2c.h"
 
 /****************************************************************************
@@ -74,7 +75,7 @@
 
 int board_bmp180_initialize(int devno, int busno)
 {
-  FAR struct i2c_master_s *i2c;
+  struct i2c_master_s *i2c;
   char devpath[12];
   int ret;
 

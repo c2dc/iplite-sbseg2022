@@ -28,11 +28,12 @@
 #include <syslog.h>
 #include <errno.h>
 
+#include <nuttx/arch.h>
 #include <nuttx/init.h>
 #include <nuttx/arch.h>
 #include <nuttx/clock.h>
-#include <nuttx/streams.h>
-#include <nuttx/syslog/syslog.h>
+
+#include "syslog.h"
 
 /****************************************************************************
  * Private Data
@@ -66,97 +67,91 @@ static FAR const char * g_priority_str[] =
 int nx_vsyslog(int priority, FAR const IPTR char *fmt, FAR va_list *ap)
 {
   struct lib_syslogstream_s stream;
-  int ret;
+  int ret = 0;
 #if CONFIG_TASK_NAME_SIZE > 0 && defined(CONFIG_SYSLOG_PROCESS_NAME)
   struct tcb_s *tcb;
 #endif
+#ifdef CONFIG_SYSLOG_TIMESTAMP
+  struct timespec ts;
 #if defined(CONFIG_SYSLOG_TIMESTAMP_FORMATTED)
-  time_t time;
+  int d_ret;
   struct tm tm;
   char date_buf[CONFIG_SYSLOG_TIMESTAMP_BUFFER];
 #endif
+#endif
+
+  /* Wrap the low-level output in a stream object and let lib_vsprintf
+   * do the work.
+   */
+
+  syslogstream_create(&stream);
 
 #ifdef CONFIG_SYSLOG_TIMESTAMP
-  struct timespec ts;
+  ts.tv_sec = 0;
+  ts.tv_nsec = 0;
+
+#if defined(CONFIG_SYSLOG_TIMESTAMP_FORMATTED)
+  memset(&tm, 0, sizeof(tm));
+#endif
 
   /* Get the current time.  Since debug output may be generated very early
    * in the start-up sequence, hardware timer support may not yet be
    * available.
    */
 
-  ret = -EAGAIN;
   if (OSINIT_HW_READY())
     {
 #if defined(CONFIG_SYSLOG_TIMESTAMP_REALTIME)
       /* Use CLOCK_REALTIME if so configured */
 
-      ret = clock_gettime(CLOCK_REALTIME, &ts);
+      clock_gettime(CLOCK_REALTIME, &ts);
 
-#elif defined(CONFIG_CLOCK_MONOTONIC)
+#else
       /* Prefer monotonic when enabled, as it can be synchronized to
        * RTC with clock_resynchronize.
        */
 
-      ret = clock_gettime(CLOCK_MONOTONIC, &ts);
-
-#else
-      /* Otherwise, fall back to the system timer */
-
-      ret = clock_systime_timespec(&ts);
-#endif
-    }
-
-  if (ret < 0)
-    {
-      /* Timer hardware is not available, or clock function failed */
-
-      ts.tv_sec  = 0;
-      ts.tv_nsec = 0;
-    }
+      clock_gettime(CLOCK_MONOTONIC, &ts);
 #endif
 
-  /* Wrap the low-level output in a stream object and let lib_vsprintf
-   * do the work.  NOTE that emergency priority output is handled
-   * differently.. it will use the SYSLOG emergency stream.
-   */
-
-  if (priority == LOG_EMERG)
-    {
-      /* Use the SYSLOG emergency stream */
-
-      emergstream(&stream.public);
-    }
-  else
-    {
-      /* Use the normal SYSLOG stream */
-
-      syslogstream_create(&stream);
-    }
-
-#if defined(CONFIG_SYSLOG_TIMESTAMP)
-  /* Prepend the message with the current time, if available */
+      /* Prepend the message with the current time, if available */
 
 #if defined(CONFIG_SYSLOG_TIMESTAMP_FORMATTED)
-  time = ts.tv_sec;
 #if defined(CONFIG_SYSLOG_TIMESTAMP_LOCALTIME)
-  localtime_r(&time, &tm);
+      localtime_r(&ts.tv_sec, &tm);
 #else
-  gmtime_r(&time, &tm);
+      gmtime_r(&ts.tv_sec, &tm);
+#endif
+#endif
+    }
+
+#if defined(CONFIG_SYSLOG_COLOR_OUTPUT)
+  /* Reset the terminal style. */
+
+  ret = lib_sprintf(&stream.public, "\e[0m");
 #endif
 
-  ret = strftime(date_buf, CONFIG_SYSLOG_TIMESTAMP_BUFFER,
-                 CONFIG_SYSLOG_TIMESTAMP_FORMAT, &tm);
+#if defined(CONFIG_SYSLOG_TIMESTAMP_FORMATTED)
+  d_ret = strftime(date_buf, CONFIG_SYSLOG_TIMESTAMP_BUFFER,
+                   CONFIG_SYSLOG_TIMESTAMP_FORMAT, &tm);
 
-  if (ret > 0)
+  if (d_ret > 0)
     {
-      ret = lib_sprintf(&stream.public, "[%s] ", date_buf);
+#if defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MICROSECOND)
+      ret += lib_sprintf(&stream.public, "[%s.%06ld] ",
+                         date_buf, ts.tv_nsec / NSEC_PER_USEC);
+#else
+      ret += lib_sprintf(&stream.public, "[%s] ", date_buf);
+#endif
     }
 #else
-  ret = lib_sprintf(&stream.public, "[%5jd.%06ld] ",
-                    (uintmax_t)ts.tv_sec, ts.tv_nsec / 1000);
+  ret += lib_sprintf(&stream.public, "[%5jd.%06ld] ",
+                     (uintmax_t)ts.tv_sec, ts.tv_nsec / NSEC_PER_USEC);
 #endif
-#else
-  ret = 0;
+#endif
+
+#if defined(CONFIG_SMP)
+  ret += lib_sprintf(&stream.public, "[CPU%d] ", up_cpu_index());
 #endif
 
 #if defined(CONFIG_SYSLOG_PROCESSID)
@@ -212,14 +207,15 @@ int nx_vsyslog(int priority, FAR const IPTR char *fmt, FAR va_list *ap)
 #if defined(CONFIG_SYSLOG_PREFIX)
   /* Prepend the prefix, if available */
 
-  ret += lib_sprintf(&stream.public, "%s", CONFIG_SYSLOG_PREFIX_STRING);
+  ret += lib_sprintf(&stream.public, "[%s] ", CONFIG_SYSLOG_PREFIX_STRING);
 #endif
 
 #if CONFIG_TASK_NAME_SIZE > 0 && defined(CONFIG_SYSLOG_PROCESS_NAME)
   /* Prepend the process name */
 
   tcb = nxsched_get_tcb(getpid());
-  ret += lib_sprintf(&stream.public, "%s: ", tcb->name);
+  ret += lib_sprintf(&stream.public, "%s: ",
+                     (tcb != NULL) ? tcb->name : "(null)");
 #endif
 
   /* Generate the output */
@@ -235,10 +231,7 @@ int nx_vsyslog(int priority, FAR const IPTR char *fmt, FAR va_list *ap)
 #ifdef CONFIG_SYSLOG_BUFFER
   /* Flush and destroy the syslog stream buffer */
 
-  if (priority != LOG_EMERG)
-    {
-      syslogstream_destroy(&stream);
-    }
+  syslogstream_destroy(&stream);
 #endif
 
   return ret;

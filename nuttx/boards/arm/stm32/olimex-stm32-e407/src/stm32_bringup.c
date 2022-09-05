@@ -26,7 +26,7 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#include <syslog.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/board.h>
@@ -119,7 +119,7 @@
 #ifdef HAVE_I2CTOOL
 static void stm32_i2c_register(int bus)
 {
-  FAR struct i2c_master_s *i2c;
+  struct i2c_master_s *i2c;
   int ret;
 
   i2c = stm32_i2cbus_initialize(bus);
@@ -177,7 +177,7 @@ static void stm32_i2ctool(void)
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/

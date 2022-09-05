@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_STM32L4_STM32L4_MEMORYMAP_H
-#define __ARCH_ARM_SRC_STM32L4_STM32L4_MEMORYMAP_H
+#ifndef __ARCH_ARM_SRC_STM32L4_HARDWARE_STM32L4_MEMORYMAP_H
+#define __ARCH_ARM_SRC_STM32L4_HARDWARE_STM32L4_MEMORYMAP_H
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -60,10 +60,17 @@
 #define STM32L4_SYSMEM_BASE    0x1fff0000     /* 0x1fff0000-0x1fff6fff: System memory */
 #define STM32L4_OTP_BASE       0x1fff7000     /* 0x1fff7000-0x1fff73ff: OTP memory */
                                               /* 0x1fff7400-0x1fff77ff: Reserved */
-#define STM32L4_OPTION_BASE    0x1fff7800     /* 0x1fff7800-0x1fff780f: Option bytes */
+#ifdef CONFIG_STM32L4_STM32L4XR
+#  define STM32L4_OPTION_BASE  0x1ff00000     /* 0x1ff00000-0x1ff0000f: Option bytes */
+                                              /* 0x1ff00010-0x1ff00fff: Reserved */
+#  define STM32L4_OPTION2_BASE 0x1ff01000     /* 0x1ff01000-0x1ff0100f: Option bytes 2 */
+                                              /* 0x1ff01010-0x1ff01fff: Reserved */
+#else
+#  define STM32L4_OPTION_BASE  0x1fff7800     /* 0x1fff7800-0x1fff780f: Option bytes */
                                               /* 0x1fff7810-0x1ffff7ff: Reserved */
-#define STM32L4_OPTION2_BASE   0x1ffff800     /* 0x1ffff800-0x1ffff80f: Option bytes 2 */
+#  define STM32L4_OPTION2_BASE 0x1ffff800     /* 0x1ffff800-0x1ffff80f: Option bytes 2 */
                                               /* 0x1ffff810-0x1fffffff: Reserved */
+#endif
 
 /* System Memory Addresses **************************************************/
 
@@ -223,4 +230,4 @@
 #define STM32L4_SCS_BASE      0xe000e000
 #define STM32L4_DEBUGMCU_BASE 0xe0042000
 
-#endif /* __ARCH_ARM_SRC_STM32L4_STM32L4_MEMORYMAP_H */
+#endif /* __ARCH_ARM_SRC_STM32L4_HARDWARE_STM32L4_MEMORYMAP_H */

@@ -1,35 +1,20 @@
 /****************************************************************************
  * drivers/wireless/ieee80211/bcm43xxx/bcmf_sdio.c
  *
- *   Copyright (C) 2017-2018 Gregory Nutt. All rights reserved.
- *   Author: Simon Piriou <spiriou31@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -43,17 +28,18 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 #include <debug.h>
 #include <errno.h>
-#include <queue.h>
 #include <assert.h>
 
 #include <nuttx/kmalloc.h>
 #include <nuttx/arch.h>
 #include <nuttx/kthread.h>
 #include <nuttx/wdog.h>
+#include <nuttx/sdio.h>
+#include <nuttx/signal.h>
 
-#include <nuttx/wireless/ieee80211/mmc_sdio.h>
 #include <nuttx/wireless/ieee80211/bcmf_sdio.h>
 #include <nuttx/wireless/ieee80211/bcmf_board.h>
 
@@ -76,7 +62,7 @@
 #define BCMF_THREAD_NAME       "bcmf"
 #define BCMF_THREAD_STACK_SIZE 2048
 
-#define BCMF_WAITDOG_TIMEOUT_TICK (5*CLOCKS_PER_SEC)
+#define BCMF_LOWPOWER_TIMEOUT_TICK SEC2TICK(2)
 
 /* Chip-common registers */
 
@@ -90,11 +76,17 @@
 
 /* Supported chip configurations */
 
+#ifdef CONFIG_IEEE80211_BROADCOM_BCM4301X
+  extern const struct bcmf_chip_data bcmf_4301x_config_data;
+#endif
 #ifdef CONFIG_IEEE80211_BROADCOM_BCM43362
-  extern const struct bcmf_sdio_chip bcmf_43362_config_sdio;
+  extern const struct bcmf_chip_data bcmf_43362_config_data;
 #endif
 #ifdef CONFIG_IEEE80211_BROADCOM_BCM43438
-  extern const struct bcmf_sdio_chip bcmf_43438_config_sdio;
+  extern const struct bcmf_chip_data bcmf_43438_config_data;
+#endif
+#ifdef CONFIG_IEEE80211_BROADCOM_BCM43455
+  extern const struct bcmf_chip_data bcmf_43455_config_data;
 #endif
 
 /****************************************************************************
@@ -111,7 +103,6 @@ static int  bcmf_oob_irq(FAR void *arg);
 static int  bcmf_sdio_bus_sleep(FAR struct bcmf_sdio_dev_s *sbus,
                                 bool sleep);
 
-static void bcmf_sdio_waitdog_timeout(wdparm_t arg);
 static int  bcmf_sdio_thread(int argc, char **argv);
 
 static int  bcmf_sdio_find_block_size(unsigned int size);
@@ -123,18 +114,6 @@ static bool brcm_chip_sr_capable(FAR struct bcmf_sdio_dev_s *sbus);
  * Private Data
  ****************************************************************************/
 
-/* FIXME remove */
-
-FAR struct bcmf_dev_s *g_sdio_priv;
-
-/* Buffer pool for SDIO bus interface
- * This pool is shared between all driver devices
- */
-
-static struct bcmf_sdio_frame g_pktframes[BCMF_PKT_POOL_SIZE];
-
-/* TODO free_queue should be static */
-
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
@@ -142,23 +121,96 @@ static struct bcmf_sdio_frame g_pktframes[BCMF_PKT_POOL_SIZE];
 int bcmf_oob_irq(FAR void *arg)
 {
   FAR struct bcmf_sdio_dev_s *sbus = (FAR struct bcmf_sdio_dev_s *)arg;
+  int semcount;
 
   if (sbus->ready)
     {
       /* Signal bmcf thread */
 
       sbus->irq_pending = true;
-      nxsem_post(&sbus->thread_signal);
+
+      nxsem_get_value(&sbus->thread_signal, &semcount);
+      if (semcount < 1)
+        {
+          nxsem_post(&sbus->thread_signal);
+        }
     }
 
   return OK;
 }
 
+int bcmf_sdio_kso_enable(FAR struct bcmf_sdio_dev_s *sbus, bool enable)
+{
+  uint8_t value;
+  int loops;
+  int ret;
+
+  if (!sbus->ready)
+    {
+      return -EPERM;
+    }
+
+  if (sbus->kso_enable == enable)
+    {
+      return OK;
+    }
+
+  if (enable)
+    {
+      loops = 200;
+      while (--loops > 0)
+        {
+          ret = bcmf_write_reg(sbus, 1, SBSDIO_FUNC1_SLEEPCSR,
+                               SBSDIO_FUNC1_SLEEPCSR_KSO_MASK |
+                               SBSDIO_FUNC1_SLEEPCSR_DEVON_MASK);
+          if (ret != OK)
+            {
+              wlerr("HT Avail request failed %d\n", ret);
+              return ret;
+            }
+
+          nxsig_usleep(100 * 1000);
+          ret = bcmf_read_reg(sbus, 1, SBSDIO_FUNC1_SLEEPCSR, &value);
+          if (ret != OK)
+            {
+              return ret;
+            }
+
+          if ((value & (SBSDIO_FUNC1_SLEEPCSR_KSO_MASK |
+                        SBSDIO_FUNC1_SLEEPCSR_DEVON_MASK)) != 0)
+            {
+              break;
+            }
+        }
+
+      if (loops <= 0)
+        {
+          return -ETIMEDOUT;
+        }
+    }
+  else
+    {
+      ret = bcmf_write_reg(sbus, 1, SBSDIO_FUNC1_SLEEPCSR, 0);
+    }
+
+  if (ret == OK)
+    {
+      sbus->kso_enable = enable;
+    }
+
+  return ret;
+}
+
 int bcmf_sdio_bus_sleep(FAR struct bcmf_sdio_dev_s *sbus, bool sleep)
 {
-  int ret;
-  int loops;
   uint8_t value;
+  int loops;
+  int ret;
+
+  if (!sbus->ready)
+    {
+      return -EPERM;
+    }
 
   if (sbus->sleeping == sleep)
     {
@@ -187,7 +239,7 @@ int bcmf_sdio_bus_sleep(FAR struct bcmf_sdio_dev_s *sbus, bool sleep)
 
           /* Wait for High Throughput clock */
 
-          up_mdelay(100);
+          nxsig_usleep(100 * 1000);
           ret = bcmf_read_reg(sbus, 1, SBSDIO_FUNC1_CHIPCLKCSR, &value);
 
           if (ret != OK)
@@ -215,6 +267,12 @@ int bcmf_sdio_bus_sleep(FAR struct bcmf_sdio_dev_s *sbus, bool sleep)
   return OK;
 }
 
+int bcmf_sdio_bus_lowpower(FAR struct bcmf_sdio_dev_s *sbus, bool enable)
+{
+  return sbus->support_sr ? bcmf_sdio_kso_enable(sbus, !enable) :
+                            bcmf_sdio_bus_sleep(sbus, enable);
+}
+
 /****************************************************************************
  * Name: bcmf_probe
  ****************************************************************************/
@@ -222,6 +280,9 @@ int bcmf_sdio_bus_sleep(FAR struct bcmf_sdio_dev_s *sbus, bool sleep)
 int bcmf_probe(FAR struct bcmf_sdio_dev_s *sbus)
 {
   int ret;
+#ifdef CONFIG_IEEE80211_BROADCOM_SDIO_EHS_MODE
+  uint8_t value;
+#endif
 
   /* Probe sdio card compatible device */
 
@@ -260,12 +321,38 @@ int bcmf_probe(FAR struct bcmf_sdio_dev_s *sbus)
       goto exit_error;
     }
 
-  /* Default device clock speed is up to 25 MHz
+#ifdef CONFIG_IEEE80211_BROADCOM_SDIO_EHS_MODE
+  /* Default device clock speed is up to 25 MHz.
    * We could set EHS bit to operate at a clock rate up to 50 MHz.
    */
 
+  ret = bcmf_read_reg(sbus, 0, SDIO_CCCR_HIGHSPEED, &value);
+  if (ret != OK)
+    {
+      goto exit_error;
+    }
+
+  if (value & SDIO_CCCR_HIGHSPEED_SHS)
+    {
+      /* If the chip confirms its High-Speed capability,
+       * enable the High-Speed mode.
+       */
+
+      ret = bcmf_write_reg(sbus, 0, SDIO_CCCR_HIGHSPEED,
+                           SDIO_CCCR_HIGHSPEED_EHS);
+      if (ret != OK)
+        {
+          goto exit_error;
+        }
+    }
+  else
+    {
+      wlwarn("High-Speed mode is not supported by the chip!\n");
+    }
+#endif
+
   SDIO_CLOCK(sbus->sdio_dev, CLOCK_SD_TRANSFER_4BIT);
-  up_mdelay(BCMF_CLOCK_SETUP_DELAY_MS);
+  nxsig_usleep(BCMF_CLOCK_SETUP_DELAY_MS * 1000);
 
   /* Enable bus FN1 */
 
@@ -308,7 +395,7 @@ int bcmf_businitialize(FAR struct bcmf_sdio_dev_s *sbus)
   loops = 10;
   while (--loops > 0)
     {
-      up_mdelay(10);
+      nxsig_usleep(10 * 1000);
       ret = bcmf_read_reg(sbus, 1, SBSDIO_FUNC1_CHIPCLKCSR, &value);
 
       if (ret != OK)
@@ -437,6 +524,10 @@ int bcmf_bus_setup_interrupts(FAR struct bcmf_sdio_dev_s *sbus)
 
 int bcmf_hwinitialize(FAR struct bcmf_sdio_dev_s *sbus)
 {
+  /* Power device */
+
+  bcmf_board_power(sbus->minor, true);
+
   /* Attach and prepare SDIO interrupts */
 
   SDIO_ATTACH(sbus->sdio_dev);
@@ -445,20 +536,15 @@ int bcmf_hwinitialize(FAR struct bcmf_sdio_dev_s *sbus)
 
   SDIO_CLOCK(sbus->sdio_dev, CLOCK_IDMODE);
 
-  /* Configure hardware */
-
-  bcmf_board_initialize(sbus->minor);
-
-  /* Reset and power device */
+  /* Reset device */
 
   bcmf_board_reset(sbus->minor, true);
-  bcmf_board_power(sbus->minor, true);
-  up_mdelay(BCMF_DEVICE_RESET_DELAY_MS);
+  nxsig_usleep(BCMF_DEVICE_RESET_DELAY_MS * 1000);
   bcmf_board_reset(sbus->minor, false);
 
   /* Wait for device to start */
 
-  up_mdelay(BCMF_DEVICE_START_DELAY_MS);
+  nxsig_usleep(BCMF_DEVICE_START_DELAY_MS * 1000);
 
   return OK;
 }
@@ -522,12 +608,9 @@ static int bcmf_sdio_sr_init(FAR struct bcmf_sdio_dev_s *sbus)
 
       /* Enable KeepSdioOn (KSO) bit for normal operation */
 
-      bcmf_read_reg(sbus, 1, SBSDIO_FUNC1_SLEEPCSR, &data);
-      if ((data & SBSDIO_FUNC1_SLEEPCSR_KSO_MASK) == 0)
-        {
-          data |= SBSDIO_FUNC1_SLEEPCSR_KSO_MASK;
-          bcmf_write_reg(sbus, 1, SBSDIO_FUNC1_SLEEPCSR, data);
-        }
+      bcmf_sdio_kso_enable(sbus, true);
+
+      sbus->support_sr = true;
     }
 
   return OK;
@@ -556,8 +639,141 @@ static bool brcm_chip_sr_capable(FAR struct bcmf_sdio_dev_s *sbus)
 }
 
 /****************************************************************************
+ * Name: bcmf_bus_sdio_initialize
+ ****************************************************************************/
+
+static int bcmf_bus_sdio_initialize(FAR struct bcmf_dev_s *priv,
+                                    int minor, FAR struct sdio_dev_s *dev)
+{
+  FAR struct bcmf_sdio_dev_s *sbus;
+  FAR char *argv[2];
+  char arg1[32];
+  int ret;
+
+  /* Allocate sdio bus structure */
+
+  sbus = (FAR struct bcmf_sdio_dev_s *)kmm_malloc(sizeof(*sbus));
+
+  if (!sbus)
+    {
+      return -ENOMEM;
+    }
+
+  /* Initialize sdio bus device structure */
+
+  memset(sbus, 0, sizeof(*sbus));
+  sbus->sdio_dev           = dev;
+  sbus->minor              = minor;
+  sbus->ready              = false;
+  sbus->sleeping           = true;
+
+  sbus->bus.txframe        = bcmf_sdpcm_queue_frame;
+  sbus->bus.rxframe        = bcmf_sdpcm_get_rx_frame;
+  sbus->bus.allocate_frame = bcmf_sdpcm_alloc_frame;
+  sbus->bus.free_frame     = bcmf_sdpcm_free_frame;
+  sbus->bus.stop           = NULL; /* TODO */
+
+  /* Init transmit frames queue */
+
+  if ((ret = nxsem_init(&sbus->queue_mutex, 0, 1)) != OK)
+    {
+      goto exit_free_bus;
+    }
+
+  list_initialize(&sbus->tx_queue);
+  list_initialize(&sbus->rx_queue);
+
+  /* Setup free buffer list */
+
+  bcmf_initialize_interface_frames();
+
+  /* Init thread semaphore */
+
+  if ((ret = nxsem_init(&sbus->thread_signal, 0, 0)) != OK)
+    {
+      goto exit_free_bus;
+    }
+
+  if ((ret = nxsem_set_protocol(&sbus->thread_signal, SEM_PRIO_NONE)) != OK)
+    {
+      goto exit_free_bus;
+    }
+
+  /* Configure hardware */
+
+  bcmf_board_initialize(sbus->minor);
+
+  /* Register sdio bus */
+
+  priv->bus = &sbus->bus;
+
+  /* Spawn bcmf daemon thread */
+
+  snprintf(arg1, sizeof(arg1), "%p", priv);
+  argv[0] = arg1;
+  argv[1] = NULL;
+  ret = kthread_create(BCMF_THREAD_NAME,
+                       CONFIG_IEEE80211_BROADCOM_SCHED_PRIORITY,
+                       BCMF_THREAD_STACK_SIZE, bcmf_sdio_thread,
+                       argv);
+  if (ret <= 0)
+    {
+      wlerr("Cannot spawn bcmf thread\n");
+      ret = -EBADE;
+      goto exit_free_bus;
+    }
+
+  sbus->thread_id = (pid_t)ret;
+
+  return OK;
+
+exit_free_bus:
+  kmm_free(sbus);
+  priv->bus = NULL;
+  return ret;
+}
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: bcmf_sdio_initialize
+ *
+ * Description:
+ *   Initialize the drive with a SDIO connection.
+ ****************************************************************************/
+
+int bcmf_sdio_initialize(int minor, FAR struct sdio_dev_s *dev)
+{
+  int ret;
+  FAR struct bcmf_dev_s *priv;
+
+  wlinfo("minor: %d\n", minor);
+
+  priv = bcmf_allocate_device();
+  if (!priv)
+    {
+      return -ENOMEM;
+    }
+
+  /* Init sdio bus */
+
+  ret = bcmf_bus_sdio_initialize(priv, minor, dev);
+  if (ret != OK)
+    {
+      ret = -EIO;
+      goto exit_free_device;
+    }
+
+  /* Bus initialized, register network driver */
+
+  return bcmf_driver_initialize(priv);
+
+exit_free_device:
+  bcmf_free_device(priv);
+  return ret;
+}
 
 /****************************************************************************
  * Name: bcmf_transfer_bytes
@@ -569,6 +785,11 @@ int bcmf_transfer_bytes(FAR struct bcmf_sdio_dev_s *sbus, bool write,
 {
   unsigned int blocklen;
   unsigned int nblocks;
+
+  if (!sbus->ready)
+    {
+      return -EPERM;
+    }
 
   /*  Use rw_io_direct method if len is 1 */
 
@@ -632,68 +853,17 @@ int bcmf_write_reg(FAR struct bcmf_sdio_dev_s *sbus, uint8_t function,
 }
 
 /****************************************************************************
- * Name: bcmf_bus_sdio_initialize
+ * Name: bcmf_bus_sdio_active
  ****************************************************************************/
 
-int bcmf_bus_sdio_initialize(FAR struct bcmf_dev_s *priv,
-                             int minor, FAR struct sdio_dev_s *dev)
+int bcmf_bus_sdio_active(FAR struct bcmf_dev_s *priv, bool active)
 {
-  int ret;
-  FAR struct bcmf_sdio_dev_s *sbus;
+  FAR struct bcmf_sdio_dev_s *sbus = (FAR struct bcmf_sdio_dev_s *)priv->bus;
+  int ret = OK;
 
-  /* Allocate sdio bus structure */
-
-  sbus = (FAR struct bcmf_sdio_dev_s *)kmm_malloc(sizeof(*sbus));
-
-  if (!sbus)
+  if (!active)
     {
-      return -ENOMEM;
-    }
-
-  /* Initialize sdio bus device structure */
-
-  memset(sbus, 0, sizeof(*sbus));
-  sbus->sdio_dev           = dev;
-  sbus->minor              = minor;
-  sbus->ready              = false;
-  sbus->sleeping           = true;
-
-  sbus->bus.txframe        = bcmf_sdpcm_queue_frame;
-  sbus->bus.rxframe        = bcmf_sdpcm_get_rx_frame;
-  sbus->bus.allocate_frame = bcmf_sdpcm_alloc_frame;
-  sbus->bus.free_frame     = bcmf_sdpcm_free_frame;
-  sbus->bus.stop           = NULL; /* TODO */
-
-  /* Init transmit frames queue */
-
-  if ((ret = nxsem_init(&sbus->queue_mutex, 0, 1)) != OK)
-    {
-      goto exit_free_bus;
-    }
-
-  sq_init(&sbus->tx_queue);
-  sq_init(&sbus->rx_queue);
-  sq_init(&sbus->free_queue);
-
-  /* Setup free buffer list */
-
-  /* FIXME this should be static to driver */
-
-  for (ret = 0; ret < BCMF_PKT_POOL_SIZE; ret++)
-    {
-      bcmf_dqueue_push(&sbus->free_queue, &g_pktframes[ret].list_entry);
-    }
-
-  /* Init thread semaphore */
-
-  if ((ret = nxsem_init(&sbus->thread_signal, 0, 0)) != OK)
-    {
-      goto exit_free_bus;
-    }
-
-  if ((ret = nxsem_set_protocol(&sbus->thread_signal, SEM_PRIO_NONE)) != OK)
-    {
-      goto exit_free_bus;
+      goto exit_uninit_hw;
     }
 
   /* Initialize device hardware */
@@ -701,8 +871,10 @@ int bcmf_bus_sdio_initialize(FAR struct bcmf_dev_s *priv,
   ret = bcmf_hwinitialize(sbus);
   if (ret != OK)
     {
-      goto exit_free_bus;
+      return ret;
     }
+
+  sbus->ready = active;
 
   /* Probe device */
 
@@ -720,9 +892,7 @@ int bcmf_bus_sdio_initialize(FAR struct bcmf_dev_s *priv,
       goto exit_uninit_hw;
     }
 
-  up_mdelay(100);
-
-  sbus->ready = true;
+  nxsig_usleep(100 * 1000);
 
   ret = bcmf_bus_setup_interrupts(sbus);
   if (ret != OK)
@@ -731,49 +901,15 @@ int bcmf_bus_sdio_initialize(FAR struct bcmf_dev_s *priv,
     }
 
   ret = bcmf_sdio_sr_init(sbus);
-  if (ret != OK)
+  if (ret == OK)
     {
-      goto exit_uninit_hw;
+      return ret;
     }
-
-  /* FIXME global variable for now */
-
-  g_sdio_priv = priv;
-
-  /* Register sdio bus */
-
-  priv->bus = &sbus->bus;
-
-  /* Start the waitdog timer */
-
-  wd_start(&sbus->waitdog, BCMF_WAITDOG_TIMEOUT_TICK,
-           bcmf_sdio_waitdog_timeout, (wdparm_t)priv);
-
-  /* Spawn bcmf daemon thread */
-
-  ret = kthread_create(BCMF_THREAD_NAME, SCHED_PRIORITY_MAX,
-                       BCMF_THREAD_STACK_SIZE, bcmf_sdio_thread,
-                       (FAR char * const *)NULL);
-
-  if (ret <= 0)
-    {
-      wlerr("Cannot spawn bcmf thread\n");
-      ret = -EBADE;
-      goto exit_uninit_hw;
-    }
-
-  sbus->thread_id = ret;
-
-  /* SDIO bus is up and running */
-
-  return OK;
 
 exit_uninit_hw:
+  sbus->ready = false;
   bcmf_hwuninitialize(sbus);
 
-exit_free_bus:
-  kmm_free(sbus);
-  priv->bus = NULL;
   return ret;
 }
 
@@ -794,17 +930,32 @@ int bcmf_chipinitialize(FAR struct bcmf_sdio_dev_s *sbus)
 
   switch (chipid)
     {
+#ifdef CONFIG_IEEE80211_BROADCOM_BCM4301X
+      case SDIO_DEVICE_ID_BROADCOM_43012:
+      case SDIO_DEVICE_ID_BROADCOM_43013:
+        wlinfo("bcm%d chip detected\n", chipid);
+        sbus->chip = (struct bcmf_chip_data *)&bcmf_4301x_config_data;
+        break;
+#endif
+
 #ifdef CONFIG_IEEE80211_BROADCOM_BCM43362
       case SDIO_DEVICE_ID_BROADCOM_43362:
         wlinfo("bcm43362 chip detected\n");
-        sbus->chip = (struct bcmf_sdio_chip *)&bcmf_43362_config_sdio;
+        sbus->chip = (struct bcmf_chip_data *)&bcmf_43362_config_data;
         break;
 #endif
 
 #ifdef CONFIG_IEEE80211_BROADCOM_BCM43438
       case SDIO_DEVICE_ID_BROADCOM_43430:
         wlinfo("bcm43438 chip detected\n");
-        sbus->chip = (struct bcmf_sdio_chip *)&bcmf_43438_config_sdio;
+        sbus->chip = (struct bcmf_chip_data *)&bcmf_43438_config_data;
+        break;
+#endif
+
+#ifdef CONFIG_IEEE80211_BROADCOM_BCM43455
+      case SDIO_DEVICE_ID_BROADCOM_43455:
+        wlinfo("bcm43455 chip detected\n");
+        sbus->chip = (struct bcmf_chip_data *)&bcmf_43455_config_data;
         break;
 #endif
 
@@ -816,48 +967,60 @@ int bcmf_chipinitialize(FAR struct bcmf_sdio_dev_s *sbus)
   return OK;
 }
 
-void bcmf_sdio_waitdog_timeout(wdparm_t arg)
-{
-  FAR struct bcmf_dev_s *priv = (FAR struct bcmf_dev_s *)arg;
-  FAR struct bcmf_sdio_dev_s *sbus = (FAR struct bcmf_sdio_dev_s *)priv->bus;
-
-  /* Notify bcmf thread */
-
-  wlinfo("Notify bcmf thread\n");
-  nxsem_post(&sbus->thread_signal);
-}
-
 int bcmf_sdio_thread(int argc, char **argv)
 {
-  FAR struct bcmf_dev_s *priv = g_sdio_priv;
+  FAR struct bcmf_dev_s *priv = (FAR struct bcmf_dev_s *)
+                                ((uintptr_t)strtoul(argv[1], NULL, 16));
   FAR struct bcmf_sdio_dev_s *sbus = (FAR struct bcmf_sdio_dev_s *)priv->bus;
+  uint32_t timeout = BCMF_LOWPOWER_TIMEOUT_TICK;
   int ret;
 
   wlinfo(" Enter\n");
 
   /*  FIXME wait for the chip to be ready to receive commands */
 
-  up_mdelay(50);
+  nxsig_usleep(50 * 1000);
 
-  while (sbus->ready)
+  while (true)
     {
-      /* Wait for event (device interrupt, user request or waitdog timer) */
+      /* Check if RX/TX frames are available */
 
-      ret = nxsem_wait(&sbus->thread_signal);
-      if (ret < 0)
+      if ((sbus->intstatus & I_HMB_FRAME_IND) == 0 &&
+          list_is_empty(&sbus->tx_queue) &&
+          !sbus->irq_pending)
         {
-          wlerr("Error while waiting for semaphore\n");
-          break;
+          /* Wait for event (device interrupt or user request) */
+
+          if (timeout == UINT_MAX)
+            {
+              ret = nxsem_wait_uninterruptible(&sbus->thread_signal);
+            }
+          else
+            {
+              ret = nxsem_tickwait_uninterruptible(&sbus->thread_signal,
+                                                   timeout);
+            }
+
+          if (ret == -ETIMEDOUT)
+            {
+              /* Turn off clock request. */
+
+              timeout = UINT_MAX;
+              bcmf_sdio_bus_lowpower(sbus, true);
+              continue;
+            }
+          else if (ret < 0)
+            {
+              wlerr("Error while waiting for semaphore\n");
+              break;
+            }
         }
 
-      /* Restart the waitdog timer */
-
-      wd_start(&sbus->waitdog, BCMF_WAITDOG_TIMEOUT_TICK,
-               bcmf_sdio_waitdog_timeout, (wdparm_t)priv);
+      timeout = BCMF_LOWPOWER_TIMEOUT_TICK;
 
       /* Wake up device */
 
-      bcmf_sdio_bus_sleep(sbus, false);
+      bcmf_sdio_bus_lowpower(sbus, false);
 
       if (sbus->irq_pending)
         {
@@ -903,104 +1066,8 @@ int bcmf_sdio_thread(int argc, char **argv)
           ret = bcmf_sdpcm_sendframe(priv);
         }
       while (ret == OK);
-
-      /* Check if RX frames are available */
-
-      if (sbus->intstatus & I_HMB_FRAME_IND)
-        {
-          /* Try again */
-
-          wlinfo("Try read again\n");
-          continue;
-        }
-
-      /* Re-configure the board GPIO interrupt pin */
-
-      bcmf_board_setup_oob_irq(sbus->minor, bcmf_oob_irq, (void *)sbus);
-
-      /* If we're done for now, turn off clock request. */
-
-#if 0
-      /* TODO add wakelock */
-
-      bcmf_sdio_bus_sleep(sbus, true);
-#endif
     }
 
   wlinfo("Exit\n");
   return 0;
-}
-
-struct bcmf_sdio_frame *bcmf_sdio_allocate_frame(FAR struct bcmf_dev_s *priv,
-                                                 bool block, bool tx)
-{
-  FAR struct bcmf_sdio_dev_s *sbus = (FAR struct bcmf_sdio_dev_s *)priv->bus;
-  struct bcmf_sdio_frame *sframe;
-  dq_entry_t *entry = NULL;
-
-  while (1)
-    {
-      if (nxsem_wait(&sbus->queue_mutex) < 0)
-        {
-          DEBUGPANIC();
-        }
-
-#if 0
-      if (!tx || sbus->tx_queue_count < BCMF_PKT_POOL_SIZE - 1)
-#endif
-        {
-          if ((entry = bcmf_dqueue_pop_tail(&sbus->free_queue)) != NULL)
-            {
-              if (tx)
-                {
-                  sbus->tx_queue_count += 1;
-                }
-
-              nxsem_post(&sbus->queue_mutex);
-              break;
-            }
-        }
-
-      nxsem_post(&sbus->queue_mutex);
-
-      if (block)
-        {
-          /* TODO use signaling semaphore */
-
-          wlinfo("alloc failed %d\n", tx);
-          up_mdelay(100);
-          continue;
-        }
-
-      wlinfo("No avail buffer\n");
-      return NULL;
-    }
-
-  sframe = container_of(entry, struct bcmf_sdio_frame, list_entry);
-
-  sframe->header.len  = HEADER_SIZE + MAX_NETDEV_PKTSIZE;
-  sframe->header.base = sframe->data;
-  sframe->header.data = sframe->data;
-  sframe->tx          = tx;
-  return sframe;
-}
-
-void bcmf_sdio_free_frame(FAR struct bcmf_dev_s *priv,
-                          struct bcmf_sdio_frame *sframe)
-{
-  FAR struct bcmf_sdio_dev_s *sbus = (FAR struct bcmf_sdio_dev_s *)priv->bus;
-
-  if (nxsem_wait(&sbus->queue_mutex) < 0)
-    {
-      DEBUGPANIC();
-    }
-
-  bcmf_dqueue_push(&sbus->free_queue, &sframe->list_entry);
-
-  if (sframe->tx)
-    {
-      sbus->tx_queue_count -= 1;
-    }
-
-  nxsem_post(&sbus->queue_mutex);
 }

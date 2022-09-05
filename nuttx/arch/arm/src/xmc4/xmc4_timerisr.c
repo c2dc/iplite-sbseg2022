@@ -34,8 +34,6 @@
 #include "nvic.h"
 #include "clock/clock.h"
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "chip.h"
 
 /****************************************************************************
@@ -92,7 +90,7 @@
  *
  ****************************************************************************/
 
-static int xmc4_timerisr(int irq, uint32_t *regs, FAR void *arg)
+static int xmc4_timerisr(int irq, uint32_t *regs, void *arg)
 {
   /* Process timer interrupt */
 

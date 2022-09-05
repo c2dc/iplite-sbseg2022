@@ -225,7 +225,7 @@ static int user_main(int argc, char *argv[])
 
   if (argc != NARGS + 1)
     {
-      printf("user_main: Error expected argc=%d got argc=%d\n",
+      printf("user_main: ERROR expected argc=%d got argc=%d\n",
              NARGS + 1, argc);
     }
 
@@ -532,6 +532,14 @@ static int user_main(int argc, char *argv[])
       check_test_memory_usage();
 #endif
 
+#ifdef CONFIG_ARCH_SETJMP_H
+      /* Verify setjmp/longjmp */
+
+      printf("\nuser_main: setjmp test\n");
+      setjmp_test();
+      check_test_memory_usage();
+#endif
+
 #if defined(CONFIG_PRIORITY_INHERITANCE) && !defined(CONFIG_DISABLE_PTHREAD)
       /* Verify priority inheritance */
 
@@ -626,9 +634,9 @@ int main(int argc, FAR char **argv)
   printf("ostest_main: setenv(%s, %s, TRUE)\n", g_var2_name, g_var2_value);
   setenv(g_var2_name, g_var2_value, TRUE);  /* Variable2=GoodValue2 */
 
-  printf("ostest_main: setenv(%s, %s, FALSE)\n", g_var3_name, g_var3_name);
+  printf("ostest_main: setenv(%s, %s, FALSE)\n", g_var3_name, g_var3_value);
   setenv(g_var3_name, g_var3_value, FALSE); /* Variable3=GoodValue3 */
-  printf("ostest_main: setenv(%s, %s, FALSE)\n", g_var3_name, g_var3_name);
+  printf("ostest_main: setenv(%s, %s, FALSE)\n", g_var3_name, g_bad_value2);
   setenv(g_var3_name, g_bad_value2, FALSE); /* Variable3=GoodValue3 */
   show_environment(true, true, true);
 #endif

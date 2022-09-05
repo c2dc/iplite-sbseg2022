@@ -30,8 +30,10 @@
 #include <nuttx/arch.h>
 #include <arch/irq.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "nvic.h"
+
+#ifdef CONFIG_ARCH_HAVE_IRQTRIGGER
 
 /****************************************************************************
  * Public Functions
@@ -81,3 +83,5 @@ void up_trigger_irq(int irq)
         }
     }
 }
+
+#endif /* CONFIG_ARCH_HAVE_IRQTRIGGER */

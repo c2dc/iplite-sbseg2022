@@ -31,6 +31,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
@@ -50,7 +51,7 @@
 #  include <nuttx/net/pkt.h>
 #endif
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include "hardware/lpc17_40_syscon.h"
 #include "lpc17_40_gpio.h"
@@ -142,12 +143,6 @@
 #endif
 
 /* Timing *******************************************************************/
-
-/* TX poll deley = 1 seconds.
- * CLK_TCK is the number of clock ticks per second
- */
-
-#define LPC17_40_WDDELAY        (1*CLK_TCK)
 
 /* TX timeout = 1 minute */
 
@@ -295,7 +290,6 @@ struct lpc17_40_driver_s
   uint8_t  lp_phyaddr;          /* PHY device address */
 #endif
   uint32_t lp_inten;            /* Shadow copy of INTEN register */
-  struct wdog_s lp_txpoll;      /* TX poll timer */
   struct wdog_s lp_txtimeout;   /* TX timeout timer */
 
   struct work_s lp_txwork;      /* TX work continuation */
@@ -314,7 +308,7 @@ struct lpc17_40_driver_s
 
 /* A single packet buffer per interface is used */
 
-static uint8_t g_pktbuf[PKTBUF_SIZE * CONFIG_LPC17_40_NINTERFACES];
+static uint8_t g_pktbuf[CONFIG_LPC17_40_NINTERFACES][PKTBUF_SIZE];
 
 /* Array of ethernet driver status structures */
 
@@ -361,27 +355,24 @@ static int  lpc17_40_txpoll(struct net_driver_s *dev);
 
 static void lpc17_40_response(struct lpc17_40_driver_s *priv);
 
-static void lpc17_40_txdone_work(FAR void *arg);
-static void lpc17_40_rxdone_work(FAR void *arg);
-static int  lpc17_40_interrupt(int irq, void *context, FAR void *arg);
+static void lpc17_40_txdone_work(void *arg);
+static void lpc17_40_rxdone_work(void *arg);
+static int  lpc17_40_interrupt(int irq, void *context, void *arg);
 
 /* Watchdog timer expirations */
 
-static void lpc17_40_txtimeout_work(FAR void *arg);
+static void lpc17_40_txtimeout_work(void *arg);
 static void lpc17_40_txtimeout_expiry(wdparm_t arg);
-
-static void lpc17_40_poll_work(FAR void *arg);
-static void lpc17_40_poll_expiry(wdparm_t arg);
 
 /* NuttX callback functions */
 
 #ifdef CONFIG_NET_ICMPv6
-static void lpc17_40_ipv6multicast(FAR struct lpc17_40_driver_s *priv);
+static void lpc17_40_ipv6multicast(struct lpc17_40_driver_s *priv);
 #endif
 static int lpc17_40_ifup(struct net_driver_s *dev);
 static int lpc17_40_ifdown(struct net_driver_s *dev);
 
-static void lpc17_40_txavail_work(FAR void *arg);
+static void lpc17_40_txavail_work(void *arg);
 static int lpc17_40_txavail(struct net_driver_s *dev);
 
 #if defined(CONFIG_NET_MCASTGROUP) || defined(CONFIG_NET_ICMPv6)
@@ -415,7 +406,7 @@ static void lpc17_40_showmii(uint8_t phyaddr, const char *msg);
 #  endif
 
 #if defined(CONFIG_NETDEV_PHY_IOCTL) && defined(CONFIG_ARCH_PHY_INTERRUPT)
-static int  lpc17_40_phyintenable(FAR struct lpc17_40_driver_s *priv);
+static int  lpc17_40_phyintenable(struct lpc17_40_driver_s *priv);
 #endif
 static void lpc17_40_phywrite(uint8_t phyaddr, uint8_t regaddr,
                            uint16_t phydata);
@@ -655,9 +646,9 @@ static int lpc17_40_transmit(struct lpc17_40_driver_s *priv)
   *txdesc  = TXDESC_CONTROL_INT | TXDESC_CONTROL_LAST | TXDESC_CONTROL_CRC |
              (priv->lp_dev.d_len - 1);
 
-  /* Copy the packet data into the Tx buffer assignd to this descriptor.  It
+  /* Copy the packet data into the Tx buffer assigned to this descriptor.  It
    * should fit because each packet buffer is the MTU size and breaking up
-   * largerTCP messasges is handled by higher level logic.  The hardware
+   * larger TCP message is handled by higher level logic.  The hardware
    * does, however, support breaking up larger messages into many fragments,
    * however, that capability is not exploited here.
    *
@@ -842,9 +833,9 @@ static void lpc17_40_response(struct lpc17_40_driver_s *priv)
  *
  ****************************************************************************/
 
-static void lpc17_40_rxdone_work(FAR void *arg)
+static void lpc17_40_rxdone_work(void *arg)
 {
-  FAR struct lpc17_40_driver_s *priv = (FAR struct lpc17_40_driver_s *)arg;
+  struct lpc17_40_driver_s *priv = (struct lpc17_40_driver_s *)arg;
   irqstate_t flags;
   uint32_t *rxstat;
   bool fragment;
@@ -1040,7 +1031,7 @@ static void lpc17_40_rxdone_work(FAR void *arg)
           else
 #endif
 #ifdef CONFIG_NET_ARP
-          if (BUF->type == htons(ETHTYPE_ARP))
+          if (BUF->type == HTONS(ETHTYPE_ARP))
             {
               NETDEV_RXARP(&priv->lp_dev);
               arp_arpin(&priv->lp_dev);
@@ -1110,9 +1101,9 @@ static void lpc17_40_rxdone_work(FAR void *arg)
  *
  ****************************************************************************/
 
-static void lpc17_40_txdone_work(FAR void *arg)
+static void lpc17_40_txdone_work(void *arg)
 {
-  FAR struct lpc17_40_driver_s *priv = (FAR struct lpc17_40_driver_s *)arg;
+  struct lpc17_40_driver_s *priv = (struct lpc17_40_driver_s *)arg;
 
   /* Verify that the hardware is ready to send another packet.  Since a Tx
    * just completed, this must be the case.
@@ -1168,7 +1159,7 @@ static void lpc17_40_txdone_work(FAR void *arg)
  *
  ****************************************************************************/
 
-static int lpc17_40_interrupt(int irq, void *context, FAR void *arg)
+static int lpc17_40_interrupt(int irq, void *context, void *arg)
 {
   register struct lpc17_40_driver_s *priv;
   uint32_t status;
@@ -1276,7 +1267,7 @@ static int lpc17_40_interrupt(int irq, void *context, FAR void *arg)
                */
 
               work_queue(ETHWORK, &priv->lp_rxwork,
-                         (worker_t)lpc17_40_rxdone_work, priv, 0);
+                         lpc17_40_rxdone_work, priv, 0);
             }
 
           /* Check for Tx events ********************************************/
@@ -1338,7 +1329,7 @@ static int lpc17_40_interrupt(int irq, void *context, FAR void *arg)
                */
 
               work_queue(ETHWORK, &priv->lp_txwork,
-                         (worker_t)lpc17_40_txdone_work, priv, 0);
+                         lpc17_40_txdone_work, priv, 0);
             }
         }
     }
@@ -1373,9 +1364,9 @@ static int lpc17_40_interrupt(int irq, void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static void lpc17_40_txtimeout_work(FAR void *arg)
+static void lpc17_40_txtimeout_work(void *arg)
 {
-  FAR struct lpc17_40_driver_s *priv = (FAR struct lpc17_40_driver_s *)arg;
+  struct lpc17_40_driver_s *priv = (struct lpc17_40_driver_s *)arg;
 
   /* Increment statistics and dump debug info */
 
@@ -1440,94 +1431,6 @@ static void lpc17_40_txtimeout_expiry(wdparm_t arg)
 }
 
 /****************************************************************************
- * Function: lpc17_40_poll_work
- *
- * Description:
- *   Perform periodic polling from the worker thread
- *
- * Input Parameters:
- *   arg - The argument passed when work_queue() as called.
- *
- * Returned Value:
- *   OK on success
- *
- * Assumptions:
- *   Ethernet interrupts are disabled
- *
- ****************************************************************************/
-
-static void lpc17_40_poll_work(FAR void *arg)
-{
-  FAR struct lpc17_40_driver_s *priv = (FAR struct lpc17_40_driver_s *)arg;
-  unsigned int prodidx;
-  unsigned int considx;
-
-  /* Check if there is room in the send another TX packet.  We cannot perform
-   * the TX poll if he are unable to accept another packet for transmission.
-   */
-
-  net_lock();
-  if (lpc17_40_txdesc(priv) == OK)
-    {
-      /* If so, update TCP timing states and poll the network layer for new
-       * XMIT data. Hmmm.. might be bug here.  Does this mean if there is a
-       * transmit in progress, we will missing TCP time state updates?
-       */
-
-      devif_timer(&priv->lp_dev, LPC17_40_WDDELAY, lpc17_40_txpoll);
-    }
-
-  /* Simulate a fake receive to relaunch the data exchanges when a receive
-   * interrupt has been lost and all the receive buffers are used.
-   */
-
-  /* Get the current producer and consumer indices */
-
-  considx = lpc17_40_getreg(LPC17_40_ETH_RXCONSIDX) & ETH_RXCONSIDX_MASK;
-  prodidx = lpc17_40_getreg(LPC17_40_ETH_RXPRODIDX) & ETH_RXPRODIDX_MASK;
-
-  if (considx != prodidx)
-    {
-      work_queue(ETHWORK, &priv->lp_rxwork, (worker_t)lpc17_40_rxdone_work,
-                 priv, 0);
-    }
-
-  /* Setup the watchdog poll timer again */
-
-  wd_start(&priv->lp_txpoll, LPC17_40_WDDELAY,
-           lpc17_40_poll_expiry, (wdparm_t)priv);
-  net_unlock();
-}
-
-/****************************************************************************
- * Function: lpc17_40_poll_expiry
- *
- * Description:
- *   Periodic timer handler.  Called from the timer interrupt handler.
- *
- * Input Parameters:
- *   arg  - The argument
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   Global interrupts are disabled by the watchdog logic.
- *
- ****************************************************************************/
-
-static void lpc17_40_poll_expiry(wdparm_t arg)
-{
-  FAR struct lpc17_40_driver_s *priv = (FAR struct lpc17_40_driver_s *)arg;
-
-  DEBUGASSERT(arg);
-
-  /* Schedule to perform the interrupt processing on the worker thread. */
-
-  work_queue(ETHWORK, &priv->lp_pollwork, lpc17_40_poll_work, priv, 0);
-}
-
-/****************************************************************************
  * Function: lpc17_40_ipv6multicast
  *
  * Description:
@@ -1544,7 +1447,7 @@ static void lpc17_40_poll_expiry(wdparm_t arg)
  ****************************************************************************/
 
 #ifdef CONFIG_NET_ICMPv6
-static void lpc17_40_ipv6multicast(FAR struct lpc17_40_driver_s *priv)
+static void lpc17_40_ipv6multicast(struct lpc17_40_driver_s *priv)
 {
   struct net_driver_s *dev;
   uint16_t tmp16;
@@ -1748,11 +1651,6 @@ static int lpc17_40_ifup(struct net_driver_s *dev)
   regval |= ETH_CMD_TXEN;
   lpc17_40_putreg(regval, LPC17_40_ETH_CMD);
 
-  /* Set and activate a timer process */
-
-  wd_start(&priv->lp_txpoll, LPC17_40_WDDELAY,
-           lpc17_40_poll_expiry, (wdparm_t)priv);
-
   /* Finally, make the interface up and enable the Ethernet interrupt at
    * the interrupt controller
    */
@@ -1793,9 +1691,8 @@ static int lpc17_40_ifdown(struct net_driver_s *dev)
   flags = enter_critical_section();
   up_disable_irq(LPC17_40_IRQ_ETH);
 
-  /* Cancel the TX poll timer and TX timeout timers */
+  /* Cancel the TX timeout timers */
 
-  wd_cancel(&priv->lp_txpoll);
   wd_cancel(&priv->lp_txtimeout);
 
   /* Reset the device and mark it as down. */
@@ -1823,9 +1720,9 @@ static int lpc17_40_ifdown(struct net_driver_s *dev)
  *
  ****************************************************************************/
 
-static void lpc17_40_txavail_work(FAR void *arg)
+static void lpc17_40_txavail_work(void *arg)
 {
-  FAR struct lpc17_40_driver_s *priv = (FAR struct lpc17_40_driver_s *)arg;
+  struct lpc17_40_driver_s *priv = (struct lpc17_40_driver_s *)arg;
 
   /* Ignore the notification if the interface is not yet up */
 
@@ -1838,7 +1735,7 @@ static void lpc17_40_txavail_work(FAR void *arg)
         {
           /* If so, then poll the network layer for new XMIT data */
 
-          devif_timer(&priv->lp_dev, 0, lpc17_40_txpoll);
+          devif_poll(&priv->lp_dev, lpc17_40_txpoll);
         }
     }
 
@@ -1866,8 +1763,8 @@ static void lpc17_40_txavail_work(FAR void *arg)
 
 static int lpc17_40_txavail(struct net_driver_s *dev)
 {
-  FAR struct lpc17_40_driver_s *priv =
-    (FAR struct lpc17_40_driver_s *)dev->d_private;
+  struct lpc17_40_driver_s *priv =
+    (struct lpc17_40_driver_s *)dev->d_private;
 
   /* Is our single poll work structure available?  It may not be if there
    * are pending polling actions and we will have to ignore the Tx
@@ -3252,7 +3149,6 @@ static inline int lpc17_40_ethinitialize(int intf)
 #endif
 {
   struct lpc17_40_driver_s *priv;
-  uint8_t *pktbuf;
   uint32_t regval;
   int ret;
   int i;
@@ -3275,14 +3171,10 @@ static inline int lpc17_40_ethinitialize(int intf)
 
   lpc17_40_showpins();
 
-  /* Select the packet buffer */
-
-  pktbuf = &g_pktbuf[PKTBUF_SIZE * intf];
-
   /* Initialize the driver structure */
 
   memset(priv, 0, sizeof(struct lpc17_40_driver_s));
-  priv->lp_dev.d_buf     = pktbuf;             /* Single packet buffer */
+  priv->lp_dev.d_buf     = g_pktbuf[intf];     /* Single packet buffer */
   priv->lp_dev.d_ifup    = lpc17_40_ifup;      /* I/F down callback */
   priv->lp_dev.d_ifdown  = lpc17_40_ifdown;    /* I/F up (new IP address) callback */
   priv->lp_dev.d_txavail = lpc17_40_txavail;   /* New TX data callback */

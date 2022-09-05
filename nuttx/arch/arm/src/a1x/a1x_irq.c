@@ -25,13 +25,13 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "sctlr.h"
 

@@ -37,16 +37,6 @@
 #endif
 
 /****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-/* If CONFIG_NETDEV_IFINDEX is enabled then there is limit to the number of
- * devices that can be registered due to the nature of some static data.
- */
-
-#define MAX_IFINDEX  32
-
-/****************************************************************************
  * Public Data
  ****************************************************************************/
 
@@ -99,17 +89,6 @@ typedef int (*netdev_callback_t)(FAR struct net_driver_s *dev,
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
-
-/****************************************************************************
- * Name: netdev_ifup / netdev_ifdown
- *
- * Description:
- *   Bring the interface up/down
- *
- ****************************************************************************/
-
-void netdev_ifup(FAR struct net_driver_s *dev);
-void netdev_ifdown(FAR struct net_driver_s *dev);
 
 /****************************************************************************
  * Name: netdev_verify
@@ -295,48 +274,6 @@ FAR struct net_driver_s *netdev_findbyindex(int ifindex);
 
 #ifdef CONFIG_NETDEV_IFINDEX
 int netdev_nextindex(int ifindex);
-#endif
-
-/****************************************************************************
- * Name: netdev_indextoname
- *
- * Description:
- *   The if_indextoname() function maps an interface index to its
- *   corresponding name.
- *
- * Input Parameters:
- *   ifname  - Points to a buffer of at least IF_NAMESIZE bytes.
- *             if_indextoname() will place in this buffer the name of the
- *             interface with index ifindex.
- *
- * Returned Value:
- *   If ifindex is an interface index, then the function will return zero
- *   (OK). Otherwise, the function returns a negated errno value;
- *
- ****************************************************************************/
-
-#ifdef CONFIG_NETDEV_IFINDEX
-int netdev_indextoname(unsigned int ifindex, FAR char *ifname);
-#endif
-
-/****************************************************************************
- * Name: netdev_nametoindex
- *
- * Description:
- *   The if_nametoindex() function returns the interface index corresponding
- *   to name ifname.
- *
- * Input Parameters:
- *   ifname - The interface name
- *
- * Returned Value:
- *   The corresponding index if ifname is the name of an interface;
- *   otherwise, a negated errno value is returned.
- *
- ****************************************************************************/
-
-#ifdef CONFIG_NETDEV_IFINDEX
-unsigned int netdev_nametoindex(FAR const char *ifname);
 #endif
 
 /****************************************************************************
@@ -530,13 +467,12 @@ int netdown_notifier_setup(worker_t worker, FAR struct net_driver_s *dev,
  *         netdown_notifier_setup().
  *
  * Returned Value:
- *   Zero (OK) is returned on success; a negated errno value is returned on
- *   any failure.
+ *   None.
  *
  ****************************************************************************/
 
 #ifdef CONFIG_NETDOWN_NOTIFIER
-int netdown_notifier_teardown(int key);
+void netdown_notifier_teardown(int key);
 #endif
 
 /****************************************************************************

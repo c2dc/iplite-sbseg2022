@@ -49,13 +49,7 @@ application that I know of.
 
 Timing Fidelity
 ---------------
-NOTE:  In order to facility fast testing, the sim target's IDLE loop, by
-default, calls the system "interrupt handler" as fast as possible.  As a
-result, there really are no noticeable delays when a task sleeps.  However,
-the task really does sleep -- but the time scale is wrong.  If you want
-behavior that is closer to normal timing, then you can define
-CONFIG_SIM_WALLTIME=y in your configuration file.  This configuration setting
-will cause the sim target's IDLE loop to delay on each call so that the system
+NOTE: The sim target's IDLE loop to delay on each call so that the system
 "timer interrupt" is called at a rate approximately correct for the system
 timer tick rate.  This option can be enabled with CONFIG_SIM_WALLTIME_SIGNAL
 which will drive the entire simulation by using a host timer that ticks at
@@ -138,7 +132,7 @@ the stack and overflow the small NuttX stacks.  X11, in particular, requires
 large stacks.  If you are using X11 in the simulation, make sure that you set
 aside a "lot" of stack for the X11 library calls (maybe 8 or 16Kb). The stack
 size for the thread that begins with user start is controlled by the
-configuration setting CONFIG_USERMAIN_STACKSIZE; you may need to increase this
+configuration setting CONFIG_INIT_STACKSIZE; you may need to increase this
 value to larger number to survive the X11 library calls.
 
 If you are running X11 applications such as NSH add-on programs, then the
@@ -315,13 +309,6 @@ SMP
     +CONFIG_SPINLOCK=y
     +CONFIG_SMP=y
     +CONFIG_SMP_NCPUS=2
-    +CONFIG_SMP_IDLETHREAD_STACKSIZE=2048
-
-  You also must enable near-realtime-performance otherwise even long timeouts
-  will expire before a CPU thread even has a chance to execute.
-
-    -# CONFIG_SIM_WALLTIME is not set
-    +CONFIG_SIM_WALLTIME=y
 
   And you can enable some additional debug output with:
 
@@ -329,7 +316,9 @@ SMP
     +CONFIG_DEBUG_SCHED=y
 
     -# CONFIG_SCHED_INSTRUMENTATION is not set
+    -# CONFIG_SCHED_INSTRUMENTATION_SWITCH is not set
     +CONFIG_SCHED_INSTRUMENTATION=y
+    +CONFIG_SCHED_INSTRUMENTATION_SWITCH=y
 
   The SMP configuration will run with:
 
@@ -483,6 +472,7 @@ Common Configuration Information
         CONFIG_HOST_WINDOWS=n
         CONFIG_HOST_X86=y
         CONFIG_HOST_X86_64=n
+        CONFIG_HOST_ARM64=n
 
      b. Linux, 64-bit CPU, 32-bit build
 
@@ -490,6 +480,7 @@ Common Configuration Information
         CONFIG_HOST_WINDOWS=n
         CONFIG_HOST_X86=n
         CONFIG_HOST_X86_64=y
+        CONFIG_HOST_ARM64=n
         CONFIG_SIM_X8664_MICROSOFT=n
         CONFIG_SIM_X8664_SYSTEMV=y
         CONFIG_SIM_M32=y
@@ -500,6 +491,7 @@ Common Configuration Information
         CONFIG_HOST_WINDOWS=n
         CONFIG_HOST_X86=n
         CONFIG_HOST_X86_64=y
+        CONFIG_HOST_ARM64=n
         CONFIG_SIM_X8664_MICROSOFT=n
         CONFIG_SIM_X8664_SYSTEMV=y
         CONFIG_SIM_M32=n
@@ -511,6 +503,7 @@ Common Configuration Information
         CONFIG_WINDOWS_CYGWIN=y
         CONFIG_HOST_X86=y
         CONFIG_HOST_X86_64=n
+        CONFIG_HOST_ARM64=n
 
      e. Cygwin64, 64-bit, 32-bit build
 
@@ -523,6 +516,7 @@ Common Configuration Information
         CONFIG_WINDOWS_CYGWIN=y
         CONFIG_HOST_X86=n
         CONFIG_HOST_X86_64=y
+        CONFIG_HOST_ARM64=n
         CONFIG_SIM_X8664_MICROSOFT=y
         CONFIG_SIM_X8664_SYSTEMV=n
         CONFIG_SIM_M32=n
@@ -534,12 +528,49 @@ Common Configuration Information
         CONFIG_HOST_WINDOWS=n
         CONFIG_HOST_X86=n
         CONFIG_HOST_X86_64=y
+        CONFIG_HOST_ARM64=n
+        CONFIG_SIM_X8664_MICROSOFT=n
+        CONFIG_SIM_X8664_SYSTEMV=y
+        CONFIG_SIM_M32=n
+
+     h. macOS M1, 64-bit, 64-bit build
+
+        CONFIG_HOST_LINUX=n
+        CONFIG_HOST_MACOS=y
+        CONFIG_HOST_WINDOWS=n
+        CONFIG_HOST_X86=n
+        CONFIG_HOST_X86_64=n
+        CONFIG_HOST_ARM64=y
+        CONFIG_SIM_X8664_MICROSOFT=n
+        CONFIG_SIM_X8664_SYSTEMV=y
+        CONFIG_SIM_M32=n
+
+     i. Linux ARM64, 64-bit, 64-bit build
+
+        CONFIG_HOST_LINUX=y
+        CONFIG_HOST_MACOS=n
+        CONFIG_HOST_WINDOWS=n
+        CONFIG_HOST_X86=n
+        CONFIG_HOST_X86_64=n
+        CONFIG_HOST_ARM64=y
         CONFIG_SIM_X8664_MICROSOFT=n
         CONFIG_SIM_X8664_SYSTEMV=y
         CONFIG_SIM_M32=n
 
 Configuration Sub-Directories
 -----------------------------
+
+adb
+
+  A simple demo show how to config adb:
+    $ ./nuttx
+    NuttShell (NSH) NuttX-10.2.0
+    nsh> adbd &
+    adbd [2:100]
+  You can use the normal adb command from host:
+    adb kill-server
+    adb connect localhost:5555
+    adb shell
 
 bluetooth
 
@@ -549,7 +580,7 @@ bluetooth
   drivers/wireless/bluetooth/bt_null.c
 
   There is also support on a Linux Host for attaching the bluetooth hardware
-  from the host to the NuttX bluetoooth stack via the HCI Socket interface
+  from the host to the NuttX bluetooth stack via the HCI Socket interface
   over the User Channel.  This is enabled in the bthcisock configuration.
   In order to use this you must give the nuttx elf additional capabilities:
 
@@ -630,7 +661,7 @@ loadable
   This is the key part of the configuration:
 
   +CONFIG_PATH_INITIAL="/system/bin"
-  +CONFIG_USER_INITPATH="/system/bin/nsh"
+  +CONFIG_INIT_FILEPATH="/system/bin/nsh"
 
   The shell is loaded from the elf, but you can also run any of the ELFs that are in /system/bin as they are on the "PATH"
 
@@ -924,9 +955,9 @@ nxwm
         /* Execute the startup script */
 
       #ifdef CONFIG_NSH_ROMFSETC
-     -  (void)nsh_script(&pstate->cn_vtbl, "init", NSH_INITPATH);
+     -  nsh_script(&pstate->cn_vtbl, "init", NSH_INITPATH);
      +// REMOVE ME
-     +//  (void)nsh_script(&pstate->cn_vtbl, "init", NSH_INITPATH);
+     +//  nsh_script(&pstate->cn_vtbl, "init", NSH_INITPATH);
       #endif
 
         /* Then enter the command line parsing loop */
@@ -1026,18 +1057,19 @@ rpserver
         2)Make integrated GPS like external(NMEA)
         3)Make integrated modem like external(ATCMD)
 
-  3.Rpmsg HostFS
+  3.RpmsgFS
     Source:
-      include/nuttx/fs/hostfs_rpmsg.h
-      fs/hostfs/hostfs_rpmsg_server.c
-      fs/hostfs/hostfs_rpmsg.c
+      fs/rpmsgfs/rpmsgfs.h
+      fs/rpmsgfs/rpmsgfs.c
+      fs/rpmsgfs/rpmsgfs_client.c
+      fs/rpmsgfs/rpmsgfs_server.c
     Describe:
       1.Like NFS but between two CPU
-      2.Fully access Host(Linux/NuttX) File system
+      2.Fully access remote(Linux/NuttX) File system
         1)Save the tuning parameter during manufacture
         2)Load the tuning parameter file in production
         3)Save audio dump to file for tuning/debugging
-        4)Dynamic loading module from host
+        4)Dynamic loading module from remote
 
   4.Rpmsg Net
     Source:
@@ -1104,11 +1136,11 @@ rpserver
           3     3 100 FIFO     Task    --- Running            00000000 004080 init
           4     4 224 FIFO     Kthread --- Waiting  Signal    00000002 002000 rptun server 0x5671e900
 
-    3>Rpmsg HostFS:
-      Mount the remote file system via RPMSG Hostfs, cu to proxy first:
+    3>RpmsgFS:
+      Mount the remote file system via RPMSGFS, cu to proxy first:
 
       server> cu
-      proxy> mount -t hostfs -o fs=/proc proc_server
+      proxy> mount -t rpmsgfs -o cpu=server,fs=/proc proc_server
       proxy> ls
       /:
         dev/
@@ -1346,6 +1378,12 @@ ustream
 
   Note that the binfs file system is mounted at /bin when the system starts
   up.
+
+vncserver
+
+  This a simple vnc server test configuration, Remmina is tested and recommended since
+  there are some compatibility issues. By default SIM will be blocked at startup to
+  wait client connection, if a client connected, then the fb example will launch. 
 
 vpnkit
 

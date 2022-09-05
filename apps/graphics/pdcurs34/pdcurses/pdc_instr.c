@@ -1,41 +1,25 @@
 /****************************************************************************
  * apps/graphics/pdcurses/pdc_instr.c
- * Public Domain Curses
- * RCSID("$Id: instr.c,v 1.44 2008/07/13 16:08:18 wmcbrine Exp $")
  *
- *   Copyright (C) 2017 Gregory Nutt. All rights reserved.
- *   Adapted by: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Adapted from the original public domain pdcurses by Gregory Nutt and
- * released as part of NuttX under the 3-clause BSD license:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
+ ****************************************************************************/
+
+/****************************************************************************
+ * Adapted from the original public domain pdcurses by Gregory Nutt
  ****************************************************************************/
 
 /* Name: instr
@@ -121,7 +105,7 @@ int winnstr(WINDOW *win, char *str, int n)
   chtype *src;
   int i;
 
-  PDC_LOG(("winnstr() - called: n %d \n", n));
+  PDC_LOG(("winnstr() - called: n %d\n", n));
 
   if (!win || !str)
     {
@@ -157,7 +141,7 @@ int instr(char *str)
 
 int winstr(WINDOW *win, char *str)
 {
-  PDC_LOG(("winstr() - called: \n"));
+  PDC_LOG(("winstr() - called:\n"));
 
   return (ERR == winnstr(win, str, win->_maxx)) ? ERR : OK;
 }
@@ -167,7 +151,7 @@ int mvinstr(int y, int x, char *str)
 #ifdef CONFIG_PDCURSES_MULTITHREAD
   FAR struct pdc_context_s *ctx = PDC_ctx();
 #endif
-  PDC_LOG(("mvinstr() - called: y %d x %d \n", y, x));
+  PDC_LOG(("mvinstr() - called: y %d x %d\n", y, x));
 
   if (move(y, x) == ERR)
     {
@@ -179,7 +163,7 @@ int mvinstr(int y, int x, char *str)
 
 int mvwinstr(WINDOW *win, int y, int x, char *str)
 {
-  PDC_LOG(("mvwinstr() - called: y %d x %d \n", y, x));
+  PDC_LOG(("mvwinstr() - called: y %d x %d\n", y, x));
 
   if (wmove(win, y, x) == ERR)
     {
@@ -194,7 +178,7 @@ int innstr(char *str, int n)
 #ifdef CONFIG_PDCURSES_MULTITHREAD
   FAR struct pdc_context_s *ctx = PDC_ctx();
 #endif
-  PDC_LOG(("innstr() - called: n %d \n", n));
+  PDC_LOG(("innstr() - called: n %d\n", n));
 
   return winnstr(stdscr, str, n);
 }
@@ -204,7 +188,7 @@ int mvinnstr(int y, int x, char *str, int n)
 #ifdef CONFIG_PDCURSES_MULTITHREAD
   FAR struct pdc_context_s *ctx = PDC_ctx();
 #endif
-  PDC_LOG(("mvinnstr() - called: y %d x %d n %d \n", y, x, n));
+  PDC_LOG(("mvinnstr() - called: y %d x %d n %d\n", y, x, n));
 
   if (move(y, x) == ERR)
     {
@@ -216,7 +200,7 @@ int mvinnstr(int y, int x, char *str, int n)
 
 int mvwinnstr(WINDOW *win, int y, int x, char *str, int n)
 {
-  PDC_LOG(("mvwinnstr() - called: y %d x %d n %d \n", y, x, n));
+  PDC_LOG(("mvwinnstr() - called: y %d x %d n %d\n", y, x, n));
 
   if (wmove(win, y, x) == ERR)
     {
@@ -232,7 +216,7 @@ int winnwstr(WINDOW *win, wchar_t *wstr, int n)
   chtype *src;
   int i;
 
-  PDC_LOG(("winnstr() - called: n %d \n", n));
+  PDC_LOG(("winnstr() - called: n %d\n", n));
 
   if (!win || !wstr)
     {

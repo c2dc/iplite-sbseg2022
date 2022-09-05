@@ -36,6 +36,7 @@ PRINTLISTONLY=0
 GITCLEAN=0
 SAVEARTIFACTS=0
 CHECKCLEAN=1
+RUN=0
 
 case $(uname -s) in
   Darwin*)
@@ -77,6 +78,7 @@ function showusage {
   echo "       * This assumes that only nuttx and apps repos need to be cleaned."
   echo "       * If the tree has files not managed by git, they will be removed"
   echo "         as well."
+  echo "  -R execute \"run\" script in the config directories if exists."
   echo "  -h will show this help test and terminate"
   echo "  <testlist-file> selects the list of configurations to test.  No default"
   echo ""
@@ -128,6 +130,9 @@ while [ ! -z "$1" ]; do
   -C )
     CHECKCLEAN=0
     ;;
+  -R )
+    RUN=1
+    ;;
   -h )
     showusage
     ;;
@@ -172,9 +177,42 @@ blacklist=`grep "^-" $testfile || true`
 
 cd $nuttx || { echo "ERROR: failed to CD to $nuttx"; exit 1; }
 
+function exportandimport {
+  # Do nothing until we finish to build the nuttx
+  if [ ! -f nuttx ]; then
+    return $fail
+  fi
+
+  # If CONFIG_BUILD_KERNEL=y does not exist in .config, do nothing
+  if ! grep CONFIG_BUILD_KERNEL=y .config 1>/dev/null; then
+    return $fail
+  fi
+
+  if ! ${MAKE} export ${JOPTION} 1>/dev/null; then
+    fail=1
+    return $fail
+  fi
+
+  pushd ../apps/
+
+  if ! ./tools/mkimport.sh -z -x ../nuttx/nuttx-export-*.tar.gz 1>/dev/null; then
+    fail=1
+    popd
+    return $fail
+  fi
+
+  if ! ${MAKE} import ${JOPTION} 1>/dev/null; then
+    fail=1
+  fi
+  popd
+  return $fail
+}
+
 function makefunc {
   if ! ${MAKE} ${MAKE_FLAGS} "${EXTRA_FLAGS}" ${JOPTION} $@ 1>/dev/null; then
     fail=1
+  else
+    exportandimport
   fi
 
   return $fail
@@ -252,6 +290,10 @@ function build {
     xargs -I "{}" cp "{}" $artifactconfigdir < $nuttx/nuttx.manifest
   fi
 
+  return $fail
+}
+
+function refresh {
   # Ensure defconfig in the canonical form
 
   if ! ./tools/refresh.sh --silent $config; then
@@ -276,6 +318,18 @@ function build {
   return $fail
 }
 
+function run {
+  if [ ${RUN} -ne 0 ]; then
+    run_script="$path/run"
+    if [ -x $run_script ]; then
+      echo "  Running NuttX..."
+      if ! $run_script; then
+        fail=1
+      fi
+    fi
+  fi
+  return $fail
+}
 # Coordinate the steps for the next build test
 
 function dotest {
@@ -283,10 +337,11 @@ function dotest {
   config=`echo $1 | cut -d',' -f1`
   check=${HOST},${config/\//:}
 
+  skip=0
   for re in $blacklist; do
     if [[ "${check}" =~ ${re:1}$ ]]; then
       echo "Skipping: $1"
-      return
+      skip=1
     fi
   done
 
@@ -329,7 +384,11 @@ function dotest {
   echo "------------------------------------------------------------------------------------"
   distclean
   configure
-  build
+  if [ ${skip} -ne 1 ]; then
+    build
+    run
+  fi
+  refresh
 }
 
 # Perform the build test for each entry in the test list file

@@ -22,12 +22,16 @@ include $(TOPDIR)/Make.defs
 
 CSRCS  = k210_bringup.c k210_boot.c
 
-ifeq ($(CONFIG_LIB_BOARDCTL),y)
+ifeq ($(CONFIG_BOARDCTL),y)
 CSRCS += k210_appinit.c
 endif
 
 ifeq ($(CONFIG_ARCH_LEDS),y)
 CSRCS += k210_leds.c
+endif
+
+ifeq ($(CONFIG_DEV_GPIO),y)
+CSRCS += k210_gpio.c
 endif
 
 include $(TOPDIR)/boards/Board.mk

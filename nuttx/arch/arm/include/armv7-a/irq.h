@@ -34,7 +34,6 @@
 
 #ifndef __ASSEMBLY__
 #  include <stdint.h>
-#  include <arch/arch.h>
 #endif
 
 /****************************************************************************
@@ -136,8 +135,29 @@
 #  define REG_D15           (ARM_CONTEXT_REGS+30) /* D15 */
 #  define REG_S30           (ARM_CONTEXT_REGS+30) /* S30 */
 #  define REG_S31           (ARM_CONTEXT_REGS+31) /* S31 */
-#  define REG_FPSCR         (ARM_CONTEXT_REGS+32) /* Floating point status and control */
-#  define FPU_CONTEXT_REGS  (33)
+#  ifdef CONFIG_ARM_HAVE_DPFPU32
+#    define REG_D16         (ARM_CONTEXT_REGS+32) /* D16 */
+#    define REG_D17         (ARM_CONTEXT_REGS+34) /* D17 */
+#    define REG_D18         (ARM_CONTEXT_REGS+36) /* D18 */
+#    define REG_D19         (ARM_CONTEXT_REGS+38) /* D19 */
+#    define REG_D20         (ARM_CONTEXT_REGS+40) /* D20 */
+#    define REG_D21         (ARM_CONTEXT_REGS+42) /* D21 */
+#    define REG_D22         (ARM_CONTEXT_REGS+44) /* D22 */
+#    define REG_D23         (ARM_CONTEXT_REGS+46) /* D23 */
+#    define REG_D24         (ARM_CONTEXT_REGS+48) /* D24 */
+#    define REG_D25         (ARM_CONTEXT_REGS+50) /* D25 */
+#    define REG_D26         (ARM_CONTEXT_REGS+52) /* D26 */
+#    define REG_D27         (ARM_CONTEXT_REGS+54) /* D27 */
+#    define REG_D28         (ARM_CONTEXT_REGS+56) /* D28 */
+#    define REG_D29         (ARM_CONTEXT_REGS+58) /* D29 */
+#    define REG_D30         (ARM_CONTEXT_REGS+60) /* D30 */
+#    define REG_D31         (ARM_CONTEXT_REGS+62) /* D31 */
+#    define REG_FPSCR       (ARM_CONTEXT_REGS+64) /* Floating point status and control */
+#    define FPU_CONTEXT_REGS  (65)
+#  else
+#    define REG_FPSCR       (ARM_CONTEXT_REGS+32) /* Floating point status and control */
+#    define FPU_CONTEXT_REGS  (33)
+#  endif
 #else
 #  define FPU_CONTEXT_REGS  (0)
 #endif
@@ -162,7 +182,11 @@
 #define REG_V7              REG_R10
 #define REG_SB              REG_R9
 #define REG_SL              REG_R10
-#define REG_FP              REG_R11
+#ifdef CONFIG_ARM_THUMB
+  #define REG_FP            REG_R7
+#else
+  #define REG_FP            REG_R11
+#endif /* CONFIG_ARM_THUMB */
 #define REG_IP              REG_R12
 #define REG_SP              REG_R13
 #define REG_LR              REG_R14
@@ -220,16 +244,11 @@ struct xcptcontext
 
   void *sigdeliver; /* Actual type is sig_deliver_t */
 
-  /* These are saved copies of LR and CPSR used during signal processing.
-   *
-   * REVISIT:  Because there is only one copy of these save areas,
-   * only a single signal handler can be active.  This precludes
-   * queuing of signal actions.  As a result, signals received while
-   * another signal handler is executing will be ignored!
+  /* These are saved copies of the context used during
+   * signal processing.
    */
 
-  uint32_t saved_pc;
-  uint32_t saved_cpsr;
+  uint32_t *saved_regs;
 
 #ifdef CONFIG_BUILD_KERNEL
   /* This is the saved address to use when returning from a user-space
@@ -240,9 +259,13 @@ struct xcptcontext
 
 #endif
 
-  /* Register save area */
+  /* Register save area with XCPTCONTEXT_SIZE, only valid when:
+   * 1.The task isn't running or
+   * 2.The task is interrupted
+   * otherwise task is running, and regs contain the stale value.
+   */
 
-  uint32_t regs[XCPTCONTEXT_REGS];
+  uint32_t *regs;
 
   /* Extra fault address register saved for common paging logic.  In the
    * case of the pre-fetch abort, this value is the same as regs[REG_R15];
@@ -271,7 +294,7 @@ struct xcptcontext
    * handling to support dynamically sized stacks for each thread.
    */
 
-  FAR uintptr_t *ustack[ARCH_STACK_NSECTS];
+  uintptr_t *ustack[ARCH_STACK_NSECTS];
 #endif
 
 #ifdef CONFIG_ARCH_KERNEL_STACK
@@ -283,9 +306,9 @@ struct xcptcontext
    * stack in place.
    */
 
-  FAR uint32_t *ustkptr;  /* Saved user stack pointer */
-  FAR uint32_t *kstack;   /* Allocate base of the (aligned) kernel stack */
-  FAR uint32_t *kstkptr;  /* Saved kernel stack pointer */
+  uint32_t *ustkptr;  /* Saved user stack pointer */
+  uint32_t *kstack;   /* Allocate base of the (aligned) kernel stack */
+  uint32_t *kstkptr;  /* Saved kernel stack pointer */
 #endif
 #endif
 };

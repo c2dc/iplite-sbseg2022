@@ -17,6 +17,8 @@ Contents
   - SDCard support
   - SPI NOR Flash
   - Nokia 5110 LCD Display support
+  - HYT271 sensor
+  - DS18B20 sensor
   - USB Console support
   - STM32F103 Minimum - specific Configuration Options
   - Configurations
@@ -494,6 +496,53 @@ Nokia 5110 LCD Display support:
 
   nsh> nxhello
 
+HYT271 sensor support:
+======================
+
+The existing sensor configuration allows connecting several sensors of type
+hyt271 on i2c bus number 2. For full feature support, be able to change the
+i2c address of the sensor, the following hardware setup is necessary.
+
+  ----------                                            -----------
+  |        |------ GND ------------------------ GND ----|         |
+  |        |                                            |         |
+  |        |                                            |         |
+  |        |                                            |         |
+  |        |---- POWIN A00 ------.                      |         |
+  |        |                     |                      |         |
+  |        |                    4.7k                    |         |
+  |        |                     |                      |         |
+  | STM32  |--- POWOUT A01 ------.------.------ VDD ----| HYT271  |
+  |        |                     |      |               |         |
+  |        |                    2.2k    |               |         |
+  |        |                     |      |               |         |
+  |        |----- SDA2 B11 ------.----  | ----- SDA ----|         |
+  |        |                            |               |         |
+  |        |                           2.2k             |         |
+  |        |                            |               |         |
+  |        |----- SCL2 B10 -------------.------ SCL ----|         |
+  |        |                                            |         |
+  ---------                                             -----------
+
+DS18B20 sensor support:
+======================
+
+The existing sensor configuration allows connecting several sensors of type
+ds18b20 on 1wire bus number 2. The following hardware setup is necessary.
+
+  ---------                                            -----------
+  |       |------ GND ----------.------------- GND ----|         |
+  |       |                                            |         |
+  |       |                                            |         |
+  |       |                                            |         |
+  |       |------ VDD ----------.------------- VDD ----|         |
+  | STM32 |                     |                      | DS18B20 |
+  |       |                    4.7k                    |         |
+  |       |                     |                      |         |
+  |       |----- TX2 A02 -------.------.------- DQ ----|         |
+  |       |                                            |         |
+  --------                                             -----------
+
 USB Console support:
 ====================
 
@@ -724,7 +773,7 @@ STM32F103 Minimum - specific Configuration Options
     CONFIG_STM32_SPI_INTERRUPTS - Select to enable interrupt driven SPI
       support. Non-interrupt-driven, poll-waiting is recommended if the
       interrupt rate would be to high in the interrupt driven case.
-    CONFIG_STM32_SPI_DMA - Use DMA to improve SPI transfer performance.
+    CONFIG_STM32_SPIx_DMA - Use DMA to improve SPIx transfer performance.
       Cannot be used with CONFIG_STM32_SPI_INTERRUPT.
 
 Configurations
@@ -784,7 +833,7 @@ Configurations
 
        CONFIG_HOST_WINDOWS=y                   : Builds under Windows
        CONFIG_WINDOWS_CYGWIN=y                 : Using Cygwin
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
     3. This configuration does have UART2 output enabled and set up as
        the system logging device:

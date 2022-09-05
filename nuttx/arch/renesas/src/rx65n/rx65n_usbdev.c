@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <stdint.h>
@@ -46,9 +47,7 @@
 #include <arch/chip/types.h>
 
 #include "chip.h"
-#include "up_arch.h"
 #include "up_internal.h"
-
 #include "rx65n_usbdev.h"
 
 /****************************************************************************
@@ -2888,7 +2887,7 @@ static int rx65n_epconfigure(FAR struct usbdev_ep_s *ep,
   if (!ep || !desc)
     {
       usbtrace(TRACE_DEVERROR(RX65N_TRACEERR_INVALIDPARMS), 0);
-      printf("ERROR: ep=%p desc=%p\n");
+      printf("ERROR: ep=%p desc=%p\n", ep, desc);
       return -EINVAL;
     }
 #endif
@@ -3137,6 +3136,7 @@ static int rx65n_epsubmit(FAR struct usbdev_ep_s *ep, FAR struct
         {
           privreq->req.len = CDC_CLASS_DATA_LENGTH;
           rx65n_rdrequest(epno, priv, privep);
+          leave_critical_section(flags);
           return OK;
         }
 
@@ -3145,6 +3145,7 @@ static int rx65n_epsubmit(FAR struct usbdev_ep_s *ep, FAR struct
       if (!privep->txbusy)
         {
           ret = rx65n_wrrequest(epno, priv, privep);
+          leave_critical_section(flags);
           return OK;
         }
     }
@@ -3158,6 +3159,7 @@ static int rx65n_epsubmit(FAR struct usbdev_ep_s *ep, FAR struct
       if (priv->ep0state == EP0STATE_RDREQUEST)
         {
           rx65n_rdrequest(epno, priv, privep);
+          leave_critical_section(flags);
           return OK;
         }
 
@@ -5425,7 +5427,7 @@ void usb_pstd_brdy_pipe_process(uint16_t bitsts)
  * Name: usb_pstd_brdy_pipe
  *
  * Description:
- *  Handle BRDY Interupt
+ *  Handle BRDY Interrupt
  *
  ****************************************************************************/
 
@@ -5834,7 +5836,7 @@ static int rx65n_usbinterrupt(int irq, FAR void *context, FAR void *arg)
       if (USB_ATTACH == usb_pstd_chk_vbsts())
         {
           priv->attached = 1;
-          connected_times ++;
+          connected_times++;
           syslog (LOG_INFO, "NuttX: USB Device Connected. %d\n",
                   connected_times);
           uinfo("Device attached\n");

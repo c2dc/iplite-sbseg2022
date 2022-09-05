@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_ARM_SRC_COMMON_ARMV8_M_RAM_VECTORS_H
-#define __ARCH_ARM_SRC_COMMON_ARMV8_M_RAM_VECTORS_H
+#ifndef __ARCH_ARM_SRC_ARMV8_M_RAM_VECTORS_H
+#define __ARCH_ARM_SRC_ARMV8_M_RAM_VECTORS_H
 
 /****************************************************************************
  * Included Files
@@ -57,12 +57,12 @@
  *
  * REVISIT: Can this alignment requirement vary from core-to-core?  Yes, it
  * depends on the number of vectors supported by the MCU. The safest thing
- * to do is to put the vector table at the beginning of RAM in order toforce
+ * to do is to put the vector table at the beginning of RAM in order to force
  * the highest alignment possible.
  */
 
 extern up_vector_t g_ram_vectors[ARMV8M_VECTAB_SIZE]
-  __attribute__ ((section (".ram_vectors"), aligned (128)));
+  locate_data(".ram_vectors") aligned_data(128);
 
 /****************************************************************************
  * Public Function Prototypes
@@ -100,4 +100,4 @@ void exception_common(void);
 int arm_ramvec_attach(int irq, up_vector_t vector);
 
 #endif /* CONFIG_ARCH_RAMVECTORS */
-#endif /* __ARCH_ARM_SRC_COMMON_ARMV8_M_RAM_VECTORS_H */
+#endif /* __ARCH_ARM_SRC_ARMV8_M_RAM_VECTORS_H */

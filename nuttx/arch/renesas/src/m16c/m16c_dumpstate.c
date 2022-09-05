@@ -29,8 +29,8 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/syslog/syslog.h>
 
-#include "up_arch.h"
 #include "up_internal.h"
 #include "sched/sched.h"
 #include "chip.h"
@@ -63,16 +63,20 @@ static inline uint16_t m16c_getusersp(void)
  * Name: m16c_stackdump
  ****************************************************************************/
 
-static void m16c_stackdump(uint16_t sp, uint16_t stack_base)
+static void m16c_stackdump(uint16_t sp, uint16_t stack_top)
 {
   uint16_t stack;
 
-  for (stack = sp & ~7; stack < stack_base; stack += 8)
+  /* Flush any buffered SYSLOG data to avoid overwrite */
+
+  syslog_flush();
+
+  for (stack = sp & ~0x7; stack < (stack_top & ~0x7); stack += 8)
     {
       uint8_t *ptr = (uint8_t *)stack;
       _alert("%04x: %02x %02x %02x %02x %02x %02x %02x %02x\n",
-             stack, ptr[0], ptr[1], ptr[2], ptr[3], ptr[4],
-             ptr[5], ptr[6], ptr[7]);
+             stack, ptr[0], ptr[1], ptr[2], ptr[3],
+             ptr[4], ptr[5], ptr[6], ptr[7]);
     }
 }
 
@@ -82,7 +86,7 @@ static void m16c_stackdump(uint16_t sp, uint16_t stack_base)
 
 static inline void m16c_registerdump(void)
 {
-  uint8_t *ptr = (uint8_t *) g_current_regs;
+  volatile uint8_t *ptr = (uint8_t *)g_current_regs;
 
   /* Are user registers available from interrupt processing? */
 
@@ -91,24 +95,24 @@ static inline void m16c_registerdump(void)
       /* No.. capture user registers by hand */
 
       up_saveusercontext((uint32_t *)s_last_regs);
-      regs = s_last_regs;
+      ptr = s_last_regs;
     }
 
   /* Dump the interrupt registers */
 
   _alert("PC: %02x%02x%02x FLG: %02x00%02x FB: %02x%02x SB: %02x%02x "
          "SP: %02x%02x\n",
-        ptr[REG_FLGPCHI] & 0xff, ptr[REG_PC], ptr[REG_PC + 1],
-        ptr[REG_FLGPCHI] >> 8, ptr[REG_FLG],
-        ptr[REG_FB], ptr[REG_FB + 1],
-        ptr[REG_SB], ptr[REG_SB + 1],
-        ptr[REG_SP], ptr[REG_SP + 1]);
+         ptr[REG_FLGPCHI] & 0xff, ptr[REG_PC], ptr[REG_PC + 1],
+         ptr[REG_FLGPCHI] >> 8, ptr[REG_FLG],
+         ptr[REG_FB], ptr[REG_FB + 1],
+         ptr[REG_SB], ptr[REG_SB + 1],
+         ptr[REG_SP], ptr[REG_SP + 1]);
 
   _alert("R0: %02x%02x R1: %02x%02x R2: %02x%02x A0: %02x%02x "
          "A1: %02x%02x\n",
-        ptr[REG_R0], ptr[REG_R0 + 1], ptr[REG_R1], ptr[REG_R1 + 1],
-        ptr[REG_R2], ptr[REG_R2 + 1], ptr[REG_R3], ptr[REG_R3 + 1],
-        ptr[REG_A0], ptr[REG_A0 + 1], ptr[REG_A1], ptr[REG_A1 + 1]);
+         ptr[REG_R0], ptr[REG_R0 + 1], ptr[REG_R1], ptr[REG_R1 + 1],
+         ptr[REG_R2], ptr[REG_R2 + 1], ptr[REG_R3], ptr[REG_R3 + 1],
+         ptr[REG_A0], ptr[REG_A0 + 1], ptr[REG_A1], ptr[REG_A1 + 1]);
 }
 
 /****************************************************************************
@@ -121,8 +125,8 @@ static inline void m16c_registerdump(void)
 
 void up_dumpstate(void)
 {
-  struct tcb_s *rtcb = running_task();
-  uint16_t sp = renesas_getsp();
+  FAR struct tcb_s *rtcb = running_task();
+  uint16_t sp = up_getsp();
   uint16_t ustackbase;
   uint16_t ustacksize;
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
@@ -136,7 +140,7 @@ void up_dumpstate(void)
 
   /* Get the limits on the user stack memory */
 
-  ustackbase = (uint16_t)rtcb->adj_stack_ptr;
+  ustackbase = (uint16_t)rtcb->stack_base_ptr;
   ustacksize = (uint16_t)rtcb->adj_stack_size;
 
   /* Get the limits on the interrupt stack memory.
@@ -165,11 +169,11 @@ void up_dumpstate(void)
    * stack?
    */
 
-  if (sp <= istackbase && sp > istackbase - istacksize)
+  if (sp >= istackbase && sp < istackbase + istacksize)
     {
       /* Yes.. dump the interrupt stack */
 
-      m16c_stackdump(sp, istackbase);
+      m16c_stackdump(sp, istackbase + istacksize);
 
       /* Extract the user stack pointer from the register area */
 
@@ -179,7 +183,7 @@ void up_dumpstate(void)
   else if (g_current_regs)
     {
       _alert("ERROR: Stack pointer is not within the interrupt stack\n");
-      m16c_stackdump(istackbase - istacksize, istackbase);
+      m16c_stackdump(istackbase, istackbase + istacksize);
     }
 
   /* Show user stack info */
@@ -197,14 +201,14 @@ void up_dumpstate(void)
    * stack memory.
    */
 
-  if (sp > ustackbase || sp <= ustackbase - ustacksize)
+  if (sp >= ustackbase && sp < ustackbase + ustacksize)
     {
-      _alert("ERROR: Stack pointer is not within allocated stack\n");
-      m16c_stackdump(ustackbase - ustacksize, ustackbase);
+      m16c_stackdump(sp, ustackbase + ustacksize);
     }
   else
     {
-      m16c_stackdump(sp, ustackbase);
+      _alert("ERROR: Stack pointer is not within allocated stack\n");
+      m16c_stackdump(ustackbase, ustackbase + ustacksize);
     }
 }
 

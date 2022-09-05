@@ -62,8 +62,8 @@
  * changed via sethostname(), however.
  */
 
-#ifndef CONFIG_LIB_HOSTNAME
-#  define CONFIG_LIB_HOSTNAME ""
+#ifndef CONFIG_LIBC_HOSTNAME
+#  define CONFIG_LIBC_HOSTNAME ""
 #endif
 
 /****************************************************************************
@@ -72,7 +72,7 @@
 
 /* This is the system hostname */
 
-char g_hostname[HOST_NAME_MAX + 1] = CONFIG_LIB_HOSTNAME;
+char g_hostname[HOST_NAME_MAX + 1] = CONFIG_LIBC_HOSTNAME;
 
 /****************************************************************************
  * Public Functions
@@ -111,7 +111,7 @@ int gethostname(FAR char *name, size_t namelen)
    */
 
   flags = enter_critical_section();
-  strncpy(name, g_hostname, namelen);
+  strlcpy(name, g_hostname, namelen);
   leave_critical_section(flags);
 
   return 0;

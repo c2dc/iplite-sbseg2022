@@ -37,7 +37,6 @@
 
 #include <arch/board/board.h>
 
-#include "up_arch.h"
 #include "sched/sched.h"
 #include "up_internal.h"
 
@@ -68,35 +67,34 @@ static uint8_t s_last_regs[XCPTCONTEXT_REGS];
  ****************************************************************************/
 
 /****************************************************************************
- * Name: up_stackdump
+ * Name: hc_stackdump
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_STACKDUMP
-static void up_stackdump(uint16_t sp, uint16_t stack_base)
+static void hc_stackdump(uint16_t sp, uint16_t stack_top)
 {
   uint16_t stack;
 
-  for (stack = sp; stack < stack_base; stack += 16)
+  /* Flush any buffered SYSLOG data to avoid overwrite */
+
+  syslog_flush();
+
+  for (stack = sp & ~0x7; stack < (stack_top & ~0x7); stack += 8)
     {
       uint8_t *ptr = (uint8_t *)stack;
-
-      _alert("%04x: %02x %02x %02x %02x %02x %02x %02x %02x"
-            "   %02x %02x %02x %02x %02x %02x %02x %02x\n",
-             stack, ptr[0], ptr[1], ptr[2], ptr[3], ptr[4],
-             ptr[5], ptr[6], ptr[7], ptr[8], ptr[9], ptr[10],
-             ptr[11], ptr[12], ptr[13], ptr[14], ptr[15]);
+      _alert("%04x: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+             stack, ptr[0], ptr[1], ptr[2], ptr[3],
+             ptr[4], ptr[5], ptr[6], ptr[7]);
     }
 }
-#else
-# define up_stackdump()
 #endif
 
 /****************************************************************************
- * Name: up_registerdump
+ * Name: hc_registerdump
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_STACKDUMP
-static inline void up_registerdump(void)
+static inline void hc_registerdump(void)
 {
   volatile uint8_t *regs = g_current_regs;
 
@@ -123,19 +121,17 @@ static inline void up_registerdump(void)
 #  error "Need to save more registers"
 #elif CONFIG_HCS12_MSOFTREGS == 2
   _alert("SOFTREGS: %02x%02x :%02x%02x\n",
-        regs[REG_SOFTREG1], regs[REG_SOFTREG1 + 1],
-        regs[REG_SOFTREG2], regs[REG_SOFTREG2 + 1]);
+         regs[REG_SOFTREG1], regs[REG_SOFTREG1 + 1],
+         regs[REG_SOFTREG2], regs[REG_SOFTREG2 + 1]);
 #elif CONFIG_HCS12_MSOFTREGS == 1
   _alert("SOFTREGS: %02x%02x\n",
-        regs[REG_SOFTREG1], regs[REG_SOFTREG1 + 1]);
+         regs[REG_SOFTREG1], regs[REG_SOFTREG1 + 1]);
 #endif
 
 #ifndef CONFIG_HCS12_NONBANKED
   _alert("PPAGE: %02x\n", regs[REG_PPAGE]);
 #endif
 }
-#else
-# define up_registerdump()
 #endif
 
 /****************************************************************************
@@ -169,8 +165,8 @@ static int assert_tracecallback(FAR struct usbtrace_s *trace, FAR void *arg)
 #ifdef CONFIG_ARCH_STACKDUMP
 static void up_dumpstate(void)
 {
-  struct tcb_s *rtcb = running_task();
-  uint16_t sp = hc_getsp();
+  FAR struct tcb_s *rtcb = running_task();
+  uint16_t sp = up_getsp();
   uint16_t ustackbase;
   uint16_t ustacksize;
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
@@ -180,18 +176,18 @@ static void up_dumpstate(void)
 
   /* Dump the registers (if available) */
 
-  up_registerdump();
+  hc_registerdump();
 
   /* Get the limits on the user stack memory */
 
-  ustackbase = (uint16_t)rtcb->adj_stack_ptr;
+  ustackbase = (uint16_t)rtcb->stack_base_ptr;
   ustacksize = (uint16_t)rtcb->adj_stack_size;
 
   /* Get the limits on the interrupt stack memory */
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
-  istackbase = (uint16_t)&g_intstackbase;
-  istacksize = (CONFIG_ARCH_INTERRUPTSTACK & ~3) - 4;
+  istackbase = (uint16_t)&g_intstackalloc;
+  istacksize = (CONFIG_ARCH_INTERRUPTSTACK & ~3);
 
   /* Show interrupt stack info */
 
@@ -204,23 +200,23 @@ static void up_dumpstate(void)
    * stack?
    */
 
-  if (sp <= istackbase && sp > istackbase - istacksize)
+  if (sp >= istackbase && sp < istackbase + istacksize)
     {
       /* Yes.. dump the interrupt stack */
 
-      up_stackdump(sp, istackbase);
+      hc_stackdump(sp, istackbase + istacksize);
 
       /* Extract the user stack pointer which should lie
        * at the base of the interrupt stack.
        */
 
-      sp = g_intstackbase;
+      sp = g_intstacktop;
       _alert("sp:     %04x\n", sp);
     }
   else if (g_current_regs)
     {
       _alert("ERROR: Stack pointer is not within the interrupt stack\n");
-      up_stackdump(istackbase - istacksize, istackbase);
+      hc_stackdump(istackbase, istackbase + istacksize);
     }
 
   /* Show user stack info */
@@ -238,14 +234,14 @@ static void up_dumpstate(void)
    * stack memory.
    */
 
-  if (sp > ustackbase || sp <= ustackbase - ustacksize)
+  if (sp >= ustackbase && sp < ustackbase + ustacksize)
     {
-      _alert("ERROR: Stack pointer is not within allocated stack\n");
-      up_stackdump(ustackbase - ustacksize, ustackbase);
+      hc_stackdump(sp, ustackbase + ustacksize);
     }
   else
     {
-      up_stackdump(sp, ustackbase);
+      _alert("ERROR: Stack pointer is not within allocated stack\n");
+      hc_stackdump(ustackbase, ustackbase + ustacksize);
     }
 
 #ifdef CONFIG_ARCH_USBDUMP
@@ -272,12 +268,13 @@ static void _up_assert(void)
 
   if (g_current_regs || (running_task())->flink == NULL)
     {
+#if CONFIG_BOARD_RESET_ON_ASSERT >= 1
+      board_reset(CONFIG_BOARD_ASSERT_RESET_VALUE);
+#endif
+
       up_irq_save();
       for (; ; )
         {
-#if CONFIG_BOARD_RESET_ON_ASSERT >= 1
-          board_reset(CONFIG_BOARD_ASSERT_RESET_VALUE);
-#endif
 #ifdef CONFIG_ARCH_LEDS
           board_autoled_on(LED_PANIC);
           up_mdelay(250);
@@ -304,10 +301,6 @@ static void _up_assert(void)
 
 void up_assert(const char *filename, int lineno)
 {
-#if CONFIG_TASK_NAME_SIZE > 0 && defined(CONFIG_DEBUG_ALERT)
-  struct tcb_s *rtcb = running_task();
-#endif
-
   board_autoled_on(LED_ASSERTION);
 
   /* Flush any buffered SYSLOG data (from prior to the assertion) */
@@ -316,10 +309,10 @@ void up_assert(const char *filename, int lineno)
 
 #if CONFIG_TASK_NAME_SIZE > 0
   _alert("Assertion failed at file:%s line: %d task: %s\n",
-        filename, lineno, rtcb->name);
+         filename, lineno, running_task()->name);
 #else
   _alert("Assertion failed at file:%s line: %d\n",
-        filename, lineno);
+         filename, lineno);
 #endif
 
   up_dumpstate();
@@ -329,7 +322,7 @@ void up_assert(const char *filename, int lineno)
   syslog_flush();
 
 #ifdef CONFIG_BOARD_CRASHDUMP
-  board_crashdump(hc_getsp(), running_task(), filename, lineno);
+  board_crashdump(up_getsp(), running_task(), filename, lineno);
 #endif
 
   _up_assert();

@@ -36,6 +36,18 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
+/* The AVR32 stack must be aligned at word (4 byte) boundaries. If necessary
+ * frame_size must be rounded up to the next boundary
+ */
+
+#define STACK_ALIGNMENT     4
+
+/* Stack alignment macros */
+
+#define STACK_ALIGN_MASK    (STACK_ALIGNMENT - 1)
+#define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
+#define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
+
 /* Macros to handle saving and restore interrupt state.  The state is copied
  * from the stack to the TCB, but only a referenced is passed to get the
  * state from the TCB.
@@ -53,12 +65,6 @@
  ****************************************************************************/
 
 #ifndef __ASSEMBLY__
-/* This holds a references to the current interrupt level register storage
- * structure.  If is non-NULL only during interrupt processing.
- */
-
-extern volatile uint32_t *g_current_regs;
-
 /* This is the beginning of heap as provided from up_head.S. This is the
  * first address in DRAM after the loaded program+bss+idle stack.
  * The end of the heap is CONFIG_RAM_END

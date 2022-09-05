@@ -36,11 +36,20 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-/* Values for protocol attribute */
+/* Initializers */
 
-#define SEM_PRIO_NONE             0
-#define SEM_PRIO_INHERIT          1
-#define SEM_PRIO_PROTECT          2
+#ifdef CONFIG_PRIORITY_INHERITANCE
+# if CONFIG_SEM_PREALLOCHOLDERS > 0
+#  define NXSEM_INITIALIZER(c, f) \
+    {(c), (f), NULL}                    /* semcount, flags, hhead */
+# else
+#  define NXSEM_INITIALIZER(c, f) \
+    {(c), (f), {SEMHOLDER_INITIALIZER, SEMHOLDER_INITIALIZER}}  /* semcount, flags, holder[2] */
+# endif
+#else /* CONFIG_PRIORITY_INHERITANCE */
+#  define NXSEM_INITIALIZER(c, f) \
+    {(c)}                               /* semcount, flags */
+#endif /* CONFIG_PRIORITY_INHERITANCE */
 
 /* Most internal nxsem_* interfaces are not available in the user space in
  * PROTECTED and KERNEL builds.  In that context, the application semaphore
@@ -67,7 +76,7 @@
 #  define _SEM_TIMEDWAIT(s,t)   nxsem_timedwait(s,t)
 #  define _SEM_CLOCKWAIT(s,c,t) nxsem_clockwait(s,c,t)
 #  define _SEM_POST(s)          nxsem_post(s)
-#  define _SEM_GETVALUE(s)      nxsem_get_value(s)
+#  define _SEM_GETVALUE(s,v)    nxsem_get_value(s,v)
 #  define _SEM_GETPROTOCOL(s,p) nxsem_get_protocol(s,p)
 #  define _SEM_SETPROTOCOL(s,p) nxsem_set_protocol(s,p)
 #  define _SEM_ERRNO(r)         (-(r))
@@ -339,10 +348,6 @@ int nxsem_clockwait(FAR sem_t *sem, clockid_t clockid,
  *
  * Input Parameters:
  *   sem     - Semaphore object
- *   start   - The system time that the delay is relative to.  If the
- *             current time is not the same as the start time, then the
- *             delay will be adjust so that the end time will be the same
- *             in any event.
  *   delay   - Ticks to wait from the start time until the semaphore is
  *             posted.  If ticks is zero, then this function is equivalent
  *             to sem_trywait().
@@ -357,7 +362,7 @@ int nxsem_clockwait(FAR sem_t *sem, clockid_t clockid,
  *
  ****************************************************************************/
 
-int nxsem_tickwait(FAR sem_t *sem, clock_t start, uint32_t delay);
+int nxsem_tickwait(FAR sem_t *sem, uint32_t delay);
 
 /****************************************************************************
  * Name: nxsem_post
@@ -462,27 +467,6 @@ int nxsem_reset(FAR sem_t *sem, int16_t count);
 #define nxsem_get_protocol(s,p) sem_getprotocol(s,p)
 
 /****************************************************************************
- * Name: sem_getprotocol
- *
- * Description:
- *    Return the value of the semaphore protocol attribute.
- *
- * Input Parameters:
- *    sem      - A pointer to the semaphore whose attributes are to be
- *               queried.
- *    protocol - The user provided location in which to store the protocol
- *               value.
- *
- * Returned Value:
- *   This function is exposed as a non-standard application interface.  It
- *   returns zero (OK) if successful.  Otherwise, -1 (ERROR) is returned and
- *   the errno value is set appropriately.
- *
- ****************************************************************************/
-
-int sem_getprotocol(FAR sem_t *sem, FAR int *protocol);
-
-/****************************************************************************
  * Name: nxsem_set_protocol
  *
  * Description:
@@ -520,45 +504,6 @@ int sem_getprotocol(FAR sem_t *sem, FAR int *protocol);
  ****************************************************************************/
 
 int nxsem_set_protocol(FAR sem_t *sem, int protocol);
-
-/****************************************************************************
- * Name: sem_setprotocol
- *
- * Description:
- *    Set semaphore protocol attribute.
- *
- *    One particularly important use of this function is when a semaphore
- *    is used for inter-task communication like:
- *
- *      TASK A                 TASK B
- *      sem_init(sem, 0, 0);
- *      sem_wait(sem);
- *                             sem_post(sem);
- *      Awakens as holder
- *
- *    In this case priority inheritance can interfere with the operation of
- *    the semaphore.  The problem is that when TASK A is restarted it is a
- *    holder of the semaphore.  However, it never calls sem_post(sem) so it
- *    becomes *permanently* a holder of the semaphore and may have its
- *    priority boosted when any other task tries to acquire the semaphore.
- *
- *    The fix is to call sem_setprotocol(SEM_PRIO_NONE) immediately after
- *    the sem_init() call so that there will be no priority inheritance
- *    operations on this semaphore.
- *
- * Input Parameters:
- *    sem      - A pointer to the semaphore whose attributes are to be
- *               modified
- *    protocol - The new protocol to use
- *
- * Returned Value:
- *   This function is exposed as a non-standard application interface.  It
- *   returns zero (OK) if successful.  Otherwise, -1 (ERROR) is returned and
- *   the errno value is set appropriately.
- *
- ****************************************************************************/
-
-int sem_setprotocol(FAR sem_t *sem, int protocol);
 
 /****************************************************************************
  * Name: nxsem_wait_uninterruptible
@@ -621,7 +566,7 @@ int nxsem_timedwait_uninterruptible(FAR sem_t *sem,
  * Name: nxsem_clockwait_uninterruptible
  *
  * Description:
- *   This function is wrapped version of nxsem_timedwait(), which is
+ *   This function is wrapped version of nxsem_clockwait(), which is
  *   uninterruptible and convenient for use.
  *
  * Input Parameters:
@@ -659,10 +604,6 @@ int nxsem_clockwait_uninterruptible(FAR sem_t *sem, clockid_t clockid,
  *
  * Input Parameters:
  *   sem     - Semaphore object
- *   start   - The system time that the delay is relative to.  If the
- *             current time is not the same as the start time, then the
- *             delay will be adjust so that the end time will be the same
- *             in any event.
  *   delay   - Ticks to wait from the start time until the semaphore is
  *             posted.  If ticks is zero, then this function is equivalent
  *             to sem_trywait().
@@ -683,8 +624,7 @@ int nxsem_clockwait_uninterruptible(FAR sem_t *sem, clockid_t clockid,
  *
  ****************************************************************************/
 
-int nxsem_tickwait_uninterruptible(FAR sem_t *sem, clock_t start,
-                                   uint32_t delay);
+int nxsem_tickwait_uninterruptible(FAR sem_t *sem, uint32_t delay);
 
 #undef EXTERN
 #ifdef __cplusplus

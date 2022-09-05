@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef _NET_TCP_TCP_H
-#define _NET_TCP_TCP_H
+#ifndef __NET_TCP_TCP_H
+#define __NET_TCP_TCP_H
 
 /****************************************************************************
  * Included Files
@@ -31,12 +31,11 @@
 #include <queue.h>
 
 #include <nuttx/clock.h>
+#include <nuttx/semaphore.h>
 #include <nuttx/mm/iob.h>
 #include <nuttx/net/ip.h>
-
-#ifdef CONFIG_NET_TCP_NOTIFIER
-#  include <nuttx/wqueue.h>
-#endif
+#include <nuttx/net/net.h>
+#include <nuttx/wqueue.h>
 
 #if defined(CONFIG_NET_TCP) && !defined(CONFIG_NET_TCP_NO_STACK)
 
@@ -53,9 +52,9 @@
  */
 
 #define tcp_callback_alloc(conn) \
-  devif_callback_alloc((conn)->dev, &(conn)->list)
+  devif_callback_alloc((conn)->dev, &(conn)->sconn.list, &(conn)->sconn.list_tail)
 #define tcp_callback_free(conn,cb) \
-  devif_conn_callback_free((conn)->dev, (cb), &(conn)->list)
+  devif_conn_callback_free((conn)->dev, (cb), &(conn)->sconn.list, &(conn)->sconn.list_tail)
 
 #ifdef CONFIG_NET_TCP_WRITE_BUFFERS
 /* TCP write buffer access macros */
@@ -64,19 +63,18 @@
 #  define TCP_WBPKTLEN(wrb)          ((wrb)->wb_iob->io_pktlen)
 #  define TCP_WBSENT(wrb)            ((wrb)->wb_sent)
 #  define TCP_WBNRTX(wrb)            ((wrb)->wb_nrtx)
+#ifdef CONFIG_NET_TCP_FAST_RETRANSMIT
 #  define TCP_WBNACK(wrb)            ((wrb)->wb_nack)
+#endif
 #  define TCP_WBIOB(wrb)             ((wrb)->wb_iob)
 #  define TCP_WBCOPYOUT(wrb,dest,n)  (iob_copyout(dest,(wrb)->wb_iob,(n),0))
 #  define TCP_WBCOPYIN(wrb,src,n,off) \
-     (iob_copyin((wrb)->wb_iob,src,(n),(off),false,\
-                 IOBUSER_NET_TCP_WRITEBUFFER))
+     (iob_copyin((wrb)->wb_iob,src,(n),(off),true))
 #  define TCP_WBTRYCOPYIN(wrb,src,n,off) \
-     (iob_trycopyin((wrb)->wb_iob,src,(n),(off),false,\
-                    IOBUSER_NET_TCP_WRITEBUFFER))
+     (iob_trycopyin((wrb)->wb_iob,src,(n),(off),true))
 
 #  define TCP_WBTRIM(wrb,n) \
-     do { (wrb)->wb_iob = iob_trimhead((wrb)->wb_iob,(n),\
-                            IOBUSER_NET_TCP_WRITEBUFFER); } while (0)
+     do { (wrb)->wb_iob = iob_trimhead((wrb)->wb_iob,(n)); } while (0)
 
 #ifdef CONFIG_DEBUG_FEATURES
 #  define TCP_WBDUMP(msg,wrb,len,offset) \
@@ -85,6 +83,26 @@
 #    define TCP_WBDUMP(msg,wrb,len,offset)
 #  endif
 #endif
+
+/* 32-bit modular arithmetics for tcp sequence numbers */
+
+#define TCP_SEQ_LT(a, b)	((int32_t)((a) - (b)) < 0)
+#define TCP_SEQ_GT(a, b)	TCP_SEQ_LT(b, a)
+#define TCP_SEQ_LTE(a, b)	(!TCP_SEQ_GT(a, b))
+#define TCP_SEQ_GTE(a, b)	(!TCP_SEQ_LT(a, b))
+
+#define TCP_SEQ_ADD(a, b)	((uint32_t)((a) + (b)))
+#define TCP_SEQ_SUB(a, b)	((uint32_t)((a) - (b)))
+
+/* The TCP options flags */
+
+#define TCP_WSCALE            0x01U /* Window Scale option enabled */
+
+/* After receiving 3 duplicate ACKs, TCP performs a retransmission
+ * (RFC 5681 (3.2))
+ */
+
+#define TCP_FAST_RETRANSMISSION_THRESH 3
 
 /****************************************************************************
  * Public Type Definitions
@@ -113,7 +131,7 @@ struct tcp_hdr_s;         /* Forward reference */
 
 struct tcp_poll_s
 {
-  FAR struct socket *psock;        /* Needed to handle loss of connection */
+  FAR struct tcp_conn_s *conn;     /* Needed to handle loss of connection */
   struct pollfd *fds;              /* Needed to handle poll events */
   FAR struct devif_callback_s *cb; /* Needed to teardown the poll */
 };
@@ -121,8 +139,6 @@ struct tcp_poll_s
 struct tcp_conn_s
 {
   /* Common prologue of all connection structures. */
-
-  dq_entry_t node;        /* Implements a doubly linked list */
 
   /* TCP callbacks:
    *
@@ -148,7 +164,7 @@ struct tcp_conn_s
    *                 then dev->d_len should also be cleared).
    */
 
-  FAR struct devif_callback_s *list;
+  struct socket_conn_s sconn;
 
   /* TCP-specific content follows */
 
@@ -156,6 +172,10 @@ struct tcp_conn_s
   uint8_t  rcvseq[4];     /* The sequence number that we expect to
                            * receive next */
   uint8_t  sndseq[4];     /* The sequence number that was last sent by us */
+#if !defined(CONFIG_NET_TCP_WRITE_BUFFERS) || \
+    defined(CONFIG_NET_SENDFILE)
+  uint32_t rexmit_seq;    /* The sequence number to be retrasmitted */
+#endif
   uint8_t  crefs;         /* Reference counts on this instance */
 #if defined(CONFIG_NET_IPv4) && defined(CONFIG_NET_IPv6)
   uint8_t  domain;        /* IP domain: PF_INET or PF_INET6 */
@@ -166,6 +186,8 @@ struct tcp_conn_s
                            * variable */
   uint8_t  rto;           /* Retransmission time-out */
   uint8_t  tcpstateflags; /* TCP state and flags */
+  struct   work_s work;   /* TCP timer handle */
+  bool     timeout;       /* Trigger from timer expiry */
   uint8_t  timer;         /* The retransmission timer (units: half-seconds) */
   uint8_t  nrtx;          /* The number of retransmissions for the last
                            * segment sent */
@@ -177,14 +199,32 @@ struct tcp_conn_s
   uint16_t rport;         /* The remoteTCP port, in network byte order */
   uint16_t mss;           /* Current maximum segment size for the
                            * connection */
+  uint32_t rcv_adv;       /* The right edge of the recv window advertized */
+#ifdef CONFIG_NET_TCP_WINDOW_SCALE
+  uint32_t snd_wnd;       /* Sequence and acknowledgement numbers of last
+                           * window update */
+  uint8_t  snd_scale;     /* Sender window scale factor */
+  uint8_t  rcv_scale;     /* Receiver windows scale factor */
+#else
   uint16_t snd_wnd;       /* Sequence and acknowledgement numbers of last
                            * window update */
-  uint16_t rcv_wnd;       /* Receiver window available */
-#ifdef CONFIG_NET_TCP_WRITE_BUFFERS
+#endif
+  uint32_t snd_wl1;
+  uint32_t snd_wl2;
+#if CONFIG_NET_RECV_BUFSIZE > 0
+  int32_t  rcv_bufs;      /* Maximum amount of bytes queued in recv */
+#endif
+#if CONFIG_NET_SEND_BUFSIZE > 0
+  int32_t  snd_bufs;      /* Maximum amount of bytes queued in send */
+  sem_t    snd_sem;       /* Semaphore signals send completion */
+#endif
+#if defined(CONFIG_NET_TCP_WRITE_BUFFERS) || \
+    defined(CONFIG_NET_TCP_WINDOW_SCALE)
   uint32_t tx_unacked;    /* Number bytes sent but not yet ACKed */
 #else
   uint16_t tx_unacked;    /* Number bytes sent but not yet ACKed */
 #endif
+  uint16_t flags;         /* Flags of TCP-specific options */
 
   /* If the TCP socket is bound to a local address, then this is
    * a reference to the device that routes traffic on the corresponding
@@ -195,11 +235,11 @@ struct tcp_conn_s
 
   /* Read-ahead buffering.
    *
-   *   readahead - A singly linked list of type struct iob_qentry_s
+   *   readahead - A singly linked list of type struct iob_s
    *               where the TCP/IP read-ahead data is retained.
    */
 
-  struct iob_queue_s readahead;   /* Read-ahead buffering */
+  struct iob_s *readahead;   /* Read-ahead buffering */
 
 #ifdef CONFIG_NET_TCP_WRITE_BUFFERS
   /* Write buffering
@@ -240,14 +280,16 @@ struct tcp_conn_s
    * system clock tick.
    */
 
-  clock_t    keeptime;    /* Last time that the TCP socket was known to be
-                           * alive (ACK or data received) OR time that the
-                           * last probe was sent. */
+  uint32_t   keeptimer;   /* KeepAlive timer (dsec) */
   uint32_t   keepidle;    /* Elapsed idle time before first probe sent (dsec) */
   uint32_t   keepintvl;   /* Interval between probes (dsec) */
   bool       keepalive;   /* True: KeepAlive enabled; false: disabled */
   uint8_t    keepcnt;     /* Number of retries before the socket is closed */
   uint8_t    keepretries; /* Number of retries attempted */
+#endif
+
+#if defined(CONFIG_NET_SENDFILE) && defined(CONFIG_NET_TCP_WRITE_BUFFERS)
+  bool       sendfile;    /* True if sendfile operation is in progress */
 #endif
 
   /* connevents is a list of callbacks for each socket the uses this
@@ -257,12 +299,21 @@ struct tcp_conn_s
    */
 
   FAR struct devif_callback_s *connevents;
+  FAR struct devif_callback_s *connevents_tail;
 
-  /* Receiver callback to indicate that the data has been consumed and that
-   * an ACK should be send.
-   */
+  /* Reference to TCP close callback instance */
 
-  FAR struct devif_callback_s *rcv_ackcb;
+  FAR struct devif_callback_s *clscb;
+
+#if defined(CONFIG_NET_TCP_WRITE_BUFFERS)
+  /* Callback instance for TCP send() */
+
+  FAR struct devif_callback_s *sndcb;
+
+#ifdef CONFIG_DEBUG_ASSERTIONS
+  int sndcb_alloc_cnt;    /* The callback allocation counter */
+#endif
+#endif
 
   /* accept() is called when the TCP logic has created a connection
    *
@@ -293,7 +344,9 @@ struct tcp_wrbuffer_s
   uint16_t   wb_sent;      /* Number of bytes sent from the I/O buffer chain */
   uint8_t    wb_nrtx;      /* The number of retransmissions for the last
                             * segment sent */
+#ifdef CONFIG_NET_TCP_FAST_RETRANSMIT
   uint8_t    wb_nack;      /* The number of ack count */
+#endif
   struct iob_s *wb_iob;    /* Head of the I/O buffer chain */
 };
 #endif
@@ -602,29 +655,6 @@ int tcp_start_monitor(FAR struct socket *psock);
 void tcp_stop_monitor(FAR struct tcp_conn_s *conn, uint16_t flags);
 
 /****************************************************************************
- * Name: tcp_close_monitor
- *
- * Description:
- *   One socket in a group of dup'ed sockets has been closed.  We need to
- *   selectively terminate just those things that are waiting of events
- *   from this specific socket.  And also recover any resources that are
- *   committed to monitoring this socket.
- *
- * Input Parameters:
- *   psock - The TCP socket structure that is closed
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   The caller holds the network lock (if not, it will be locked momentarily
- *   by this function).
- *
- ****************************************************************************/
-
-void tcp_close_monitor(FAR struct socket *psock);
-
-/****************************************************************************
  * Name: tcp_lost_connection
  *
  * Description:
@@ -634,7 +664,7 @@ void tcp_close_monitor(FAR struct socket *psock);
  *   the event handler.
  *
  * Input Parameters:
- *   psock - The TCP socket structure associated.
+ *   conn  - The TCP connection of interest
  *   cb    - devif callback structure
  *   flags - Set of connection events events
  *
@@ -647,7 +677,7 @@ void tcp_close_monitor(FAR struct socket *psock);
  *
  ****************************************************************************/
 
-void tcp_lost_connection(FAR struct socket *psock,
+void tcp_lost_connection(FAR struct tcp_conn_s *conn,
                          FAR struct devif_callback_s *cb, uint16_t flags);
 
 /****************************************************************************
@@ -785,7 +815,6 @@ void tcp_poll(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn);
  * Input Parameters:
  *   dev  - The device driver structure to use in the send operation
  *   conn - The TCP "connection" to poll for TX data
- *   hsec - The polling interval in halves of a second
  *
  * Returned Value:
  *   None
@@ -795,22 +824,73 @@ void tcp_poll(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn);
  *
  ****************************************************************************/
 
-void tcp_timer(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn,
-               int hsec);
+void tcp_timer(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn);
 
 /****************************************************************************
- * Name: tcp_listen_initialize
+ * Name: tcp_update_retrantimer
  *
  * Description:
- *   Setup the listening data structures
+ *   Update the retransmit TCP timer for the provided TCP connection,
+ *   The timeout is accurate
+ *
+ * Input Parameters:
+ *   conn    - The TCP "connection" to poll for TX data
+ *   timeout - Time for the next timeout
+ *
+ * Returned Value:
+ *   None
  *
  * Assumptions:
- *   Called early in the initialization phase while the system is still
- *   single-threaded.
+ *   conn is not NULL.
+ *   The connection (conn) is bound to the polling device (dev).
  *
  ****************************************************************************/
 
-void tcp_listen_initialize(void);
+void tcp_update_retrantimer(FAR struct tcp_conn_s *conn, int timeout);
+
+/****************************************************************************
+ * Name: tcp_update_keeptimer
+ *
+ * Description:
+ *   Update the keeplive TCP timer for the provided TCP connection,
+ *   The timeout is accurate
+ *
+ * Input Parameters:
+ *   conn    - The TCP "connection" to poll for TX data
+ *   timeout - Time for the next timeout
+ *
+ * Returned Value:
+ *   None
+ *
+ * Assumptions:
+ *   conn is not NULL.
+ *   The connection (conn) is bound to the polling device (dev).
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_NET_TCP_KEEPALIVE
+void tcp_update_keeptimer(FAR struct tcp_conn_s *conn, int timeout);
+#endif
+
+/****************************************************************************
+ * Name: tcp_stop_timer
+ *
+ * Description:
+ *   Stop TCP timer for the provided TCP connection
+ *   When the connection is closed
+ *
+ * Input Parameters:
+ *   conn - The TCP "connection" to poll for TX data
+ *
+ * Returned Value:
+ *   None
+ *
+ * Assumptions:
+ *   conn is not NULL.
+ *
+ ****************************************************************************/
+
+void tcp_stop_timer(FAR struct tcp_conn_s *conn);
 
 /****************************************************************************
  * Name: tcp_findlistener
@@ -824,9 +904,12 @@ void tcp_listen_initialize(void);
  ****************************************************************************/
 
 #if defined(CONFIG_NET_IPv4) && defined(CONFIG_NET_IPv6)
-FAR struct tcp_conn_s *tcp_findlistener(uint16_t portno, uint8_t domain);
+FAR struct tcp_conn_s *tcp_findlistener(FAR union ip_binding_u *uaddr,
+                                        uint16_t portno,
+                                        uint8_t domain);
 #else
-FAR struct tcp_conn_s *tcp_findlistener(uint16_t portno);
+FAR struct tcp_conn_s *tcp_findlistener(FAR union ip_binding_u *uaddr,
+                                        uint16_t portno);
 #endif
 
 /****************************************************************************
@@ -867,9 +950,10 @@ int tcp_listen(FAR struct tcp_conn_s *conn);
  ****************************************************************************/
 
 #if defined(CONFIG_NET_IPv4) && defined(CONFIG_NET_IPv6)
-bool tcp_islistener(uint16_t portno, uint8_t domain);
+bool tcp_islistener(FAR union ip_binding_u *uaddr, uint16_t portno,
+                    uint8_t domain);
 #else
-bool tcp_islistener(uint16_t portno);
+bool tcp_islistener(FAR union ip_binding_u *uaddr, uint16_t portno);
 #endif
 
 /****************************************************************************
@@ -954,6 +1038,22 @@ ssize_t tcp_sendfile(FAR struct socket *psock, FAR struct file *infile,
 void tcp_reset(FAR struct net_driver_s *dev);
 
 /****************************************************************************
+ * Name: tcp_rx_mss
+ *
+ * Description:
+ *   Return the MSS to advertize to the peer.
+ *
+ * Input Parameters:
+ *   dev  - The device driver structure
+ *
+ * Returned Value:
+ *   The MSS value.
+ *
+ ****************************************************************************/
+
+uint16_t tcp_rx_mss(FAR struct net_driver_s *dev);
+
+/****************************************************************************
  * Name: tcp_synack
  *
  * Description:
@@ -1020,6 +1120,25 @@ void tcp_appsend(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn,
 
 void tcp_rexmit(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn,
                 uint16_t result);
+
+/****************************************************************************
+ * Name: tcp_send_txnotify
+ *
+ * Description:
+ *   Notify the appropriate device driver that we are have data ready to
+ *   be send (TCP)
+ *
+ * Input Parameters:
+ *   psock - Socket state structure
+ *   conn  - The TCP connection structure
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+void tcp_send_txnotify(FAR struct socket *psock,
+                       FAR struct tcp_conn_s *conn);
 
 /****************************************************************************
  * Name: tcp_ipv4_input
@@ -1421,8 +1540,24 @@ int tcp_getsockopt(FAR struct socket *psock, int option,
  *
  ****************************************************************************/
 
-uint16_t tcp_get_recvwindow(FAR struct net_driver_s *dev,
+uint32_t tcp_get_recvwindow(FAR struct net_driver_s *dev,
                             FAR struct tcp_conn_s *conn);
+
+/****************************************************************************
+ * Name: tcp_should_send_recvwindow
+ *
+ * Description:
+ *   Determine if we should advertize the new recv window to the peer.
+ *
+ * Input Parameters:
+ *   conn - The TCP connection structure holding connection information.
+ *
+ * Returned Value:
+ *   If we should send an update.
+ *
+ ****************************************************************************/
+
+bool tcp_should_send_recvwindow(FAR struct tcp_conn_s *conn);
 
 /****************************************************************************
  * Name: psock_tcp_cansend
@@ -1434,7 +1569,7 @@ uint16_t tcp_get_recvwindow(FAR struct net_driver_s *dev,
  *   another means.
  *
  * Input Parameters:
- *   psock    An instance of the internal socket structure.
+ *   conn     The TCP connection of interest
  *
  * Returned Value:
  *   OK
@@ -1448,7 +1583,7 @@ uint16_t tcp_get_recvwindow(FAR struct net_driver_s *dev,
  *
  ****************************************************************************/
 
-int psock_tcp_cansend(FAR struct socket *psock);
+int psock_tcp_cansend(FAR struct tcp_conn_s *conn);
 
 /****************************************************************************
  * Name: tcp_wrbuffer_initialize
@@ -1464,6 +1599,30 @@ int psock_tcp_cansend(FAR struct socket *psock);
 #ifdef CONFIG_NET_TCP_WRITE_BUFFERS
 void tcp_wrbuffer_initialize(void);
 #endif /* CONFIG_NET_TCP_WRITE_BUFFERS */
+
+#ifdef CONFIG_NET_TCP_WRITE_BUFFERS
+
+struct tcp_wrbuffer_s;
+
+/****************************************************************************
+ * Name: tcp_wrbuffer_timedalloc
+ *
+ * Description:
+ *   Allocate a TCP write buffer by taking a pre-allocated buffer from
+ *   the free list.  This function is called from TCP logic when a buffer
+ *   of TCP data is about to sent
+ *   This function is wrapped version of tcp_wrbuffer_alloc(),
+ *   this wait will be terminated when the specified timeout expires.
+ *
+ * Input Parameters:
+ *   timeout   - The relative time to wait until a timeout is declared.
+ *
+ * Assumptions:
+ *   Called from user logic with the network locked.
+ *
+ ****************************************************************************/
+
+FAR struct tcp_wrbuffer_s *tcp_wrbuffer_timedalloc(unsigned int timeout);
 
 /****************************************************************************
  * Name: tcp_wrbuffer_alloc
@@ -1481,8 +1640,6 @@ void tcp_wrbuffer_initialize(void);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_NET_TCP_WRITE_BUFFERS
-struct tcp_wrbuffer_s;
 FAR struct tcp_wrbuffer_s *tcp_wrbuffer_alloc(void);
 
 /****************************************************************************
@@ -1523,6 +1680,24 @@ void tcp_wrbuffer_release(FAR struct tcp_wrbuffer_s *wrb);
 #endif /* CONFIG_NET_TCP_WRITE_BUFFERS */
 
 /****************************************************************************
+ * Name: tcp_wrbuffer_inqueue_size
+ *
+ * Description:
+ *   Get the in-queued write buffer size from connection
+ *
+ * Input Parameters:
+ *   conn - The TCP connection of interest
+ *
+ * Assumptions:
+ *   Called from user logic with the network locked.
+ *
+ ****************************************************************************/
+
+#if CONFIG_NET_SEND_BUFSIZE > 0
+uint32_t tcp_wrbuffer_inqueue_size(FAR struct tcp_conn_s *conn);
+#endif
+
+/****************************************************************************
  * Name: tcp_wrbuffer_test
  *
  * Description:
@@ -1536,6 +1711,21 @@ void tcp_wrbuffer_release(FAR struct tcp_wrbuffer_s *wrb);
 #ifdef CONFIG_NET_TCP_WRITE_BUFFERS
 int tcp_wrbuffer_test(void);
 #endif /* CONFIG_NET_TCP_WRITE_BUFFERS */
+
+/****************************************************************************
+ * Name: tcp_event_handler_dump
+ *
+ * Description:
+ *  Dump the TCP event handler related variables
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_DEBUG_FEATURES
+void tcp_event_handler_dump(FAR struct net_driver_s *dev,
+                            FAR void *pvpriv,
+                            uint16_t flags,
+                            FAR struct tcp_conn_s *conn);
+#endif
 
 /****************************************************************************
  * Name: tcp_wrbuffer_dump
@@ -1701,13 +1891,12 @@ int tcp_disconnect_notifier_setup(worker_t worker,
  *         tcp_readahead_notifier_setup().
  *
  * Returned Value:
- *   Zero (OK) is returned on success; a negated errno value is returned on
- *   any failure.
+ *   None.
  *
  ****************************************************************************/
 
 #ifdef CONFIG_NET_TCP_NOTIFIER
-int tcp_notifier_teardown(int key);
+void tcp_notifier_teardown(int key);
 #endif
 
 /****************************************************************************
@@ -1801,9 +1990,44 @@ int tcp_txdrain(FAR struct socket *psock, unsigned int timeout);
 #  define tcp_txdrain(conn, timeout) (0)
 #endif
 
+/****************************************************************************
+ * Name: tcp_ioctl
+ *
+ * Description:
+ *   This function performs tcp specific ioctl() operations.
+ *
+ * Parameters:
+ *   conn     The TCP connection of interest
+ *   cmd      The ioctl command
+ *   arg      The argument of the ioctl cmd
+ *   arglen   The length of 'arg'
+ *
+ ****************************************************************************/
+
+int tcp_ioctl(FAR struct tcp_conn_s *conn, int cmd,
+              FAR void *arg, size_t arglen);
+
+/****************************************************************************
+ * Name: tcp_sendbuffer_notify
+ *
+ * Description:
+ *   Notify the send buffer semaphore
+ *
+ * Input Parameters:
+ *   conn - The TCP connection of interest
+ *
+ * Assumptions:
+ *   Called from user logic with the network locked.
+ *
+ ****************************************************************************/
+
+#if CONFIG_NET_SEND_BUFSIZE > 0
+void tcp_sendbuffer_notify(FAR struct tcp_conn_s *conn);
+#endif /* CONFIG_NET_SEND_BUFSIZE */
+
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* CONFIG_NET_TCP && !CONFIG_NET_TCP_NO_STACK */
-#endif /* _NET_TCP_TCP_H */
+#endif /* __NET_TCP_TCP_H */

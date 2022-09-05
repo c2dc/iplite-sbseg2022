@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <string.h>
@@ -33,8 +34,7 @@
 #include <nuttx/arch.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "nrf52_gpio.h"
 #include "nrf52_radio.h"
 
@@ -55,49 +55,49 @@
 
 /* Radio registers access ***************************************************/
 
-static void nrf52_radio_putreg(FAR struct nrf52_radio_dev_s *dev,
+static void nrf52_radio_putreg(struct nrf52_radio_dev_s *dev,
                                uint32_t offset,
                                uint32_t value);
-static uint32_t nrf52_radio_getreg(FAR struct nrf52_radio_dev_s *dev,
+static uint32_t nrf52_radio_getreg(struct nrf52_radio_dev_s *dev,
                                    uint32_t offset);
 
 /* Radio operations *********************************************************/
 
-static int nrf52_radio_power(FAR struct nrf52_radio_dev_s *dev, bool state);
-static int nrf52_radio_mode_set(FAR struct nrf52_radio_dev_s *dev,
+static int nrf52_radio_power(struct nrf52_radio_dev_s *dev, bool state);
+static int nrf52_radio_mode_set(struct nrf52_radio_dev_s *dev,
                                 uint8_t mode);
-static int nrf52_radio_freq_set(FAR struct nrf52_radio_dev_s *dev,
+static int nrf52_radio_freq_set(struct nrf52_radio_dev_s *dev,
                                 uint32_t freq);
-static int nrf52_radio_rssi_get(FAR struct nrf52_radio_dev_s *dev,
-                                FAR int *rssi);
-static int nrf52_radio_txpower_set(FAR struct nrf52_radio_dev_s *dev,
+static int nrf52_radio_rssi_get(struct nrf52_radio_dev_s *dev,
+                                int *rssi);
+static int nrf52_radio_txpower_set(struct nrf52_radio_dev_s *dev,
                                    uint8_t txpower);
-static int nrf52_radio_tifs_set(FAR struct nrf52_radio_dev_s *dev,
+static int nrf52_radio_tifs_set(struct nrf52_radio_dev_s *dev,
                                 uint16_t us);
-static int nrf52_radio_pkt_cfg(FAR struct nrf52_radio_dev_s *dev,
-                               FAR struct nrf52_radio_pktcfg_s *cfg);
-static int nrf52_radio_crc_cfg(FAR struct nrf52_radio_dev_s *dev,
-                               FAR struct nrf52_radio_crc_s *cfg);
-static int nrf52_radio_white_set(FAR struct nrf52_radio_dev_s *dev,
+static int nrf52_radio_pkt_cfg(struct nrf52_radio_dev_s *dev,
+                               struct nrf52_radio_pktcfg_s *cfg);
+static int nrf52_radio_crc_cfg(struct nrf52_radio_dev_s *dev,
+                               struct nrf52_radio_crc_s *cfg);
+static int nrf52_radio_white_set(struct nrf52_radio_dev_s *dev,
                                  uint8_t init);
-static int nrf52_radio_addr_set(FAR struct nrf52_radio_dev_s *dev, uint8_t i,
-                                FAR struct nrf52_radio_addr_s *addr);
-static int nrf52_radio_write(FAR struct nrf52_radio_dev_s *dev,
-                             FAR uint8_t *buf, int len);
-static int nrf52_radio_read(FAR struct nrf52_radio_dev_s *dev,
-                            FAR uint8_t *buf, int len);
-static void nrf52_radio_dumpregs(FAR struct nrf52_radio_dev_s *dev);
+static int nrf52_radio_addr_set(struct nrf52_radio_dev_s *dev, uint8_t i,
+                                struct nrf52_radio_addr_s *addr);
+static int nrf52_radio_write(struct nrf52_radio_dev_s *dev,
+                             uint8_t *buf, int len);
+static int nrf52_radio_read(struct nrf52_radio_dev_s *dev,
+                            uint8_t *buf, int len);
+static void nrf52_radio_dumpregs(struct nrf52_radio_dev_s *dev);
 
 /* Radio interrupts *********************************************************/
 
-static int nrf52_radio_isr(int irq, FAR void *context, FAR void *arg);
-static int nrf52_radio_isr_rx(FAR struct nrf52_radio_dev_s *dev);
-static int nrf52_radio_isr_tx(FAR struct nrf52_radio_dev_s *dev);
+static int nrf52_radio_isr(int irq, void *context, void *arg);
+static int nrf52_radio_isr_rx(struct nrf52_radio_dev_s *dev);
+static int nrf52_radio_isr_tx(struct nrf52_radio_dev_s *dev);
 
 /* Radio configuration ******************************************************/
 
-static int nrf52_radio_setup(FAR struct nrf52_radio_dev_s *dev);
-static int nrf52_radio_reset(FAR struct nrf52_radio_dev_s *dev);
+static int nrf52_radio_setup(struct nrf52_radio_dev_s *dev);
+static int nrf52_radio_reset(struct nrf52_radio_dev_s *dev);
 
 /****************************************************************************
  * Private Data
@@ -157,7 +157,7 @@ struct nrf52_radio_dev_s g_nrf52_radio_dev_1 =
  *
  ****************************************************************************/
 
-static void nrf52_radio_putreg(FAR struct nrf52_radio_dev_s *dev,
+static void nrf52_radio_putreg(struct nrf52_radio_dev_s *dev,
                                uint32_t offset,
                                uint32_t value)
 {
@@ -172,7 +172,7 @@ static void nrf52_radio_putreg(FAR struct nrf52_radio_dev_s *dev,
  *
  ****************************************************************************/
 
-static uint32_t nrf52_radio_getreg(FAR struct nrf52_radio_dev_s *dev,
+static uint32_t nrf52_radio_getreg(struct nrf52_radio_dev_s *dev,
                                    uint32_t offset)
 {
   return getreg32(dev->base + offset);
@@ -186,7 +186,7 @@ static uint32_t nrf52_radio_getreg(FAR struct nrf52_radio_dev_s *dev,
  *
  ****************************************************************************/
 
-static int nrf52_radio_power(FAR struct nrf52_radio_dev_s *dev, bool state)
+static int nrf52_radio_power(struct nrf52_radio_dev_s *dev, bool state)
 {
   DEBUGASSERT(dev);
 
@@ -214,7 +214,7 @@ static int nrf52_radio_power(FAR struct nrf52_radio_dev_s *dev, bool state)
  *
  ****************************************************************************/
 
-static int nrf52_radio_mode_set(FAR struct nrf52_radio_dev_s *dev,
+static int nrf52_radio_mode_set(struct nrf52_radio_dev_s *dev,
                                 uint8_t mode)
 {
   uint32_t regval = 0;
@@ -257,7 +257,7 @@ errout:
  *
  ****************************************************************************/
 
-static int nrf52_radio_freq_set(FAR struct nrf52_radio_dev_s *dev,
+static int nrf52_radio_freq_set(struct nrf52_radio_dev_s *dev,
                                 uint32_t freq)
 {
   uint32_t regval = 0;
@@ -296,8 +296,8 @@ errout:
  *
  ****************************************************************************/
 
-static int nrf52_radio_rssi_get(FAR struct nrf52_radio_dev_s *dev,
-                                FAR int *rssi)
+static int nrf52_radio_rssi_get(struct nrf52_radio_dev_s *dev,
+                                int *rssi)
 {
   uint32_t regval = 0;
 
@@ -322,12 +322,12 @@ static int nrf52_radio_rssi_get(FAR struct nrf52_radio_dev_s *dev,
  * Name: nrf52_radio_addr_set
  *
  * Description:
- *   Set radio logical adress
+ *   Set radio logical address
  *
  ****************************************************************************/
 
-static int nrf52_radio_addr_set(FAR struct nrf52_radio_dev_s *dev, uint8_t i,
-                                FAR struct nrf52_radio_addr_s *addr)
+static int nrf52_radio_addr_set(struct nrf52_radio_dev_s *dev, uint8_t i,
+                                struct nrf52_radio_addr_s *addr)
 {
   uint32_t basereg      = 0;
   uint32_t prefixreg    = 0;
@@ -346,7 +346,7 @@ static int nrf52_radio_addr_set(FAR struct nrf52_radio_dev_s *dev, uint8_t i,
       goto errout;
     }
 
-  /* Get data specific for given logical adress */
+  /* Get data specific for given logical address */
 
   if (i == 0)
     {
@@ -359,7 +359,7 @@ static int nrf52_radio_addr_set(FAR struct nrf52_radio_dev_s *dev, uint8_t i,
     }
   else if (i < 4)
     {
-      /* Logical addres 1-3 - BASE1 and PREFIX0 */
+      /* Logical address 1-3 - BASE1 and PREFIX0 */
 
       basereg   = NRF52_RADIO_BASE1_OFFSET;
       prefixreg = NRF52_RADIO_PREFIX0_OFFSET;
@@ -368,7 +368,7 @@ static int nrf52_radio_addr_set(FAR struct nrf52_radio_dev_s *dev, uint8_t i,
     }
   else
     {
-      /* Logical addres 1-3 - BASE1 and PREFIX1 */
+      /* Logical address 1-3 - BASE1 and PREFIX1 */
 
       basereg   = NRF52_RADIO_BASE1_OFFSET;
       prefixreg = NRF52_RADIO_PREFIX1_OFFSET;
@@ -420,7 +420,7 @@ errout:
  *
  ****************************************************************************/
 
-static int nrf52_radio_txpower_set(FAR struct nrf52_radio_dev_s *dev,
+static int nrf52_radio_txpower_set(struct nrf52_radio_dev_s *dev,
                                    uint8_t txpower)
 {
   int ret = OK;
@@ -454,7 +454,7 @@ errout:
  *
  ****************************************************************************/
 
-static int nrf52_radio_tifs_set(FAR struct nrf52_radio_dev_s *dev,
+static int nrf52_radio_tifs_set(struct nrf52_radio_dev_s *dev,
                                 uint16_t us)
 {
   int ret = OK;
@@ -488,12 +488,12 @@ errout:
  *
  ****************************************************************************/
 
-static int nrf52_radio_pkt_cfg(FAR struct nrf52_radio_dev_s *dev,
-                               FAR struct nrf52_radio_pktcfg_s *cfg)
+static int nrf52_radio_pkt_cfg(struct nrf52_radio_dev_s *dev,
+                               struct nrf52_radio_pktcfg_s *cfg)
 {
   uint32_t pcnf0 = 0;
   uint32_t pcnf1 = 0;
-  int ret       = OK;
+  int ret        = OK;
 
   /* LENGTH field length */
 
@@ -594,7 +594,7 @@ static int nrf52_radio_pkt_cfg(FAR struct nrf52_radio_dev_s *dev,
 
   pcnf1 |= (cfg->bal_len << RADIO_PCNF1_BALEN_SHIFT);
 
-  /* Configure on-air endianess of packet */
+  /* Configure on-air endianness of packet */
 
   pcnf1 |= (cfg->endian << RADIO_PCNF1_ENDIAN_SHIFT);
 
@@ -623,7 +623,7 @@ errout:
  *
  ****************************************************************************/
 
-static int nrf52_radio_white_set(FAR struct nrf52_radio_dev_s *dev,
+static int nrf52_radio_white_set(struct nrf52_radio_dev_s *dev,
                                  uint8_t init)
 {
   uint32_t regval = 0;
@@ -660,8 +660,8 @@ errout:
  *
  ****************************************************************************/
 
-static int nrf52_radio_crc_cfg(FAR struct nrf52_radio_dev_s *dev,
-                               FAR struct nrf52_radio_crc_s *cfg)
+static int nrf52_radio_crc_cfg(struct nrf52_radio_dev_s *dev,
+                               struct nrf52_radio_crc_s *cfg)
 {
   uint32_t regval = 0;
   int      ret    = OK;
@@ -719,8 +719,8 @@ errout:
  *
  ****************************************************************************/
 
-static int nrf52_radio_write(FAR struct nrf52_radio_dev_s *dev,
-                             FAR uint8_t *buf, int len)
+static int nrf52_radio_write(struct nrf52_radio_dev_s *dev,
+                             uint8_t *buf, int len)
 {
   int ret = OK;
 
@@ -779,8 +779,8 @@ errout:
  *
  ****************************************************************************/
 
-static int nrf52_radio_read(FAR struct nrf52_radio_dev_s *dev,
-                            FAR uint8_t *buf, int len)
+static int nrf52_radio_read(struct nrf52_radio_dev_s *dev,
+                            uint8_t *buf, int len)
 {
   int ret = OK;
 
@@ -839,7 +839,7 @@ errout:
  *
  ****************************************************************************/
 
-static void nrf52_radio_dumpregs(FAR struct nrf52_radio_dev_s *dev)
+static void nrf52_radio_dumpregs(struct nrf52_radio_dev_s *dev)
 {
   printf("\nnrf52_radio_dumpregs:\n");
 
@@ -957,7 +957,7 @@ static void nrf52_radio_dumpregs(FAR struct nrf52_radio_dev_s *dev)
  *
  ****************************************************************************/
 
-static int nrf52_radio_isr_rx(FAR struct nrf52_radio_dev_s *dev)
+static int nrf52_radio_isr_rx(struct nrf52_radio_dev_s *dev)
 {
   /* RX done */
 
@@ -974,7 +974,7 @@ static int nrf52_radio_isr_rx(FAR struct nrf52_radio_dev_s *dev)
  *
  ****************************************************************************/
 
-static int nrf52_radio_isr_tx(FAR struct nrf52_radio_dev_s *dev)
+static int nrf52_radio_isr_tx(struct nrf52_radio_dev_s *dev)
 {
   /* TX done */
 
@@ -991,11 +991,11 @@ static int nrf52_radio_isr_tx(FAR struct nrf52_radio_dev_s *dev)
  *
  ****************************************************************************/
 
-static int nrf52_radio_isr(int irq, FAR void *context, FAR void *arg)
+static int nrf52_radio_isr(int irq, void *context, void *arg)
 {
-  FAR struct nrf52_radio_dev_s *dev   = (FAR struct nrf52_radio_dev_s *)arg;
-  int                           ret   = OK;
-  uint32_t                      state = 0;
+  struct nrf52_radio_dev_s *dev   = (struct nrf52_radio_dev_s *)arg;
+  int                       ret   = OK;
+  uint32_t                  state = 0;
 
   DEBUGASSERT(dev);
 
@@ -1058,7 +1058,7 @@ static int nrf52_radio_isr(int irq, FAR void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static int nrf52_radio_setup(FAR struct nrf52_radio_dev_s *dev)
+static int nrf52_radio_setup(struct nrf52_radio_dev_s *dev)
 {
   uint32_t regval = 0;
   int      ret    = OK;
@@ -1096,7 +1096,7 @@ static int nrf52_radio_setup(FAR struct nrf52_radio_dev_s *dev)
  *
  ****************************************************************************/
 
-static int nrf52_radio_reset(FAR struct nrf52_radio_dev_s *dev)
+static int nrf52_radio_reset(struct nrf52_radio_dev_s *dev)
 {
   /* Turn off radio power */
 
@@ -1125,8 +1125,8 @@ static int nrf52_radio_reset(FAR struct nrf52_radio_dev_s *dev)
  *
  ****************************************************************************/
 
-FAR struct nrf52_radio_dev_s *
-nrf52_radio_initialize(int intf, FAR struct nrf52_radio_board_s *board)
+struct nrf52_radio_dev_s *
+nrf52_radio_initialize(int intf, struct nrf52_radio_board_s *board)
 {
   struct nrf52_radio_dev_s *dev = NULL;
   int                       ret = OK;

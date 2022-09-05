@@ -26,12 +26,14 @@
 
 #include <stdint.h>
 #include <sched.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 
 #include "sched/sched.h"
+#include "up_internal.h"
 
 /****************************************************************************
  * Public Functions
@@ -63,13 +65,6 @@ void sim_sigdeliver(void)
 #ifdef CONFIG_SMP
   irqstate_t flags = enter_critical_section();
 #endif
-
-  /* Save the errno.  This must be preserved throughout the signal handling
-   * so that the user code final gets the correct errno value (probably
-   * EINTR).
-   */
-
-  int saved_errno = get_errno();
 
 #ifdef CONFIG_SMP
   /* In the SMP case, we must terminate the critical section while the signal
@@ -131,10 +126,6 @@ void sim_sigdeliver(void)
       enter_critical_section();
     }
 #endif
-
-  /* Restore the saved errno value */
-
-  set_errno(saved_errno);
 
   /* Allows next handler to be scheduled */
 

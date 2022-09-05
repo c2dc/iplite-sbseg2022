@@ -324,7 +324,6 @@ Hardware
   LED_PANIC            The system has crashed    ON   OFF   OFF (flashing 2Hz)
   LED_IDLE             MCU is is sleep mode      ON   OFF   OFF
 
-
 OFF -    means that the OS is still initializing. Initialization is very fast
          so if you see this at all, it probably means that the system is
          hanging up somewhere in the initialization phases.
@@ -341,7 +340,6 @@ VIOLET - If a recovered assertion occurs, the RED and blue LED will be
 
 Flashing RED - In the event of a fatal crash, all other LEDs will be
           extinguished and RED LED will FLASH at a 2Hz rate.
-
 
   Thus if the GREEN LED is lit, NuttX has successfully booted and is,
   apparently, running normally.  If the RED LED is flashing at
@@ -395,7 +393,6 @@ Serial Consoles
                CN10-33, D34
     ---- ---   ------- ----
 
-
   You must use a 3.3 TTL to RS-232 converter or a USB to 3.3V TTL
 
     Nucleo 144           FTDI TTL-232R-3V3
@@ -440,7 +437,6 @@ Serial Consoles
   As shipped, SB4 and SB7 are open and SB5 and SB6 closed, so the
   virtual COM port is enabled.
 
-
 SPI
 ---
   Since this board is so generic, having a quick way to set the SPI
@@ -475,7 +471,9 @@ SPI Test
     +CONFIG_STM32F7_SPI3=y
 
     +# CONFIG_STM32F7_SPI_INTERRUPTS is not set
-    +# CONFIG_STM32F7_SPI_DMA is not set
+    +# CONFIG_STM32F7_SPI1_DMA is not set
+    +# CONFIG_STM32F7_SPI2_DMA is not set
+    +# CONFIG_STM32F7_SPI3_DMA is not set
      # CONFIG_STM32F7_CUSTOM_CLOCKCONFIG is not set
 
     +CONFIG_NUCLEO_SPI_TEST=y
@@ -495,7 +493,7 @@ SPI Test
     +CONFIG_NUCLEO_SPI3_TEST_BITS=8
     +CONFIG_NUCLEO_SPI3_TEST_MODE3=y
 
-    +CONFIG_LIB_BOARDCTL=y
+    +CONFIG_BOARDCTL=y
     +CONFIG_NSH_ARCHINIT=y
 
 Configurations
@@ -537,7 +535,7 @@ f7xx-nsh:
      for Linux.  That can easily be reconfigured, of course.
 
      CONFIG_HOST_LINUX=y                     : Builds under Linux
-     CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL=y     : ARM GNU for Linux
+     CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : ARM GNU for Linux
 
   3. The serial console may be configured to use either USART3 (which would
      correspond to the Virtual COM port) or with the console device
@@ -573,6 +571,8 @@ f7xx-evalos:
     - Configures nsh with advanced features such as autocompletion.
     - Configures the on-board LEDs to work with the 'leds' example app.
     - Configures the 'helloxx' example app.
+    - Adds character device for i2c1
+    - Tries to register mpu60x0 IMU to i2c1
 
   NOTES:
 
@@ -602,4 +602,4 @@ f7xx-evalos:
     for Linux.  That can easily be reconfigured, of course.
 
     CONFIG_HOST_LINUX=y                     : Builds under Linux
-    CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL=y     : ARM GNU for Linux
+    CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : ARM GNU for Linux

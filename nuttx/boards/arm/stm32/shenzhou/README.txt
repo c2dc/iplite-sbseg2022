@@ -370,7 +370,7 @@ Shenzhou-specific Configuration Options
     CONFIG_STM32_SPI_INTERRUPTS - Select to enable interrupt driven SPI
       support. Non-interrupt-driven, poll-waiting is recommended if the
       interrupt rate would be to high in the interrupt driven case.
-    CONFIG_STM32_SPI_DMA - Use DMA to improve SPI transfer performance.
+    CONFIG_STM32_SPIx_DMA - Use DMA to improve SPIx transfer performance.
       Cannot be used with CONFIG_STM32_SPI_INTERRUPT.
 
     CONFIG_STM32_PHYADDR - The 5-bit address of the PHY on the board
@@ -491,7 +491,7 @@ Where <subdir> is one of the following:
     Configures the NuttShell (nsh) located at apps/examples/nsh.  The
     Configuration enables both the serial and telnet NSH interfaces.
 
-    CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y       : GNU EABI toolchain for Windows
+    CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y        : GNU EABI toolchain for Windows
     CONFIG_NSH_DHCPC=n                        : DHCP is disabled
     CONFIG_NSH_IPADDR=0x0a000002              : Target IP address 10.0.0.2
     CONFIG_NSH_DRIPADDR=0x0a000001            : Host IP address 10.0.0.1

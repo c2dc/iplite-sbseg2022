@@ -30,7 +30,7 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Name: task_setcancelstate
+ * Name: task_setcanceltype
  *
  * Description:
  *   The task_setcanceltype() function atomically both sets the calling
@@ -46,7 +46,7 @@
 
 int task_setcanceltype(int type, FAR int *oldtype)
 {
-  /* Return the current type if so requrested */
+  /* Return the current type if so requested */
 
   if (oldtype != NULL)
     {

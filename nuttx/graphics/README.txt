@@ -35,7 +35,6 @@ at the present, but here is the longer term roadmap:
               an NX window.  This character device can be used to provide stdout
               and stderr and, hence, can provide the output side of NuttX console.
 
-
 Related Header Files
 ^^^^^^^^^^^^^^^^^^^^
 
@@ -97,10 +96,6 @@ libs/libnx/nxtk
 apps/grahpics/nxwidgets
   The NxWidgets code is provided as a separate package located outside of the
   NuttX source tree (probably at this location).
-
-graphics/vnc
-  The future home of the VNC Remote Frame Buffer (RFB) server and client
-  implementations.
 
 Installing New Fonts
 ^^^^^^^^^^^^^^^^^^^^

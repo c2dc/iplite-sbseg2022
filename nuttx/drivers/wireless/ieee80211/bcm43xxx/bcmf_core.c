@@ -1,35 +1,20 @@
 /****************************************************************************
  * drivers/wireless/ieee80211/bcm43xxx/bcmf_core.c
  *
- *   Copyright (C) 2017-2018 Gregory Nutt. All rights reserved.
- *   Author: Simon Piriou <spiriou31@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -40,6 +25,10 @@
 #include <nuttx/config.h>
 #include <nuttx/compiler.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -48,10 +37,10 @@
 
 #include <nuttx/arch.h>
 #include <nuttx/kmalloc.h>
+#include <nuttx/signal.h>
 
 #include "bcmf_core.h"
-#include "bcmf_sdio.h"
-
+#include "bcmf_interface.h"
 #include "bcmf_sdio_regs.h"
 
 /****************************************************************************
@@ -71,6 +60,10 @@
 #define BCMA_IOCTL_PME_EN    0x4000
 #define BCMA_IOCTL_BIST_EN   0x8000
 
+/* ARM CR4 core specific control flag bits */
+
+#define ARMCR4_BCMA_IOCTL_CPUHALT  0x0020
+
 #define BCMA_IOST_CORE_BITS  0x0FFF
 #define BCMA_IOST_DMA64      0x1000
 #define BCMA_IOST_GATED_CLK  0x2000
@@ -83,10 +76,6 @@
 
 #define SOCSRAM_BANKX_INDEX  ((uint32_t) (0x18004000 + 0x10) )
 #define SOCSRAM_BANKX_PDA    ((uint32_t) (0x18004000 + 0x44) )
-
-/* Transfer size properties */
-
-#define BCMF_UPLOAD_TRANSFER_SIZE  (64 * 256)
 
 /* Define this to validate uploaded materials */
 
@@ -104,18 +93,18 @@ static uint8_t compare_buffer[BCMF_UPLOAD_TRANSFER_SIZE];
  * Private Function Prototypes
  ****************************************************************************/
 
-static int bcmf_core_set_backplane_window(FAR struct bcmf_sdio_dev_s *sbus,
+static int bcmf_core_set_backplane_window(FAR bcmf_interface_dev_t *ibus,
                                           uint32_t address);
-static int bcmf_upload_binary(FAR struct bcmf_sdio_dev_s *sbusv,
+static int bcmf_upload_binary(FAR bcmf_interface_dev_t *ibus,
                               uint32_t address, uint8_t *buf,
                               unsigned int len);
-static int bcmf_upload_nvram(FAR struct bcmf_sdio_dev_s *sbus);
+static int bcmf_upload_nvram(FAR bcmf_interface_dev_t *ibus);
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
 
-int bcmf_core_set_backplane_window(FAR struct bcmf_sdio_dev_s *sbus,
+int bcmf_core_set_backplane_window(FAR bcmf_interface_dev_t *ibus,
                                    uint32_t address)
 {
   int ret;
@@ -126,13 +115,13 @@ int bcmf_core_set_backplane_window(FAR struct bcmf_sdio_dev_s *sbus,
   for (i = 1; i < 4; i++)
     {
       uint8_t addr_part = (address >> (8*i)) & 0xff;
-      uint8_t cur_addr_part = (sbus->backplane_current_addr >> (8*i)) & 0xff;
+      uint8_t cur_addr_part = (ibus->backplane_current_addr >> (8*i)) & 0xff;
 
       if (addr_part != cur_addr_part)
         {
           /* Update current backplane base address */
 
-          ret = bcmf_write_reg(sbus, 1, SBSDIO_FUNC1_SBADDRLOW + i - 1,
+          ret = bcmf_write_reg(ibus, 1, SBSDIO_FUNC1_SBADDRLOW + i - 1,
                   addr_part);
 
           if (ret != OK)
@@ -140,15 +129,15 @@ int bcmf_core_set_backplane_window(FAR struct bcmf_sdio_dev_s *sbus,
               return ret;
             }
 
-          sbus->backplane_current_addr &= ~(0xff << (8*i));
-          sbus->backplane_current_addr |= addr_part << (8*i);
+          ibus->backplane_current_addr &= ~(0xff << (8*i));
+          ibus->backplane_current_addr |= addr_part << (8*i);
         }
     }
 
   return OK;
 }
 
-int bcmf_upload_binary(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
+int bcmf_upload_binary(FAR bcmf_interface_dev_t *ibus, uint32_t address,
                        uint8_t *buf, unsigned int len)
 {
   unsigned int size;
@@ -163,7 +152,7 @@ int bcmf_upload_binary(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
     {
       /* Set the backplane window to include the start address */
 
-      int ret = bcmf_core_set_backplane_window(sbus, address);
+      int ret = bcmf_core_set_backplane_window(ibus, address);
       if (ret != OK)
         {
           wlerr("Backplane setting failed at %08" PRIx32 "\n", address);
@@ -181,7 +170,7 @@ int bcmf_upload_binary(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
 
       /* Transfer firmware data */
 
-      ret = bcmf_transfer_bytes(sbus, true, 1,
+      ret = bcmf_transfer_bytes(ibus, true, 1,
                                 address & SBSDIO_SB_OFT_ADDR_MASK, buf,
                                 size);
       if (ret != OK)
@@ -201,7 +190,7 @@ int bcmf_upload_binary(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
     {
       /* Set the backplane window to include the start address */
 
-      int ret = bcmf_core_set_backplane_window(sbus, validate_address);
+      int ret = bcmf_core_set_backplane_window(ibus, validate_address);
       if (ret != OK)
         {
           wlerr("Backplane setting failed at %08x\n", validate_address);
@@ -219,7 +208,7 @@ int bcmf_upload_binary(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
 
       /* Transfer firmware data */
 
-      ret = bcmf_transfer_bytes(sbus, false, 1,
+      ret = bcmf_transfer_bytes(ibus, false, 1,
                                 validate_address & SBSDIO_SB_OFT_ADDR_MASK,
                                 compare_buffer, size);
       if (ret != OK)
@@ -247,7 +236,7 @@ int bcmf_upload_binary(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
 }
 
 #ifdef CONFIG_IEEE80211_BROADCOM_FWFILES
-int bcmf_upload_file(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
+int bcmf_upload_file(FAR bcmf_interface_dev_t *ibus, uint32_t address,
                      FAR const char *path)
 {
   struct file finfo;
@@ -258,7 +247,7 @@ int bcmf_upload_file(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
 
   /* Open the file in the detached state */
 
-  ret = file_open(&finfo, path, O_RDONLY | O_BINARY);
+  ret = file_open(&finfo, path, O_RDONLY);
   if (ret < 0)
     {
       wlerr("ERROR: Failed to open the FILE MTD file %s: %d\n", path, ret);
@@ -296,7 +285,7 @@ int bcmf_upload_file(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
 
       wlinfo("Read %ld bytes\n", (long)nread);
 
-      ret = bcmf_core_set_backplane_window(sbus, address);
+      ret = bcmf_core_set_backplane_window(ibus, address);
       if (ret < 0)
         {
           wlerr("ERROR: bcmf_core_set_backplane_window() failed: %d\n", ret);
@@ -307,7 +296,7 @@ int bcmf_upload_file(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
 
       /* Transfer firmware data */
 
-      ret = bcmf_transfer_bytes(sbus, true, 1,
+      ret = bcmf_transfer_bytes(ibus, true, 1,
                                 address & SBSDIO_SB_OFT_ADDR_MASK, buf,
                                 total_read);
       if (ret < 0)
@@ -336,24 +325,109 @@ errout_with_file:
 }
 #endif
 
-int bcmf_upload_nvram(FAR struct bcmf_sdio_dev_s *sbus)
+int bcmf_upload_nvram(FAR bcmf_interface_dev_t *ibus)
 {
-  int ret;
-  uint32_t nvram_sz;
+  FAR uint8_t *nvram_buf = ibus->chip->nvram_image;
+  uint32_t nvram_sz = *ibus->chip->nvram_image_size;
   uint32_t token;
+  int ret;
+
+#ifdef CONFIG_IEEE80211_BROADCOM_FWFILES
+  FAR const char *nvfile = CONFIG_IEEE80211_BROADCOM_NVFILENAME;
+  bool skipline = false;
+  struct file finfo;
+  struct stat stat;
+  FAR uint8_t *buf;
+  int i;
+
+  if (strlen(nvfile) <= 0)
+    {
+      goto out;
+    }
+
+  ret = file_open(&finfo, nvfile, O_RDONLY);
+  if (ret < 0)
+    {
+      goto out;
+    }
+
+  ret = file_fstat(&finfo, &stat);
+  if (ret < 0 || stat.st_size <= 0)
+    {
+      goto out;
+    }
+
+  /* Round up the ram buffer size */
+
+  stat.st_size = (stat.st_size + 63) & (~63);
+
+  buf = (FAR uint8_t *)kmm_malloc(stat.st_size);
+  if (buf == NULL)
+    {
+      goto out;
+    }
+
+  /* Convert text pattern:
+   *  1. Remove the comment line (Prefix with '#')
+   *  2. Convert LF('\n') to NULL'\0'
+   */
+
+  ret = file_read(&finfo, buf, stat.st_size);
+  if (ret <= 0)
+    {
+      kmm_free(buf);
+      goto out;
+    }
+
+  nvram_buf = buf;
+
+  for (i = 0; i < ret; i++)
+    {
+      if (nvram_buf[i] == '\n')
+        {
+          if (buf != nvram_buf && *(buf - 1) != '\0')
+            {
+              *buf++ = '\0';
+            }
+
+          skipline = false;
+        }
+      else if (nvram_buf[i] == '#')
+        {
+          skipline = true;
+        }
+      else if (!skipline && (nvram_buf + i) != buf)
+        {
+          *buf++ = nvram_buf[i];
+        }
+    }
+
+  nvram_sz = buf - nvram_buf;
+
+out:
+  file_close(&finfo);
+#endif
 
   /* Round up the size of the image */
 
-  nvram_sz = (*sbus->chip->nvram_image_size + 63) & (-64);
+  nvram_sz = (nvram_sz + 63) & (~63);
 
-  wlinfo("nvram size is %" PRId32 " %d bytes\n",
-         nvram_sz, *sbus->chip->nvram_image_size);
+  wlinfo("nvram size is %" PRId32 " bytes\n", nvram_sz);
 
   /* Write image */
 
-  ret = bcmf_upload_binary(sbus, sbus->chip->ram_size - 4 - nvram_sz,
-                           sbus->chip->nvram_image,
-                           *sbus->chip->nvram_image_size);
+  ret = bcmf_upload_binary(ibus,
+                           ibus->chip->ram_size - 4 - nvram_sz
+                           + ibus->chip->ram_base,
+                           nvram_buf, nvram_sz);
+
+#ifdef CONFIG_IEEE80211_BROADCOM_FWFILES
+  if (nvram_buf != ibus->chip->nvram_image)
+    {
+      kmm_free(nvram_buf);
+    }
+#endif
+
   if (ret != OK)
     {
       return ret;
@@ -366,14 +440,9 @@ int bcmf_upload_nvram(FAR struct bcmf_sdio_dev_s *sbus)
 
   /* Write the length token to the last word */
 
-  ret = bcmf_write_sbreg(sbus, sbus->chip->ram_size - 4,
-                         (FAR uint8_t *)&token, 4);
-  if (ret != OK)
-    {
-      return ret;
-    }
-
-  return OK;
+  return bcmf_write_sbreg(ibus,
+                          ibus->chip->ram_size - 4 + ibus->chip->ram_base,
+                          (FAR uint8_t *)&token, 4);
 }
 
 /****************************************************************************
@@ -384,10 +453,10 @@ int bcmf_upload_nvram(FAR struct bcmf_sdio_dev_s *sbus)
  * Name: bcmf_read_sbreg
  ****************************************************************************/
 
-int bcmf_read_sbreg(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
+int bcmf_read_sbreg(FAR bcmf_interface_dev_t *ibus, uint32_t address,
                     FAR uint8_t *reg, unsigned int len)
 {
-  int ret = bcmf_core_set_backplane_window(sbus, address);
+  int ret = bcmf_core_set_backplane_window(ibus, address);
   if (ret != OK)
     {
       return ret;
@@ -402,17 +471,17 @@ int bcmf_read_sbreg(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
       address |= SBSDIO_SB_ACCESS_2_4B_FLAG;
     }
 
-  return bcmf_transfer_bytes(sbus, false, 1, address, reg, len);
+  return bcmf_transfer_bytes(ibus, false, 1, address, reg, len);
 }
 
 /****************************************************************************
  * Name: bcmf_write_sbreg
  ****************************************************************************/
 
-int bcmf_write_sbreg(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
+int bcmf_write_sbreg(FAR bcmf_interface_dev_t *ibus, uint32_t address,
                      FAR uint8_t *reg, unsigned int len)
 {
-  int ret = bcmf_core_set_backplane_window(sbus, address);
+  int ret = bcmf_core_set_backplane_window(ibus, address);
   if (ret != OK)
     {
       return ret;
@@ -427,47 +496,92 @@ int bcmf_write_sbreg(FAR struct bcmf_sdio_dev_s *sbus, uint32_t address,
       address |= SBSDIO_SB_ACCESS_2_4B_FLAG;
     }
 
-  return bcmf_transfer_bytes(sbus, true, 1, address, reg, len);
+  return bcmf_transfer_bytes(ibus, true, 1, address, reg, len);
 }
 
 /****************************************************************************
  * Name: bcmf_core_upload_firmware
  ****************************************************************************/
 
-int bcmf_core_upload_firmware(FAR struct bcmf_sdio_dev_s *sbus)
+int bcmf_core_upload_firmware(FAR bcmf_interface_dev_t *ibus)
 {
   int ret;
+#if defined(CONFIG_IEEE80211_BROADCOM_BCM43455)
+  uint32_t base;
+  uint32_t value;
+#endif
 
   wlinfo("upload firmware\n");
 
-  /* Disable ARMCM3 core and reset SOCRAM core to set device in firmware
-   * upload mode
-   */
-
-  bcmf_core_disable(sbus, WLAN_ARMCM3_CORE_ID);
-  bcmf_core_reset(sbus, SOCSRAM_CORE_ID);
-
-  /* Do chip specific initialization */
-
-  if (sbus->cur_chip_id == SDIO_DEVICE_ID_BROADCOM_43430)
+  switch (ibus->cur_chip_id)
     {
-      /* Disable remap for SRAM_3. Only for 4343x */
+#if defined(CONFIG_IEEE80211_BROADCOM_BCM4301X) || \
+    defined(CONFIG_IEEE80211_BROADCOM_BCM43362) || \
+    defined(CONFIG_IEEE80211_BROADCOM_BCM43438) || \
+    defined(CONFIG_IEEE80211_INFINEON_CYW43439)
 
-      bcmf_write_sbregw(sbus, SOCSRAM_BANKX_INDEX, 0x3);
-      bcmf_write_sbregw(sbus, SOCSRAM_BANKX_PDA, 0);
+      case SDIO_DEVICE_ID_BROADCOM_43012:
+      case SDIO_DEVICE_ID_BROADCOM_43013:
+      case SDIO_DEVICE_ID_BROADCOM_43362:
+      case SDIO_DEVICE_ID_BROADCOM_43430:
+      case SDIO_DEVICE_ID_INFINEON_CYW43439:
+        /* Disable ARMCM3 core and reset SOCRAM core to set device in
+         * firmware upload mode
+         */
+
+        bcmf_core_disable(ibus, WLAN_ARMCM3_CORE_ID, 0, 0);
+        bcmf_core_reset(ibus, SOCSRAM_CORE_ID, 0, 0, 0);
+
+#if    defined(CONFIG_IEEE80211_BROADCOM_BCM43438)    \
+    || defined(CONFIG_IEEE80211_INFINEON_CYW43439)
+
+        if (ibus->cur_chip_id == SDIO_DEVICE_ID_BROADCOM_43430)
+          {
+            /* Disable remap for SRAM_3. Only for 4343x */
+
+            bcmf_write_sbregw(ibus, SOCSRAM_BANKX_INDEX, 0x3);
+            bcmf_write_sbregw(ibus, SOCSRAM_BANKX_PDA, 0);
+          }
+#endif
+        break;
+#endif
+
+#if defined(CONFIG_IEEE80211_BROADCOM_BCM43455)
+
+      case SDIO_DEVICE_ID_BROADCOM_43455:
+
+        /* Clear all IOCTL bits except HALT bit */
+
+        base = ibus->chip->core_base[WLAN_ARMCR4_CORE_ID];
+        bcmf_read_sbregw(ibus, base + BCMA_IOCTL, &value);
+        value &= ARMCR4_BCMA_IOCTL_CPUHALT;
+        bcmf_core_reset(ibus,
+                        WLAN_ARMCR4_CORE_ID,
+                        value,
+                        ARMCR4_BCMA_IOCTL_CPUHALT,
+                        ARMCR4_BCMA_IOCTL_CPUHALT);
+        break;
+#endif
+
+      default:
+        DEBUGPANIC();
     }
 
-  up_mdelay(50);
+  nxsig_usleep(50 * 1000);
 
   /* Flash chip firmware */
 
 #ifdef CONFIG_IEEE80211_BROADCOM_FWFILES
-  ret = bcmf_upload_file(sbus, 0, CONFIG_IEEE80211_BROADCOM_FWFILENAME);
+  ret = bcmf_upload_file(ibus,
+                         ibus->chip->ram_base,
+                         CONFIG_IEEE80211_BROADCOM_FWFILENAME);
 #else
-  wlinfo("firmware size is %d bytes\n", *sbus->chip->firmware_image_size);
+  wlinfo("firmware size is %d bytes\n", *ibus->chip->firmware_image_size);
 
-  ret = bcmf_upload_binary(sbus, 0, sbus->chip->firmware_image,
-                           *sbus->chip->firmware_image_size);
+  ret = bcmf_upload_binary(ibus,
+                           ibus->chip->ram_base,
+                           ibus->chip->firmware_image,
+                           *ibus->chip->firmware_image_size);
 #endif
 
   if (ret < 0)
@@ -479,31 +593,89 @@ int bcmf_core_upload_firmware(FAR struct bcmf_sdio_dev_s *sbus)
   /* Flash NVRAM configuration file */
 
   wlinfo("upload nvram configuration\n");
-  ret = bcmf_upload_nvram(sbus);
+  ret = bcmf_upload_nvram(ibus);
   if (ret < 0)
     {
       wlerr("ERROR: Failed to upload NVRAM\n");
       return ret;
     }
 
-  /* Firmware upload done, restart ARMCM3 core */
+  /* Firmware upload done, restart ARM CM3/CR4 core */
 
-  up_mdelay(10);
-  bcmf_core_reset(sbus, WLAN_ARMCM3_CORE_ID);
-
-  /* Check ARMCM3 core is running */
-
-  up_mdelay(10);
-  if (!bcmf_core_isup(sbus, WLAN_ARMCM3_CORE_ID))
+  switch (ibus->cur_chip_id)
     {
-      wlerr("Cannot start ARMCM3 core\n");
-      return -ETIMEDOUT;
+#if defined(CONFIG_IEEE80211_BROADCOM_BCM4301X) || \
+    defined(CONFIG_IEEE80211_BROADCOM_BCM43362) || \
+    defined(CONFIG_IEEE80211_BROADCOM_BCM43438) || \
+    defined(CONFIG_IEEE80211_INFINEON_CYW43439)
+
+      case SDIO_DEVICE_ID_BROADCOM_43012:
+      case SDIO_DEVICE_ID_BROADCOM_43013:
+      case SDIO_DEVICE_ID_BROADCOM_43362:
+      case SDIO_DEVICE_ID_BROADCOM_43430:
+      case SDIO_DEVICE_ID_INFINEON_CYW43439:
+        nxsig_usleep(10 * 1000);
+        bcmf_core_reset(ibus, WLAN_ARMCM3_CORE_ID, 0, 0, 0);
+
+        /* Check ARMCM3 core is running */
+
+        nxsig_usleep(10 * 1000);
+        if (!bcmf_core_isup(ibus, WLAN_ARMCM3_CORE_ID))
+          {
+            wlerr("Cannot start ARMCM3 core\n");
+            return -ETIMEDOUT;
+          }
+        break;
+#endif
+
+#if defined(CONFIG_IEEE80211_BROADCOM_BCM43455)
+
+      case SDIO_DEVICE_ID_BROADCOM_43455:
+
+        /* Clear all interrupts */
+
+        bcmf_write_sbregw(
+          ibus,
+          CORE_BUS_REG(ibus->chip->core_base[SDIOD_CORE_ID], intstatus),
+          0xffffffff);
+
+        /* Write reset vector to address 0 */
+
+        ret = bcmf_upload_binary(ibus,
+                                 0,
+                                 ibus->chip->firmware_image,
+                                 4);
+        if (ret < 0)
+          {
+            return ret;
+          }
+
+        bcmf_core_reset(ibus,
+                        WLAN_ARMCR4_CORE_ID,
+                        ARMCR4_BCMA_IOCTL_CPUHALT,
+                        0,
+                        0);
+
+        /* Check ARMCR4 core is running */
+
+        nxsig_usleep(10 * 1000);
+        if (!bcmf_core_isup(ibus, WLAN_ARMCR4_CORE_ID))
+          {
+            wlerr("Cannot start ARMCR4 core\n");
+            return -ETIMEDOUT;
+          }
+
+        break;
+#endif
+
+      default:
+        DEBUGPANIC();
     }
 
   return OK;
 }
 
-bool bcmf_core_isup(FAR struct bcmf_sdio_dev_s *sbus, unsigned int core)
+bool bcmf_core_isup(FAR bcmf_interface_dev_t *ibus, unsigned int core)
 {
   uint32_t value = 0;
   uint32_t base;
@@ -514,23 +686,26 @@ bool bcmf_core_isup(FAR struct bcmf_sdio_dev_s *sbus, unsigned int core)
       return false;
     }
 
-  base = sbus->chip->core_base[core];
+  base = ibus->chip->core_base[core];
 
-  bcmf_read_sbregw(sbus, base + BCMA_IOCTL, &value);
+  bcmf_read_sbregw(ibus, base + BCMA_IOCTL, &value);
 
   if ((value & (BCMA_IOCTL_FGC | BCMA_IOCTL_CLK)) != BCMA_IOCTL_CLK)
     {
       return false;
     }
 
-  bcmf_read_sbregw(sbus, base + BCMA_RESET_CTL, &value);
+  bcmf_read_sbregw(ibus, base + BCMA_RESET_CTL, &value);
 
   return (value & BCMA_RESET_CTL_RESET) == 0;
 }
 
-void bcmf_core_disable(FAR struct bcmf_sdio_dev_s *sbus, unsigned int core)
+void bcmf_core_disable(FAR bcmf_interface_dev_t *ibus,
+                       unsigned int core,
+                       uint32_t prereset,
+                       uint32_t reset)
 {
-  uint8_t value;
+  uint32_t value;
 
   if (core >= MAX_CORE_ID)
     {
@@ -538,36 +713,45 @@ void bcmf_core_disable(FAR struct bcmf_sdio_dev_s *sbus, unsigned int core)
       return;
     }
 
-  uint32_t base = sbus->chip->core_base[core];
+  uint32_t base = ibus->chip->core_base[core];
 
-  /* Check if core is already in reset state */
+  /* Check if core is already in reset state.
+   * If core is already in reset state, skip reset.
+   */
 
-  bcmf_read_sbregb(sbus, base + BCMA_RESET_CTL, &value);
+  bcmf_read_sbregw(ibus, base + BCMA_RESET_CTL, &value);
 
-  if ((value & BCMA_RESET_CTL_RESET) != 0)
+  if ((value & BCMA_RESET_CTL_RESET) == 0)
     {
-      /* Core already disabled */
+      /* Core is not in reset state */
 
-      return;
+      /*  Ensure no backplane operation is pending */
+
+      nxsig_usleep(10 * 1000);
+
+      bcmf_write_sbregw(ibus,
+                        base + BCMA_IOCTL,
+                        prereset | BCMA_IOCTL_FGC | BCMA_IOCTL_CLK);
+      bcmf_read_sbregw(ibus, base + BCMA_IOCTL, &value);
+
+      /* Set core in reset state */
+
+      bcmf_write_sbregw(ibus, base + BCMA_RESET_CTL, BCMA_RESET_CTL_RESET);
+      up_udelay(1);
     }
 
-  /*  Ensure no backplane operation is pending */
-
-  up_mdelay(10);
-
-  /* Set core in reset state */
-
-  bcmf_write_sbregb(sbus, base + BCMA_RESET_CTL, BCMA_RESET_CTL_RESET);
-  up_udelay(1);
-
-  /* Write 0 to the IO control and read it back */
-
-  bcmf_write_sbregb(sbus, base + BCMA_IOCTL, 0);
-  bcmf_read_sbregb(sbus, base + BCMA_IOCTL, &value);
+  bcmf_write_sbregw(ibus,
+                    base + BCMA_IOCTL,
+                    reset | BCMA_IOCTL_FGC | BCMA_IOCTL_CLK);
+  bcmf_read_sbregw(ibus, base + BCMA_IOCTL, &value);
   up_udelay(10);
 }
 
-void bcmf_core_reset(FAR struct bcmf_sdio_dev_s *sbus, unsigned int core)
+void bcmf_core_reset(FAR bcmf_interface_dev_t *ibus,
+                     unsigned int core,
+                     uint32_t prereset,
+                     uint32_t reset,
+                     uint32_t postreset)
 {
   uint32_t value;
   uint32_t base;
@@ -578,25 +762,21 @@ void bcmf_core_reset(FAR struct bcmf_sdio_dev_s *sbus, unsigned int core)
       return;
     }
 
-  base = sbus->chip->core_base[core];
+  base = ibus->chip->core_base[core];
 
   /* Put core in reset state */
 
-  bcmf_core_disable(sbus, core);
+  bcmf_core_disable(ibus, core, prereset, reset);
 
   /* Run initialization sequence */
 
-  bcmf_write_sbregb(sbus, base + BCMA_IOCTL,
-                    BCMA_IOCTL_FGC | BCMA_IOCTL_CLK);
-  bcmf_read_sbregw(sbus, base + BCMA_IOCTL, &value);
-
-  bcmf_write_sbregb(sbus, base + BCMA_RESET_CTL, 0);
-  bcmf_read_sbregw(sbus, base + BCMA_RESET_CTL, &value);
+  bcmf_write_sbregw(ibus, base + BCMA_RESET_CTL, 0);
+  bcmf_read_sbregw(ibus, base + BCMA_RESET_CTL, &value);
 
   up_udelay(1);
 
-  bcmf_write_sbregb(sbus, base + BCMA_IOCTL, BCMA_IOCTL_CLK);
-  bcmf_read_sbregw(sbus, base + BCMA_IOCTL, &value);
+  bcmf_write_sbregw(ibus, base + BCMA_IOCTL, postreset | BCMA_IOCTL_CLK);
+  bcmf_read_sbregw(ibus, base + BCMA_IOCTL, &value);
 
   up_udelay(1);
 }

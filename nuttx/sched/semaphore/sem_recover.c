@@ -24,6 +24,8 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
+
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 #include <nuttx/sched.h>
@@ -105,6 +107,10 @@ void nxsem_recover(FAR struct tcb_s *tcb)
 
       tcb->waitsem = NULL;
     }
+
+  /* Release all semphore holders for the task */
+
+  nxsem_release_all(tcb);
 
   leave_critical_section(flags);
 }

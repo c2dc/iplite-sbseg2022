@@ -40,7 +40,7 @@
 #include <string.h>
 
 #include "lc823450_syscontrol.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "clock/clock.h"
 
 /****************************************************************************
@@ -147,10 +147,8 @@ static struct pm_callback_s pm_cb =
 static int cboot = 1;
 #endif /* CONFIG_RTC_DIV */
 
-#ifdef CONFIG_CLOCK_MONOTONIC
 static struct timespec lastupdate_mono;
 static struct timespec lastupdate_rtc;
-#endif
 
 /****************************************************************************
  * Public Data
@@ -170,7 +168,7 @@ volatile bool g_rtc_enabled = false;
 static void tm_divider(struct tm *tm, int divn, int divm)
 {
   time_t tt;
-  tt = mktime(tm);
+  tt = timegm(tm);
   tt = (time_t) ((uint64_t)tt * divn / divm);
   gmtime_r(&tt, tm);
 }
@@ -228,7 +226,7 @@ static void rtc_pmnotify(struct pm_callback_s *cb, enum pm_state_e pmstate)
  ****************************************************************************/
 
 #ifdef CONFIG_RTC_ALARM
-static int rtc_interrupt(int irq, void *context, FAR void *arg)
+static int rtc_interrupt(int irq, void *context, void *arg)
 {
   struct tm tm;
   up_rtc_getdatetime(&tm);
@@ -284,7 +282,7 @@ static int rtc_interrupt(int irq, void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static int up_rtc_getdatetime_main(FAR struct tm *tp)
+static int up_rtc_getdatetime_main(struct tm *tp)
 {
 #ifdef CONFIG_RTC_DIV
   tp->tm_sec  = getreg8(RTC_SEC);
@@ -454,7 +452,7 @@ int up_rtc_initialize(void)
   return OK;
 }
 
-int up_rtc_getdatetime(FAR struct tm *tp)
+int up_rtc_getdatetime(struct tm *tp)
 {
   struct tm tm1;
   struct tm tm2;
@@ -510,7 +508,7 @@ int up_rtc_getdatetime(FAR struct tm *tp)
  *
  ****************************************************************************/
 
-int up_rtc_settime(FAR const struct timespec *ts)
+int up_rtc_settime(const struct timespec *ts)
 {
   struct tm *tp;
 
@@ -550,10 +548,8 @@ int up_rtc_settime(FAR const struct timespec *ts)
   up_rtc_set_default_datetime(tp);
 #endif /* CONFIG_RTC_SAVE_DEFAULT */
 
-#ifdef CONFIG_CLOCK_MONOTONIC
-  clock_gettime(CLOCK_MONOTONIC, &lastupdate_mono);
+  clock_systime_timespec(&lastupdate_mono);
   lastupdate_rtc = *ts;
-#endif
 
   /* Start rtc update */
 
@@ -583,7 +579,7 @@ int up_rtc_settime(FAR const struct timespec *ts)
  ****************************************************************************/
 
 #ifdef CONFIG_RTC_ALARM
-int up_rtc_setalarm(FAR const struct timespec *ts, alarmcb_t callback)
+int up_rtc_setalarm(const struct timespec *ts, alarmcb_t callback)
 {
   struct tm *tp;
 
@@ -658,15 +654,13 @@ int up_rtc_cancelalarm(void)
  *
  ****************************************************************************/
 
-int up_rtc_getrawtime(FAR struct timespec *ts)
+int up_rtc_getrawtime(struct timespec *ts)
 {
   struct tm tm;
-
-#ifdef CONFIG_CLOCK_MONOTONIC
   struct timespec now;
   struct timespec diff;
 
-  clock_gettime(CLOCK_MONOTONIC, &now);
+  clock_systime_timespec(&now);
   timespec_sub(&now, &lastupdate_mono, &diff);
 
   if (lastupdate_rtc.tv_sec != 0 && diff.tv_sec < 1)
@@ -676,7 +670,6 @@ int up_rtc_getrawtime(FAR struct timespec *ts)
       *ts = lastupdate_rtc;
       return 0;
     }
-#endif
 
   tm.tm_sec  = getreg8(RTC_SEC);
   tm.tm_min  = getreg8(RTC_MIN);
@@ -690,7 +683,7 @@ int up_rtc_getrawtime(FAR struct timespec *ts)
 #endif /* CONFIG_RTC_DIV */
 
   ts->tv_nsec = 0;
-  ts->tv_sec = mktime(&tm);
+  ts->tv_sec = timegm(&tm);
   return 0;
 }
 

@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <nuttx/fs/fs.h>
 #include <nuttx/kmalloc.h>
@@ -36,6 +37,7 @@
 #include <nuttx/sensors/fakesensor.h>
 #include <nuttx/sensors/sensor.h>
 #include <nuttx/signal.h>
+#include <debug.h>
 
 /****************************************************************************
  * Private Types
@@ -45,11 +47,12 @@ struct fakesensor_s
 {
   struct sensor_lowerhalf_s lower;
   struct file data;
-  unsigned int interval;
-  unsigned int batch;
+  unsigned long interval;
+  unsigned long batch;
   int raw_start;
   FAR const char *file_path;
-  sem_t run;
+  sem_t wakeup;
+  volatile bool running;
 };
 
 /****************************************************************************
@@ -57,11 +60,13 @@ struct fakesensor_s
  ****************************************************************************/
 
 static int fakesensor_activate(FAR struct sensor_lowerhalf_s *lower,
-                               bool sw);
+                               FAR struct file *filep, bool sw);
 static int fakesensor_set_interval(FAR struct sensor_lowerhalf_s *lower,
-                                   FAR unsigned int *period_us);
+                                   FAR struct file *filep,
+                                   FAR unsigned long *period_us);
 static int fakesensor_batch(FAR struct sensor_lowerhalf_s *lower,
-                            FAR unsigned int *latency_us);
+                            FAR struct file *filep,
+                            FAR unsigned long *latency_us);
 static void fakesensor_push_event(FAR struct sensor_lowerhalf_s *lower);
 static int fakesensor_thread(int argc, char** argv);
 
@@ -99,6 +104,7 @@ static int fakesensor_read_csv_line(FAR struct file *file,
       if (buffer[i] == '\n')
         {
           file_seek(file, i - len + 1, SEEK_CUR);
+          buffer[i + 1] = '\0';
           break;
         }
     }
@@ -106,7 +112,7 @@ static int fakesensor_read_csv_line(FAR struct file *file,
   return i + 1;
 }
 
-static int fakesensor_read_csv_header(struct fakesensor_s *sensor)
+static int fakesensor_read_csv_header(FAR struct fakesensor_s *sensor)
 {
   char buffer[40];
 
@@ -114,8 +120,11 @@ static int fakesensor_read_csv_header(struct fakesensor_s *sensor)
 
   sensor->raw_start =
       fakesensor_read_csv_line(&sensor->data, buffer, sizeof(buffer), 0);
-  sscanf(buffer, "interval:%d\n", &sensor->interval);
-  sensor->interval *= 1000;
+  if (sensor->interval == 0)
+    {
+      sscanf(buffer, "interval:%lu\n", &sensor->interval);
+      sensor->interval *= 1000;
+    }
 
   /*  Skip the CSV header */
 
@@ -124,42 +133,112 @@ static int fakesensor_read_csv_header(struct fakesensor_s *sensor)
   return OK;
 }
 
-static int fakesensor_activate(FAR struct sensor_lowerhalf_s *lower, bool sw)
+static inline void fakesensor_read_accel(FAR struct fakesensor_s *sensor)
+{
+  struct sensor_accel accel;
+  char raw[50];
+  fakesensor_read_csv_line(
+          &sensor->data, raw, sizeof(raw), sensor->raw_start);
+  sscanf(raw, "%f,%f,%f\n", &accel.x, &accel.y, &accel.z);
+  accel.temperature = NAN;
+  accel.timestamp = sensor_get_timestamp();
+  sensor->lower.push_event(sensor->lower.priv, &accel,
+                    sizeof(struct sensor_accel));
+}
+
+static inline void fakesensor_read_mag(FAR struct fakesensor_s *sensor)
+{
+  struct sensor_mag mag;
+  char raw[50];
+  fakesensor_read_csv_line(
+          &sensor->data, raw, sizeof(raw), sensor->raw_start);
+  sscanf(raw, "%f,%f,%f\n", &mag.x, &mag.y, &mag.z);
+  mag.temperature = NAN;
+  mag.timestamp = sensor_get_timestamp();
+  sensor->lower.push_event(sensor->lower.priv, &mag,
+                           sizeof(struct sensor_mag));
+}
+
+static inline void fakesensor_read_gyro(FAR struct fakesensor_s *sensor)
+{
+  struct sensor_gyro gyro;
+  char raw[50];
+  fakesensor_read_csv_line(
+          &sensor->data, raw, sizeof(raw), sensor->raw_start);
+  sscanf(raw, "%f,%f,%f\n", &gyro.x, &gyro.y, &gyro.z);
+  gyro.temperature = NAN;
+  gyro.timestamp = sensor_get_timestamp();
+  sensor->lower.push_event(sensor->lower.priv, &gyro,
+                    sizeof(struct sensor_gyro));
+}
+
+static inline void fakesensor_read_gps(FAR struct fakesensor_s *sensor)
+{
+  struct sensor_gps gps;
+  float time;
+  char latitude;
+  char longitude;
+  int status;
+  int sate_num;
+  float hoop;
+  float altitude;
+  char raw[150];
+  memset(&gps, 0, sizeof(struct sensor_gps));
+  read:
+  fakesensor_read_csv_line(
+          &sensor->data, raw, sizeof(raw), sensor->raw_start);
+  FAR char *pos = strstr(raw, "GGA");
+  if (pos == NULL)
+    {
+      goto read;
+    }
+
+  pos += 4;
+  sscanf(pos, "%f,%f,%c,%f,%c,%d,%d,%f,%f,", &time, &gps.latitude, &latitude,
+         &gps.longitude, &longitude, &status, &sate_num, &hoop, &altitude);
+  if (latitude == 'S')
+    {
+      gps.latitude = -gps.latitude;
+    }
+
+  if (longitude == 'W')
+    {
+      gps.longitude = -gps.longitude;
+    }
+
+  gps.latitude /= 100.0f;
+  gps.longitude /= 100.0f;
+
+  gps.altitude = altitude;
+
+  sensor->lower.push_event(sensor->lower.priv, &gps,
+                           sizeof(struct sensor_gps));
+}
+
+static int fakesensor_activate(FAR struct sensor_lowerhalf_s *lower,
+                               FAR struct file *filep, bool sw)
 {
   FAR struct fakesensor_s *sensor = container_of(lower,
                                                  struct fakesensor_s, lower);
-  int ret;
-
   if (sw)
     {
-      ret = file_open(&sensor->data, sensor->file_path, O_RDONLY);
-      if (ret < 0)
-        {
-          snerr("Failed to open file:%s, err:%d", sensor->file_path, ret);
-          return ret;
-        }
-
-      fakesensor_read_csv_header(sensor);
+      sensor->running = true;
 
       /* Wake up the thread */
 
-      nxsem_post(&sensor->run);
+      nxsem_post(&sensor->wakeup);
     }
   else
     {
-      ret = file_close(&sensor->data);
-      if (ret < 0)
-        {
-          snerr("Failed to close file:%s, err:%d", sensor->file_path, ret);
-          return ret;
-        }
+      sensor->running = false;
     }
 
   return OK;
 }
 
 static int fakesensor_set_interval(FAR struct sensor_lowerhalf_s *lower,
-                                   FAR unsigned int *period_us)
+                                   FAR struct file *filep,
+                                   FAR unsigned long *period_us)
 {
   FAR struct fakesensor_s *sensor = container_of(lower,
                                                  struct fakesensor_s, lower);
@@ -168,11 +247,12 @@ static int fakesensor_set_interval(FAR struct sensor_lowerhalf_s *lower,
 }
 
 static int fakesensor_batch(FAR struct sensor_lowerhalf_s *lower,
-                            FAR unsigned int *latency_us)
+                            FAR struct file *filep,
+                            FAR unsigned long *latency_us)
 {
   FAR struct fakesensor_s *sensor = container_of(lower,
                                                  struct fakesensor_s, lower);
-  uint32_t max_latency = sensor->lower.buffer_number * sensor->interval;
+  unsigned long max_latency = sensor->lower.nbuffer * sensor->interval;
   if (*latency_us > max_latency)
     {
       *latency_us = max_latency;
@@ -190,56 +270,54 @@ static void fakesensor_push_event(FAR struct sensor_lowerhalf_s *lower)
 {
   FAR struct fakesensor_s *sensor = container_of(lower,
                                                  struct fakesensor_s, lower);
+  switch (lower->type)
+  {
+    case SENSOR_TYPE_ACCELEROMETER:
+      fakesensor_read_accel(sensor);
+      break;
 
-  if (lower->type == SENSOR_TYPE_ACCELEROMETER)
-    {
-      struct sensor_event_accel accel;
-      char raw[50];
-      fakesensor_read_csv_line(
-          &sensor->data, raw, sizeof(raw), sensor->raw_start);
-      sscanf(raw, "%f,%f,%f\n", &accel.x, &accel.y, &accel.z);
-      accel.temperature = NAN;
-      accel.timestamp = sensor_get_timestamp();
-      lower->push_event(lower->priv, &accel,
-                        sizeof(struct sensor_event_accel));
-    }
-  else if (lower->type == SENSOR_TYPE_MAGNETIC_FIELD)
-    {
-      struct sensor_event_mag mag;
-      char raw[50];
-      fakesensor_read_csv_line(
-          &sensor->data, raw, sizeof(raw), sensor->raw_start);
-      sscanf(raw, "%f,%f,%f\n", &mag.x, &mag.y, &mag.z);
-      mag.temperature = NAN;
-      mag.timestamp = sensor_get_timestamp();
-      lower->push_event(lower->priv, &mag, sizeof(struct sensor_event_mag));
-    }
-  else if (lower->type == SENSOR_TYPE_GYROSCOPE)
-    {
-      struct sensor_event_gyro gyro;
-      char raw[50];
-      fakesensor_read_csv_line(
-          &sensor->data, raw, sizeof(raw), sensor->raw_start);
-      sscanf(raw, "%f,%f,%f\n", &gyro.x, &gyro.y, &gyro.z);
-      gyro.temperature = NAN;
-      gyro.timestamp = sensor_get_timestamp();
-      lower->push_event(lower->priv, &gyro,
-                        sizeof(struct sensor_event_gyro));
-    }
-  else
-    {
+    case SENSOR_TYPE_MAGNETIC_FIELD:
+      fakesensor_read_mag(sensor);
+      break;
+
+    case SENSOR_TYPE_GYROSCOPE:
+      fakesensor_read_gyro(sensor);
+      break;
+
+    case SENSOR_TYPE_GPS:
+      fakesensor_read_gps(sensor);
+      break;
+
+    default:
       snerr("fakesensor: unsupported type sensor type\n");
-    }
+      break;
+  }
 }
 
 static int fakesensor_thread(int argc, char** argv)
 {
   FAR struct fakesensor_s *sensor = (FAR struct fakesensor_s *)
         ((uintptr_t)strtoul(argv[1], NULL, 0));
+  int ret;
 
   while (true)
     {
-      if (sensor->data.f_inode != NULL)
+      /* Waiting to be woken up */
+
+      nxsem_wait_uninterruptible(&sensor->wakeup);
+
+      /* Open csv file and init file handle */
+
+      ret = file_open(&sensor->data, sensor->file_path, O_RDONLY);
+      if (ret < 0)
+        {
+          snerr("Failed to open file:%s, err:%d", sensor->file_path, ret);
+          return ret;
+        }
+
+      fakesensor_read_csv_header(sensor);
+
+      while (sensor->running)
         {
           /* Sleeping thread for interval */
 
@@ -261,11 +339,14 @@ static int fakesensor_thread(int argc, char** argv)
               fakesensor_push_event(&sensor->lower);
             }
         }
-      else
-        {
-          /* Waiting to be woken up */
 
-          nxsem_wait(&sensor->run);
+      /* Close csv file handle when running change true to false */
+
+      ret = file_close(&sensor->data);
+      if (ret < 0)
+        {
+          snerr("Failed to close file:%s, err:%d", sensor->file_path, ret);
+          return ret;
         }
     }
 }
@@ -278,7 +359,7 @@ static int fakesensor_thread(int argc, char** argv)
  * Name: fakesensor_init
  *
  * Description:
- *   This function generates a sensor node under /dev/sensor/. And then
+ *   This function generates a sensor node under /dev/uorb/. And then
  *   report the data from csv file.
  *
  * Input Parameters:
@@ -316,12 +397,11 @@ int fakesensor_init(int type, FAR const char *file_name,
 
   sensor->lower.type = type;
   sensor->lower.ops = &g_fakesensor_ops;
-  sensor->lower.buffer_number = batch_number;
-  sensor->interval = 100000;
+  sensor->lower.nbuffer = batch_number;
   sensor->file_path = file_name;
 
-  nxsem_init(&sensor->run, 0, 0);
-  nxsem_set_protocol(&sensor->run, SEM_PRIO_NONE);
+  nxsem_init(&sensor->wakeup, 0, 0);
+  nxsem_set_protocol(&sensor->wakeup, SEM_PRIO_NONE);
 
   /* Create thread for sensor */
 
@@ -329,7 +409,8 @@ int fakesensor_init(int type, FAR const char *file_name,
   argv[0] = arg1;
   argv[1] = NULL;
   ret = kthread_create("fakesensor_thread", SCHED_PRIORITY_DEFAULT,
-                    CONFIG_DEFAULT_TASK_STACKSIZE, fakesensor_thread, argv);
+                       CONFIG_DEFAULT_TASK_STACKSIZE,
+                       fakesensor_thread, argv);
   if (ret < 0)
     {
       kmm_free(sensor);
@@ -342,3 +423,4 @@ int fakesensor_init(int type, FAR const char *file_name,
 
   return OK;
 }
+

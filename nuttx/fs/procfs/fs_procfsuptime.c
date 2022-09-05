@@ -139,14 +139,6 @@ static int uptime_open(FAR struct file *filep, FAR const char *relpath,
       return -EACCES;
     }
 
-  /* "uptime" is the only acceptable value for the relpath */
-
-  if (strcmp(relpath, "uptime") != 0)
-    {
-      ferr("ERROR: relpath is '%s'\n", relpath);
-      return -ENOENT;
-    }
-
   /* Allocate a container to hold the file attributes */
 
   attr = kmm_zalloc(sizeof(struct uptime_file_s));
@@ -231,7 +223,8 @@ static ssize_t uptime_read(FAR struct file *filep, FAR char *buffer,
       /* Convert the up time to a seconds + hundredths of seconds string */
 
       now       = (double)ticktime / (double)CLOCKS_PER_SEC;
-      linesize  = snprintf(attr->line, UPTIME_LINELEN, "%10.2f\n", now);
+      linesize  = procfs_snprintf(attr->line, UPTIME_LINELEN,
+                                  "%10.2f\n", now);
 
 #else
       /* Convert the system up time to seconds + hundredths of seconds */
@@ -253,11 +246,11 @@ static ssize_t uptime_read(FAR struct file *filep, FAR char *buffer,
       /* Convert the seconds + hundredths of seconds to a string */
 
 #ifdef CONFIG_SYSTEM_TIME64
-      linesize = snprintf(attr->line, UPTIME_LINELEN, "%7" PRIu64 ".%02u\n",
-                          sec, csec);
+      linesize = procfs_snprintf(attr->line, UPTIME_LINELEN,
+                                 "%7" PRIu64 ".%02u\n", sec, csec);
 #else
-      linesize = snprintf(attr->line, UPTIME_LINELEN, "%7lu.%02u\n",
-                         (unsigned long)sec, csec);
+      linesize = procfs_snprintf(attr->line, UPTIME_LINELEN,
+                                 "%7lu.%02u\n", (unsigned long)sec, csec);
 #endif
 
 #endif
@@ -329,14 +322,6 @@ static int uptime_dup(FAR const struct file *oldp, FAR struct file *newp)
 
 static int uptime_stat(FAR const char *relpath, FAR struct stat *buf)
 {
-  /* "uptime" is the only acceptable value for the relpath */
-
-  if (strcmp(relpath, "uptime") != 0)
-    {
-      ferr("ERROR: relpath is '%s'\n", relpath);
-      return -ENOENT;
-    }
-
   /* "uptime" is the name for a read-only file */
 
   memset(buf, 0, sizeof(struct stat));

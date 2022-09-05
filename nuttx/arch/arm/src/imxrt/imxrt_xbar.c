@@ -28,7 +28,7 @@
 #include <stdint.h>
 #include <errno.h>
 #include "chip.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "imxrt_xbar.h"
 
 /****************************************************************************
@@ -81,6 +81,23 @@ int imxrt_xbar_connect(uint16_t mux_index_out, uint16_t mux_index_input)
   mux_input  = IMXRT_SEL(mux_index_input);
   xbar_index = IMXRT_XBAR(mux_index_out);
   clearbits  = IMXRT_SEL0_MASK;
+
+  switch (xbar_index)
+    {
+      case 0:
+        imxrt_clockall_xbar1();
+        break;
+      case 1:
+        imxrt_clockall_xbar2();
+        break;
+      case 2:
+#if (defined(CONFIG_ARCH_FAMILY_IMXRT105x) || defined(CONFIG_ARCH_FAMILY_IMXRT106x))
+        imxrt_clockall_xbar3();
+        break;
+#endif
+      default:
+        break;
+    }
 
   /* Verify:
    * 1) The Xbar index is valid.

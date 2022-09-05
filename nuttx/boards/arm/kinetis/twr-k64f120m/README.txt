@@ -36,7 +36,7 @@ Kinetis TWR-K64F120M Features:
   o Touch TWRPI Socket adds support for various capacitive touch boards
     (e.g. keypads, rotary dials, sliders, etc.)
   o Tower connectivity for access to USB, Ethernet, RS232/RS485, CAN, SPI,
-    I²C, Flexbus, etc.
+    IÂ²C, Flexbus, etc.
   o Plus: Potentiometer, 4 LEDs, 2 pushbuttons, accelerometer, RTC battery
 
 Kinetis TWR-K64F120M Pin Configuration
@@ -103,7 +103,6 @@ The TWR-K64F120M features two expansion card-edge connectors that interface
 to the Primary and Secondary Elevator boards in a Tower system. The Primary
 Connector (comprised of sides A and B) is identified by a white strip.
 The Secondary Connector is comprised of sides C and D.
-
 
 TWR-SER Serial Board Connection
 ===============================
@@ -255,7 +254,6 @@ Networking Support
     3 packets transmitted, 3 received, 0% packet loss, time 2003ms
     rtt min/avg/max/mdev = 2.040/4.789/7.822/2.369 ms
 
-
   From the target side, you may should also be able to ping the host
   (assuming it's IP is 192.168.0.1):
 
@@ -377,7 +375,6 @@ Networking Support
       CONFIG_NSH_NETINIT_MONITOR=y          : Enable the network monitor
       CONFIG_NSH_NETINIT_RETRYMSEC=2000     : Configure the network monitor as you like
       CONFIG_NSH_NETINIT_SIGNO=18
-
 
 LEDs
 ====

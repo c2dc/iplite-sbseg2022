@@ -62,16 +62,6 @@ struct net_driver_s;      /* Forward reference */
 struct timeval;           /* Forward reference */
 
 /****************************************************************************
- * Name: net_lockinitialize
- *
- * Description:
- *   Initialize the locking facility
- *
- ****************************************************************************/
-
-void net_lockinitialize(void);
-
-/****************************************************************************
  * Name: net_breaklock
  *
  * Description:
@@ -361,7 +351,7 @@ uint16_t udp_ipv6_chksum(FAR struct net_driver_s *dev);
  *
  ****************************************************************************/
 
-#if defined(CONFIG_NET_ICMP) && defined(CONFIG_NET_ICMP_SOCKET)
+#ifdef CONFIG_NET_ICMP
 uint16_t icmp_chksum(FAR struct net_driver_s *dev, int len);
 #endif
 

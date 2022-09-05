@@ -1,36 +1,20 @@
 /****************************************************************************
  * fs/procfs/fs_procfsiobinfo.c
  *
- *   Copyright (C) 2019 Gregory Nutt. All rights reserved.
- *   Author: Anthony Merlino <anthony@vergeaero.com>
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -100,82 +84,6 @@ static int     iobinfo_dup(FAR const struct file *oldp,
 static int     iobinfo_stat(FAR const char *relpath, FAR struct stat *buf);
 
 /****************************************************************************
- * Private Data
- ****************************************************************************/
-
-/* CAUTION: The order of these entries and the preprocessor logic must match
- * logic found in the enum iob_user_e declaration found in iob.h
- */
-
-static FAR const char *g_iob_user_names[] =
-{
-#ifdef CONFIG_SYSLOG_BUFFER
-  "syslog",
-#endif
-#ifdef CONFIG_IOB_UNITTEST
-  "unittest",
-#endif
-#ifdef CONFIG_NET_6LOWPAN
-  "sixlowpan",
-#endif
-#ifdef CONFIG_NET_ICMP_SOCKET
-  "icmp_sock",
-#endif
-#ifdef CONFIG_NET_ICMPv6_SOCKET
-  "icmpv6_sock",
-#endif
-#ifdef CONFIG_NET_UDP
-  "udp_sock",
-#endif
-#ifdef CONFIG_NET_TCP
-  "tcp_sock",
-#endif
-#ifdef CONFIG_NET_IEEE802154
-  "ieee802154_sock",
-#endif
-#ifdef CONFIG_NET_BLUETOOTH
-  "bluetooth_sock",
-#endif
-#if defined(CONFIG_NET_UDP) && !defined(NET_UDP_NO_STACK)
-  "udp_readahead",
-#endif
-#ifdef CONFIG_NET_UDP_WRITE_BUFFERS
-  "udp_writebuffer",
-#endif
-#if defined(CONFIG_NET_TCP) && !defined(NET_TCP_NO_STACK)
-  "tcp_readahead",
-#endif
-#ifdef CONFIG_NET_TCP_WRITE_BUFFERS
-  "tcp_writebuffer",
-#endif
-#ifdef CONFIG_NET_IPFORWARD
-  "ipforward",
-#endif
-#ifdef CONFIG_WIRELESS_IEEE802154
-  "rad802154",
-#endif
-#ifdef CONFIG_IEEE802154_MAC
-  "mac802154",
-#endif
-#ifdef CONFIG_IEEE802154_MACDEV
-  "mac802154_macdev",
-#endif
-#ifdef CONFIG_IEEE802154_NETDEV
-  "mac802154_netdev",
-#endif
- #ifdef CONFIG_WL_SPIRIT
-  "packetradio",
-#endif
-#ifdef CONFIG_WIRELESS_BLUETOOTH
-  "bluetooth",
-#endif
-#ifdef CONFIG_NET_CAN
-  "can",
-#endif
-  "global",
-};
-
-/****************************************************************************
  * Public Data
  ****************************************************************************/
 
@@ -225,14 +133,6 @@ static int iobinfo_open(FAR struct file *filep, FAR const char *relpath,
       return -EACCES;
     }
 
-  /* "iobinfo" is the only acceptable value for the relpath */
-
-  if (strcmp(relpath, "iobinfo") != 0)
-    {
-      ferr("ERROR: relpath is '%s'\n", relpath);
-      return -ENOENT;
-    }
-
   /* Allocate a container to hold the file attributes */
 
   procfile = (FAR struct iobinfo_file_s *)
@@ -277,12 +177,11 @@ static ssize_t iobinfo_read(FAR struct file *filep, FAR char *buffer,
                             size_t buflen)
 {
   FAR struct iobinfo_file_s *iobfile;
-  FAR struct iob_userstats_s *userstats;
+  FAR struct iob_stats_s stats;
   size_t linesize;
   size_t copysize;
   size_t totalsize;
   off_t offset;
-  int i;
 
   finfo("buffer=%p buflen=%d\n", buffer, (int)buflen);
 
@@ -296,65 +195,28 @@ static ssize_t iobinfo_read(FAR struct file *filep, FAR char *buffer,
 
   /* The first line is the headers */
 
-  linesize  = snprintf(iobfile->line, IOBINFO_LINELEN,
-                       "                           TOTAL           TOTAL\n");
+  linesize  = procfs_snprintf(iobfile->line, IOBINFO_LINELEN,
+                              "%10s%10s%10s%10s\n",
+                              "ntotal", "nfree", "nwait", "nthrottle");
 
   copysize  = procfs_memcpy(iobfile->line, linesize, buffer, buflen,
                             &offset);
   totalsize = copysize;
 
-  if (totalsize < buflen)
-    {
-      buffer    += copysize;
-      buflen    -= copysize;
+  buffer   += copysize;
+  buflen   -= copysize;
 
-      linesize  = snprintf(iobfile->line, IOBINFO_LINELEN,
-                           "        USER            CONSUMED        "
-                           "PRODUCED\n");
+  /* The second line is the usage statistics */
 
-      copysize  = procfs_memcpy(iobfile->line, linesize, buffer, buflen,
-                                &offset);
-      totalsize += copysize;
-    }
+  iob_getstats(&stats);
+  linesize   = procfs_snprintf(iobfile->line, IOBINFO_LINELEN,
+                               "%10d%10d%10d%10d\n",
+                               stats.ntotal, stats.nfree,
+                               stats.nwait, stats.nthrottle);
 
-  /* Loop through each IOB user printing the usage statistics */
-
-  for (i = 0; i < IOBUSER_GLOBAL; i++)
-    {
-      if (totalsize < buflen)
-        {
-          buffer    += copysize;
-          buflen    -= copysize;
-
-          userstats  = iob_getuserstats(i);
-          linesize   = snprintf(iobfile->line, IOBINFO_LINELEN,
-                                "%-16s%16lu%16lu\n",
-                                g_iob_user_names[i],
-                                (unsigned long)userstats->totalconsumed,
-                                (unsigned long)userstats->totalproduced);
-
-          copysize   = procfs_memcpy(iobfile->line, linesize, buffer, buflen,
-                                     &offset);
-          totalsize += copysize;
-        }
-    }
-
-  if (totalsize < buflen)
-    {
-      buffer    += copysize;
-      buflen    -= copysize;
-
-      userstats  = iob_getuserstats(IOBUSER_GLOBAL);
-      linesize   = snprintf(iobfile->line, IOBINFO_LINELEN,
-                            "\n%-16s%16lu%16lu\n",
-                            g_iob_user_names[IOBUSER_GLOBAL],
-                            (unsigned long)userstats->totalconsumed,
-                            (unsigned long)userstats->totalproduced);
-
-      copysize   = procfs_memcpy(iobfile->line, linesize, buffer, buflen,
-                                 &offset);
-      totalsize += copysize;
-    }
+  copysize   = procfs_memcpy(iobfile->line, linesize, buffer, buflen,
+                             &offset);
+  totalsize += copysize;
 
   /* Update the file offset */
 
@@ -411,14 +273,6 @@ static int iobinfo_dup(FAR const struct file *oldp, FAR struct file *newp)
 
 static int iobinfo_stat(FAR const char *relpath, FAR struct stat *buf)
 {
-  /* "iobinfo" is the only acceptable value for the relpath */
-
-  if (strcmp(relpath, "iobinfo") != 0)
-    {
-      ferr("ERROR: relpath is '%s'\n", relpath);
-      return -ENOENT;
-    }
-
   /* "iobinfo" is the name for a read-only file */
 
   memset(buf, 0, sizeof(struct stat));

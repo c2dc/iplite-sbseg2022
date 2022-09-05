@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
@@ -35,7 +36,6 @@
 #include <nuttx/arch.h>
 #include <nuttx/semaphore.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "sched/sched.h"
 
@@ -1781,7 +1781,7 @@ static void sam_dmaterminate(struct sam_dmach_s *dmach, int result)
  *
  ****************************************************************************/
 
-static int sam_dmac_interrupt(int irq, void *context, FAR void *arg)
+static int sam_dmac_interrupt(int irq, void *context, void *arg)
 {
   struct sam_dmac_s *dmac = (struct sam_dmac_s *)arg;
   struct sam_dmach_s *dmach;

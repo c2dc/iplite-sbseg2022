@@ -470,7 +470,7 @@ STM32L-Discovery-specific Configuration Options
     CONFIG_STM32_SPI_INTERRUPTS - Select to enable interrupt driven SPI
       support. Non-interrupt-driven, poll-waiting is recommended if the
       interrupt rate would be to high in the interrupt driven case.
-    CONFIG_STM32_SPI_DMA - Use DMA to improve SPI transfer performance.
+    CONFIG_STM32_SPIx_DMA - Use DMA to improve SPIx transfer performance.
       Cannot be used with CONFIG_STM32_SPI_INTERRUPT.
 
 Configurations
@@ -519,7 +519,7 @@ Configuration sub-directories
          CONFIG_WINDOWS_CYGWIN=y                 : Using Cygwin
 
        System Type:
-         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain for Windows
 
     4. To enable SLCD support:
 
@@ -527,7 +527,7 @@ Configuration sub-directories
          CONFIG_ARCH_LEDS=n                      : Disable board LED support
 
        Library Routines:
-         CONFIG_LIB_SLCDCODEC=y                  : Enable the SLCD CODEC
+         CONFIG_LIBC_SLCDCODEC=y                  : Enable the SLCD CODEC
 
        System Type -> STM32 Peripheral Support:
          CONFIG_STM32_LCD=y                      : Enable the Segment LCD

@@ -26,12 +26,13 @@
 
 #if defined(CONFIG_STM32F7_FMC)
 
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/arch.h>
 
 #include "chip.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32_fmc.h"
 #include "stm32_rcc.h"
 

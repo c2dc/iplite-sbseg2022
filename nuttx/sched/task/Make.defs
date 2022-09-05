@@ -23,9 +23,10 @@ CSRCS += task_start.c task_delete.c task_exit.c task_exithook.c
 CSRCS += task_getgroup.c task_getpid.c task_prctl.c task_recover.c
 CSRCS += task_restart.c task_spawnparms.c task_setcancelstate.c
 CSRCS += task_cancelpt.c task_terminate.c task_gettid.c exit.c
+CSRCS += task_tls_alloc.c
 
 ifeq ($(CONFIG_SCHED_HAVE_PARENT),y)
-CSRCS += task_getppid.c
+CSRCS += task_getppid.c task_reparent.c
 endif
 
 ifeq ($(CONFIG_ARCH_HAVE_VFORK),y)
@@ -44,20 +45,12 @@ endif
 
 ifneq ($(CONFIG_BINFMT_DISABLE),y)
 ifeq ($(CONFIG_LIBC_EXECFUNCS),y)
-CSRCS += task_execv.c task_posixspawn.c
+CSRCS += task_execve.c task_posixspawn.c
 endif
 endif
 
 ifeq ($(CONFIG_SCHED_STARTHOOK),y)
 CSRCS += task_starthook.c
-endif
-
-ifeq ($(CONFIG_SCHED_ATEXIT),y)
-CSRCS += task_atexit.c
-endif
-
-ifeq ($(CONFIG_SCHED_ONEXIT),y)
-CSRCS += task_onexit.c
 endif
 
 # Include task build support

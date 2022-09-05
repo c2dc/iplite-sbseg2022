@@ -1,35 +1,20 @@
 /****************************************************************************
  * net/usrsock/usrsock_dev.c
  *
- *  Copyright (C) 2015-2017 Haltian Ltd. All rights reserved.
- *  Author: Jussi Kivilinna <jussi.kivilinna@haltian.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -76,19 +61,20 @@
 
 struct usrsockdev_s
 {
-  sem_t   devsem;     /* Lock for device node */
-  uint8_t ocount;     /* The number of times the device has been opened */
+  sem_t    devsem; /* Lock for device node */
+  uint8_t  ocount; /* The number of times the device has been opened */
+  uint32_t newxid; /* New transcation Id */
 
   struct
   {
     FAR const struct iovec *iov; /* Pending request buffers */
-    int     iovcnt;              /* Number of request buffers */
-    size_t  pos;                 /* Reader position on request buffer */
-    sem_t   sem;                 /* Request semaphore (only one outstanding
+    int       iovcnt;            /* Number of request buffers */
+    size_t    pos;               /* Reader position on request buffer */
+    sem_t     sem;               /* Request semaphore (only one outstanding
                                   * request) */
-    sem_t   acksem;              /* Request acknowledgment notification */
-    uint8_t ack_xid;             /* Exchange id for which waiting ack */
-    uint16_t nbusy;              /* Number of requests blocked from different
+    sem_t     acksem;            /* Request acknowledgment notification */
+    uint32_t  ackxid;            /* Exchange id for which waiting ack */
+    uint16_t  nbusy;             /* Number of requests blocked from different
                                   * threads */
   } req;
 
@@ -158,7 +144,7 @@ static ssize_t iovec_do(FAR void *srcdst, size_t srcdstlen,
 
   /* Rewind to correct position. */
 
-  while (pos > 0 && iovcnt > 0)
+  while (pos >= 0 && iovcnt > 0)
     {
       if (iov->iov_len <= pos)
         {
@@ -261,30 +247,6 @@ static ssize_t iovec_put(FAR struct iovec *iov, int iovcnt, size_t pos,
 }
 
 /****************************************************************************
- * Name: usrsockdev_get_xid()
- ****************************************************************************/
-
-static uint8_t usrsockdev_get_xid(FAR struct usrsock_conn_s *conn)
-{
-  int conn_idx;
-
-#if CONFIG_NET_USRSOCK_CONNS > 254
-#  error "CONFIG_NET_USRSOCK_CONNS too large (over 254)"
-#endif
-
-  /* Each connection can one only one request/response pending. So map
-   * connection structure index to xid value.
-   */
-
-  conn_idx = usrsock_connidx(conn);
-
-  DEBUGASSERT(1 <= conn_idx + 1);
-  DEBUGASSERT(conn_idx + 1 <= UINT8_MAX);
-
-  return conn_idx + 1;
-}
-
-/****************************************************************************
  * Name: usrsockdev_semtake() and usrsockdev_semgive()
  *
  * Description:
@@ -334,7 +296,7 @@ static void usrsockdev_pollnotify(FAR struct usrsockdev_s *dev,
           fds->revents |= (fds->events & eventset);
           if (fds->revents != 0)
             {
-              ninfo("Report events: %02x\n", fds->revents);
+              ninfo("Report events: %08" PRIx32 "\n", fds->revents);
               nxsem_post(fds->sem);
             }
         }
@@ -500,7 +462,7 @@ static ssize_t usrsockdev_handle_event(FAR struct usrsockdev_s *dev,
 
         if (len < sizeof(*hdr))
           {
-            nwarn("message too short, %d < %d.\n", len, sizeof(*hdr));
+            nwarn("message too short, %zu < %zu.\n", len, sizeof(*hdr));
 
             return -EINVAL;
           }
@@ -518,13 +480,13 @@ static ssize_t usrsockdev_handle_event(FAR struct usrsockdev_s *dev,
 #ifdef CONFIG_DEV_RANDOM
         /* Add randomness. */
 
-        add_sw_randomness((hdr->events << 16) - hdr->usockid);
+        add_sw_randomness((hdr->head.events << 16) - hdr->usockid);
 #endif
 
         /* Handle event. */
 
         ret = usrsock_event(conn,
-                            hdr->events & ~USRSOCK_EVENT_INTERNAL_MASK);
+                            hdr->head.events & ~USRSOCK_EVENT_INTERNAL_MASK);
         if (ret < 0)
           {
             return ret;
@@ -669,7 +631,7 @@ usrsockdev_handle_datareq_response(FAR struct usrsockdev_s *dev,
 
   if (conn->resp.datain.iov[iovpos].iov_len < datahdr->valuelen)
     {
-      nwarn("%dth buffer not large enough (need: %d, have: %d).\n",
+      nwarn("%dth buffer not large enough (need: %d, have: %zu).\n",
             iovpos,
             datahdr->valuelen,
             conn->resp.datain.iov[iovpos].iov_len);
@@ -691,7 +653,7 @@ usrsockdev_handle_datareq_response(FAR struct usrsockdev_s *dev,
       if (conn->resp.datain.iov[iovpos].iov_len < hdr->result)
         {
           nwarn("%dth buffer not large enough "
-                "(need: %" PRId32 ", have: %d).\n",
+                "(need: %" PRId32 ", have: %zu).\n",
                 iovpos,
                 hdr->result,
                 conn->resp.datain.iov[iovpos].iov_len);
@@ -729,7 +691,7 @@ static ssize_t usrsockdev_handle_req_response(FAR struct usrsockdev_s *dev,
                                               size_t len)
 {
   FAR const struct usrsock_message_req_ack_s *hdr = buffer;
-  FAR struct usrsock_conn_s *conn;
+  FAR struct usrsock_conn_s *conn = NULL;
   unsigned int hdrlen;
   ssize_t ret;
   ssize_t (*handle_response)(FAR struct usrsockdev_s *dev,
@@ -749,7 +711,7 @@ static ssize_t usrsockdev_handle_req_response(FAR struct usrsockdev_s *dev,
       break;
 
     default:
-      nwarn("unknown message type: %d, flags: %d, xid: %02x, "
+      nwarn("unknown message type: %d, flags: %d, xid: %" PRIu32 ", "
             "result: %" PRId32 "\n",
             hdr->head.msgid, hdr->head.flags, hdr->xid, hdr->result);
       return -EINVAL;
@@ -757,7 +719,7 @@ static ssize_t usrsockdev_handle_req_response(FAR struct usrsockdev_s *dev,
 
   if (len < hdrlen)
     {
-      nwarn("message too short, %d < %d.\n", len, hdrlen);
+      nwarn("message too short, %zu < %u.\n", len, hdrlen);
 
       return -EINVAL;
     }
@@ -766,27 +728,20 @@ static ssize_t usrsockdev_handle_req_response(FAR struct usrsockdev_s *dev,
 
   /* Get corresponding usrsock connection for this transfer */
 
-  conn = usrsock_nextconn(NULL);
-  while (conn)
-    {
-      if (conn->resp.xid == hdr->xid)
-        break;
-
-      conn = usrsock_nextconn(conn);
-    }
-
+  while ((conn = usrsock_nextconn(conn)) != NULL &&
+         conn->resp.xid != hdr->xid);
   if (!conn)
     {
       /* No connection waiting for this message. */
 
-      nwarn("Could find connection waiting for response with xid=%d\n",
-            hdr->xid);
+      nwarn("Could find connection waiting for response"
+            "with xid=%" PRIu32 "\n", hdr->xid);
 
       ret = -EINVAL;
       goto unlock_out;
     }
 
-  if (dev->req.ack_xid == hdr->xid && dev->req.iov)
+  if (dev->req.ackxid == hdr->xid && dev->req.iov)
     {
       /* Signal that request was received and read by daemon and
        * acknowledgment response was received.
@@ -870,7 +825,7 @@ static ssize_t usrsockdev_write(FAR struct file *filep,
 
       if (len < sizeof(struct usrsock_message_common_s))
         {
-          nwarn("message too short, %d < %d.\n", len,
+          nwarn("message too short, %zu < %zu.\n", len,
                 sizeof(struct usrsock_message_common_s));
 
           ret = -EINVAL;
@@ -896,23 +851,26 @@ static ssize_t usrsockdev_write(FAR struct file *filep,
 
       /* Copy data from user-space. */
 
-      ret = iovec_put(conn->resp.datain.iov, conn->resp.datain.iovcnt,
-                      conn->resp.datain.pos, buffer, len);
-      if (ret < 0)
+      if (len != 0)
         {
-          /* Tried writing beyond buffer. */
+          ret = iovec_put(conn->resp.datain.iov, conn->resp.datain.iovcnt,
+                          conn->resp.datain.pos, buffer, len);
+          if (ret < 0)
+            {
+              /* Tried writing beyond buffer. */
 
-          ret = -EINVAL;
-          conn->resp.result = -EINVAL;
-          conn->resp.datain.pos =
-              conn->resp.datain.total;
-        }
-      else
-        {
-          conn->resp.datain.pos += ret;
-          buffer += ret;
-          len -= ret;
-          ret = origlen - len;
+              ret = -EINVAL;
+              conn->resp.result = -EINVAL;
+              conn->resp.datain.pos =
+                  conn->resp.datain.total;
+            }
+          else
+            {
+              conn->resp.datain.pos += ret;
+              buffer += ret;
+              len -= ret;
+              ret = origlen - len;
+            }
         }
 
       if (conn->resp.datain.pos == conn->resp.datain.total)
@@ -984,8 +942,8 @@ static int usrsockdev_open(FAR struct file *filep)
 static int usrsockdev_close(FAR struct file *filep)
 {
   FAR struct inode *inode = filep->f_inode;
+  FAR struct usrsock_conn_s *conn = NULL;
   FAR struct usrsockdev_s *dev;
-  FAR struct usrsock_conn_s *conn;
   int ret;
 
   DEBUGASSERT(inode);
@@ -1002,23 +960,16 @@ static int usrsockdev_close(FAR struct file *filep)
 
   ninfo("closing /dev/usrsock\n");
 
+  net_lock();
+
   /* Set active usrsock sockets to aborted state. */
 
-  conn = usrsock_nextconn(NULL);
-  while (conn)
+  while ((conn = usrsock_nextconn(conn)) != NULL)
     {
-      net_lock();
-
       conn->resp.inprogress = false;
       conn->resp.xid = 0;
       usrsock_event(conn, USRSOCK_EVENT_ABORT);
-
-      net_unlock();
-
-      conn = usrsock_nextconn(conn);
     }
-
-  net_lock();
 
   /* Decrement the references to the driver. */
 
@@ -1038,7 +989,7 @@ static int usrsockdev_close(FAR struct file *filep)
           if (ret != -ETIMEDOUT && ret != -EINTR)
             {
               ninfo("net_timedwait errno: %d\n", ret);
-              DEBUGASSERT(false);
+              DEBUGPANIC();
             }
         }
       else
@@ -1187,16 +1138,8 @@ errout:
 int usrsockdev_do_request(FAR struct usrsock_conn_s *conn,
                           FAR struct iovec *iov, unsigned int iovcnt)
 {
-  FAR struct usrsockdev_s *dev = conn->dev;
+  FAR struct usrsockdev_s *dev = &g_usrsockdev;
   FAR struct usrsock_request_common_s *req_head = iov[0].iov_base;
-
-  if (!dev)
-    {
-      /* Setup conn for new usrsock device. */
-
-      dev = &g_usrsockdev;
-      conn->dev = dev;
-    }
 
   if (!usrsockdev_is_opened(dev))
     {
@@ -1207,7 +1150,12 @@ int usrsockdev_do_request(FAR struct usrsock_conn_s *conn,
 
   /* Get exchange id. */
 
-  req_head->xid = usrsockdev_get_xid(conn);
+  if (++dev->newxid == 0)
+    {
+      ++dev->newxid;
+    }
+
+  req_head->xid = dev->newxid;
 
   /* Prepare connection for response. */
 
@@ -1223,7 +1171,7 @@ int usrsockdev_do_request(FAR struct usrsock_conn_s *conn,
   if (usrsockdev_is_opened(dev))
     {
       DEBUGASSERT(dev->req.iov == NULL);
-      dev->req.ack_xid = req_head->xid;
+      dev->req.ackxid = req_head->xid;
       dev->req.iov = iov;
       dev->req.pos = 0;
       dev->req.iovcnt = iovcnt;

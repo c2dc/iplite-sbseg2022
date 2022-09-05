@@ -203,7 +203,6 @@ Configurations
          CONFIG_USART3_PARITY=0
          CONFIG_USART3_2STOP=0
 
-
   3. All of these configurations are set up to build under Linux using the
      "GNU Tools for ARM Embedded Processors" that is maintained by ARM
      (unless stated otherwise in the description of the configuration).
@@ -217,7 +216,7 @@ Configurations
        CONFIG_HOST_LINUX  =y               : Linux environment
 
      System Type -> Toolchain:
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIL=y : GNU ARM EABI toolchain
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : GNU ARM EABI toolchain
 
   Configuration sub-directories
   -----------------------------

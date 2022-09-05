@@ -60,6 +60,10 @@
 #  endif
 #endif
 
+#ifndef CONFIG_SMP_NCPUS
+#  define CONFIG_SMP_NCPUS 1
+#endif
+
 /* Scheduling Priorities.
  *
  * NOTES:
@@ -72,6 +76,14 @@
 #define SCHED_PRIORITY_DEFAULT 100
 #define SCHED_PRIORITY_MIN       1
 #define SCHED_PRIORITY_IDLE      0
+
+#if defined(CONFIG_FS_LARGEFILE) && defined(CONFIG_HAVE_LONG_LONG)
+#  define fsblkcnt64_t           fsblkcnt_t
+#  define fsfilcnt64_t           fsfilcnt_t
+#  define blkcnt64_t             blkcnt_t
+#  define off64_t                off_t
+#  define fpos64_t               fpos_t
+#endif
 
 /****************************************************************************
  * Type Declarations
@@ -119,7 +131,7 @@ typedef int16_t      gid_t;
 
 /* dev_t is used for device IDs */
 
-typedef uint16_t     dev_t;
+typedef uint32_t     dev_t;
 
 /* ino_t is used for file serial numbers */
 
@@ -133,33 +145,33 @@ typedef uint16_t     nlink_t;
  * because negative PID values are used to represent invalid PIDs.
  */
 
-typedef int16_t      pid_t;
+typedef int          pid_t;
 
 /* id_t is a general identifier that can be used to contain at least a pid_t,
  * uid_t, or gid_t.
  */
 
-typedef int16_t      id_t;
+typedef int          id_t;
 
 /* Unix requires a key of type key_t defined in file sys/types.h for
  * requesting resources such as shared memory segments, message queues and
  * semaphores. A key is simply an integer of type key_t
  */
 
-typedef int16_t      key_t;
+typedef int32_t      key_t;
 
 /* Signed integral type of the result of subtracting two pointers */
 
 typedef intptr_t     ptrdiff_t;
 
 #if !defined(__cplusplus)
-/* Wide, 16-bit character types.  wchar_t is a built-in type in C++ and
+/* Wide character types.  wchar_t is a built-in type in C++ and
  * its declaration here may cause compilation errors on some compilers.
  *
  * REVISIT: wchar_t belongs in stddef.h
  */
 
-typedef uint16_t     wchar_t;
+typedef _wchar_t     wchar_t;
 #endif
 
 /* wint_t
@@ -175,6 +187,16 @@ typedef int wint_t;
 
 typedef int wctype_t;
 
+#if defined(CONFIG_FS_LARGEFILE) && defined(CONFIG_HAVE_LONG_LONG)
+/* Large file versions */
+
+typedef uint64_t     fsblkcnt_t;
+typedef uint64_t     fsfilcnt_t;
+
+typedef uint64_t     blkcnt_t;
+typedef int64_t      off_t;
+typedef int64_t      fpos_t;
+#else
 /* fsblkcnt_t and fsfilcnt_t shall be defined as unsigned integer types. */
 
 typedef uint32_t     fsblkcnt_t;
@@ -191,13 +213,7 @@ typedef uint32_t     fsfilcnt_t;
 
 typedef uint32_t     blkcnt_t;
 typedef int32_t      off_t;
-typedef off_t        fpos_t;
-
-#ifdef CONFIG_HAVE_LONG_LONG
-/* Large file versions */
-
-typedef int64_t      off64_t;
-typedef int64_t      fpos64_t;
+typedef int32_t      fpos_t;
 #endif
 
 /* blksize_t is a signed integer value used for file block sizes */
@@ -207,6 +223,7 @@ typedef int16_t      blksize_t;
 /* Network related */
 
 typedef unsigned int socklen_t;
+#define __socklen_t_defined
 typedef uint16_t     sa_family_t;
 
 /* Used for system times in clock ticks. This type is the natural width of
@@ -231,7 +248,6 @@ typedef uint32_t     clock_t;
 typedef uint32_t     useconds_t;
 typedef int32_t      suseconds_t;
 
-#ifdef CONFIG_SMP
 /* This is the smallest integer type that will hold a bitset of all CPUs */
 
 #if (CONFIG_SMP_NCPUS <= 8)
@@ -243,9 +259,6 @@ typedef volatile uint32_t cpu_set_t;
 #else
 #  error SMP: Extensions needed to support this number of CPUs
 #endif
-#else
-typedef volatile uint8_t cpu_set_t;
-#endif /* CONFIG_SMP */
 
 /* BSD types provided only to support porting to NuttX. */
 

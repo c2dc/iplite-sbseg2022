@@ -40,7 +40,7 @@
 #include <nuttx/config.h>
 #include <arch/chip/core-isa.h>
 
-#include "xtensa_abi.h"
+#include <arch/xtensa/xtensa_abi.h>
 
 #if XCHAL_HAVE_INTERRUPTS
 
@@ -82,6 +82,7 @@ xtensa_enable_cpuint:
 	s32i	a5, a2, 0			  /* shadow |= mask */
 
 	wsr		a5, INTENABLE		/* Set CPU INTENABLE to shadow */
+	rsync
 	mov		a3, a4			   	/* Return previous shadow content */
 	RET(16)
 
@@ -122,6 +123,7 @@ xtensa_disable_cpuint:
 	s32i	a5, a2, 0			  /* shadow &= ~mask */
 
 	wsr		a5, INTENABLE		/* Set CPU INTENABLE to shadow */
+	rsync
 	mov		a3, a4				  /* Return previous shadow content */
 	RET(16)
 

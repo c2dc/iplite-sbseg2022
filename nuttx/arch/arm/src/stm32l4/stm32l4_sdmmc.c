@@ -1,37 +1,20 @@
 /****************************************************************************
  * arch/arm/src/stm32l4/stm32l4_sdmmc.c
  *
- *   Copyright (C) 2009, 2011-2017 Gregory Nutt. All rights reserved.
- *   Authors: Gregory Nutt <gnutt@nuttx.org>
- *            David Sidrane <david_s5@nscdg.com>
- *            Miha Vrhovnik <miha.vrhovnik@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -60,8 +43,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "stm32l4_dma.h"
 #include "stm32l4_gpio.h"
 #include "stm32l4_sdmmc.h"
@@ -95,7 +77,7 @@
  *     4 SD data lines).
  *   CONFIG_SDMMC_DMAPRIO - SDMMC DMA priority.  This can be selected if
  *     CONFIG_STM32L4_SDMMC_DMA is enabled.
- *   CONFIG_CONFIG_STM32L4_SDMMC_XFRDEBUG - Enables some very low-level
+ *   CONFIG_STM32L4_SDMMC_XFRDEBUG - Enables some very low-level
  *     debug output.  This also requires CONFIG_DEBUG_FS and
  *     CONFIG_DEBUG_INFO
  */
@@ -142,7 +124,7 @@
 #endif
 
 #if !defined(CONFIG_DEBUG_FS) || !defined(CONFIG_DEBUG_FEATURES)
-#  undef CONFIG_CONFIG_STM32L4_SDMMC_XFRDEBUG
+#  undef CONFIG_STM32L4_SDMMC_XFRDEBUG
 #endif
 
 /* Friendly CLKCR bit re-definitions ****************************************/
@@ -464,60 +446,60 @@ static int  stm32_sdmmc_rdyinterrupt(int irq, void *context, void *arg);
 /* Mutual exclusion */
 
 #ifdef CONFIG_SDIO_MUXBUS
-static int stm32_lock(FAR struct sdio_dev_s *dev, bool lock);
+static int stm32_lock(struct sdio_dev_s *dev, bool lock);
 #endif
 
 /* Initialization/setup */
 
-static void stm32_reset(FAR struct sdio_dev_s *dev);
-static sdio_capset_t stm32_capabilities(FAR struct sdio_dev_s *dev);
-static sdio_statset_t stm32_status(FAR struct sdio_dev_s *dev);
-static void stm32_widebus(FAR struct sdio_dev_s *dev, bool enable);
-static void stm32_clock(FAR struct sdio_dev_s *dev,
+static void stm32_reset(struct sdio_dev_s *dev);
+static sdio_capset_t stm32_capabilities(struct sdio_dev_s *dev);
+static sdio_statset_t stm32_status(struct sdio_dev_s *dev);
+static void stm32_widebus(struct sdio_dev_s *dev, bool enable);
+static void stm32_clock(struct sdio_dev_s *dev,
               enum sdio_clock_e rate);
-static int  stm32_attach(FAR struct sdio_dev_s *dev);
+static int  stm32_attach(struct sdio_dev_s *dev);
 
 /* Command/Status/Data Transfer */
 
-static int  stm32_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int  stm32_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
               uint32_t arg);
-static int  stm32_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
+static int  stm32_recvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
               size_t nbytes);
-static int  stm32_sendsetup(FAR struct sdio_dev_s *dev,
-              FAR const uint8_t *buffer, size_t nbytes);
-static int  stm32_cancel(FAR struct sdio_dev_s *dev);
+static int  stm32_sendsetup(struct sdio_dev_s *dev,
+              const uint8_t *buffer, size_t nbytes);
+static int  stm32_cancel(struct sdio_dev_s *dev);
 
-static int  stm32_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd);
-static int  stm32_recvshortcrc(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int  stm32_waitresponse(struct sdio_dev_s *dev, uint32_t cmd);
+static int  stm32_recvshortcrc(struct sdio_dev_s *dev, uint32_t cmd,
               uint32_t *rshort);
-static int  stm32_recvlong(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int  stm32_recvlong(struct sdio_dev_s *dev, uint32_t cmd,
               uint32_t rlong[4]);
-static int  stm32_recvshort(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int  stm32_recvshort(struct sdio_dev_s *dev, uint32_t cmd,
               uint32_t *rshort);
-static int  stm32_recvnotimpl(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int  stm32_recvnotimpl(struct sdio_dev_s *dev, uint32_t cmd,
               uint32_t *rnotimpl);
 
 /* EVENT handler */
 
-static void stm32_waitenable(FAR struct sdio_dev_s *dev,
+static void stm32_waitenable(struct sdio_dev_s *dev,
               sdio_eventset_t eventset, uint32_t timeout);
-static sdio_eventset_t stm32_eventwait(FAR struct sdio_dev_s *dev);
-static void stm32_callbackenable(FAR struct sdio_dev_s *dev,
+static sdio_eventset_t stm32_eventwait(struct sdio_dev_s *dev);
+static void stm32_callbackenable(struct sdio_dev_s *dev,
               sdio_eventset_t eventset);
-static int  stm32_registercallback(FAR struct sdio_dev_s *dev,
+static int  stm32_registercallback(struct sdio_dev_s *dev,
               worker_t callback, void *arg);
 
 /* DMA */
 
 #ifdef CONFIG_STM32L4_SDMMC_DMA
 #ifdef CONFIG_ARCH_HAVE_SDIO_PREFLIGHT
-static int  stm32_dmapreflight(FAR struct sdio_dev_s *dev,
-              FAR const uint8_t *buffer, size_t buflen);
+static int  stm32_dmapreflight(struct sdio_dev_s *dev,
+              const uint8_t *buffer, size_t buflen);
 #endif
-static int  stm32_dmarecvsetup(FAR struct sdio_dev_s *dev,
-              FAR uint8_t *buffer, size_t buflen);
-static int  stm32_dmasendsetup(FAR struct sdio_dev_s *dev,
-              FAR const uint8_t *buffer, size_t buflen);
+static int  stm32_dmarecvsetup(struct sdio_dev_s *dev,
+              uint8_t *buffer, size_t buflen);
+static int  stm32_dmasendsetup(struct sdio_dev_s *dev,
+              const uint8_t *buffer, size_t buflen);
 #endif
 
 /* Initialization/uninitialization/reset ************************************/
@@ -799,19 +781,18 @@ static void stm32_configwaitints(struct stm32_dev_s *priv, uint32_t waitmask,
       pinset = priv->d0_gpio & (GPIO_PORT_MASK | GPIO_PIN_MASK);
       pinset |= (GPIO_INPUT | GPIO_FLOAT | GPIO_EXTI);
 
-      /* Arm the SDMMC_D Ready and install ISR */
+      /* Arm the SDMMC_D0 Ready and install ISR */
 
       stm32_gpiosetevent(pinset, true, false, false,
                          stm32_sdmmc_rdyinterrupt, priv);
     }
 
-  /* Disarm SDMMC_D ready */
+  /* Disarm SDMMC_D0 ready and return it to SDMMC D0 */
 
   if ((wkupevent & SDIOWAIT_WRCOMPLETE) != 0)
     {
       stm32_gpiosetevent(priv->d0_gpio, false, false, false,
                          NULL, NULL);
-      stm32_configgpio(priv->d0_gpio);
     }
 #endif
 
@@ -1060,7 +1041,7 @@ static void stm32_dumpsamples(struct stm32_dev_s *priv)
 #ifdef CONFIG_STM32L4_SDMMC_DMA
 static void stm32_dmacallback(DMA_HANDLE handle, uint8_t status, void *arg)
 {
-  FAR struct stm32_dev_s *priv = (FAR struct stm32_dev_s *)arg;
+  struct stm32_dev_s *priv = (struct stm32_dev_s *)arg;
   DEBUGASSERT(priv->dmamode);
   sdio_eventset_t result;
 
@@ -1691,7 +1672,7 @@ static int stm32_sdmmc_interrupt(int irq, void *context, void *arg)
  ****************************************************************************/
 
 #ifdef CONFIG_SDIO_MUXBUS
-static int stm32_lock(FAR struct sdio_dev_s *dev, bool lock)
+static int stm32_lock(struct sdio_dev_s *dev, bool lock)
 {
   /* The multiplex bus is part of board support package. */
 
@@ -1714,9 +1695,9 @@ static int stm32_lock(FAR struct sdio_dev_s *dev, bool lock)
  *
  ****************************************************************************/
 
-static void stm32_reset(FAR struct sdio_dev_s *dev)
+static void stm32_reset(struct sdio_dev_s *dev)
 {
-  FAR struct stm32_dev_s *priv = (FAR struct stm32_dev_s *)dev;
+  struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   irqstate_t flags;
 
   /* Disable clocking */
@@ -1780,7 +1761,7 @@ static void stm32_reset(FAR struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
-static sdio_capset_t stm32_capabilities(FAR struct sdio_dev_s *dev)
+static sdio_capset_t stm32_capabilities(struct sdio_dev_s *dev)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   sdio_capset_t caps = 0;
@@ -1811,7 +1792,7 @@ static sdio_capset_t stm32_capabilities(FAR struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
-static sdio_statset_t stm32_status(FAR struct sdio_dev_s *dev)
+static sdio_statset_t stm32_status(struct sdio_dev_s *dev)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   return priv->cdstatus;
@@ -1834,7 +1815,7 @@ static sdio_statset_t stm32_status(FAR struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
-static void stm32_widebus(FAR struct sdio_dev_s *dev, bool wide)
+static void stm32_widebus(struct sdio_dev_s *dev, bool wide)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   priv->widebus = wide;
@@ -1855,7 +1836,7 @@ static void stm32_widebus(FAR struct sdio_dev_s *dev, bool wide)
  *
  ****************************************************************************/
 
-static void stm32_clock(FAR struct sdio_dev_s *dev, enum sdio_clock_e rate)
+static void stm32_clock(struct sdio_dev_s *dev, enum sdio_clock_e rate)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   uint32_t clckr;
@@ -1916,7 +1897,7 @@ static void stm32_clock(FAR struct sdio_dev_s *dev, enum sdio_clock_e rate)
  *
  ****************************************************************************/
 
-static int stm32_attach(FAR struct sdio_dev_s *dev)
+static int stm32_attach(struct sdio_dev_s *dev)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   int ret;
@@ -1961,7 +1942,7 @@ static int stm32_attach(FAR struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
-static int stm32_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int stm32_sendcmd(struct sdio_dev_s *dev, uint32_t cmd,
                          uint32_t arg)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
@@ -2039,7 +2020,7 @@ static int stm32_sendcmd(FAR struct sdio_dev_s *dev, uint32_t cmd,
  *
  ****************************************************************************/
 
-static int stm32_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
+static int stm32_recvsetup(struct sdio_dev_s *dev, uint8_t *buffer,
                            size_t nbytes)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
@@ -2096,7 +2077,7 @@ static int stm32_recvsetup(FAR struct sdio_dev_s *dev, FAR uint8_t *buffer,
  *
  ****************************************************************************/
 
-static int stm32_sendsetup(FAR struct sdio_dev_s *dev, FAR const
+static int stm32_sendsetup(struct sdio_dev_s *dev, const
                            uint8_t *buffer, size_t nbytes)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
@@ -2148,7 +2129,7 @@ static int stm32_sendsetup(FAR struct sdio_dev_s *dev, FAR const
  *
  ****************************************************************************/
 
-static int stm32_cancel(FAR struct sdio_dev_s *dev)
+static int stm32_cancel(struct sdio_dev_s *dev)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
 
@@ -2202,7 +2183,7 @@ static int stm32_cancel(FAR struct sdio_dev_s *dev)
  *
  ****************************************************************************/
 
-static int stm32_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
+static int stm32_waitresponse(struct sdio_dev_s *dev, uint32_t cmd)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   int32_t timeout;
@@ -2276,7 +2257,7 @@ static int stm32_waitresponse(FAR struct sdio_dev_s *dev, uint32_t cmd)
  *
  ****************************************************************************/
 
-static int stm32_recvshortcrc(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int stm32_recvshortcrc(struct sdio_dev_s *dev, uint32_t cmd,
                               uint32_t *rshort)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
@@ -2366,7 +2347,7 @@ static int stm32_recvshortcrc(FAR struct sdio_dev_s *dev, uint32_t cmd,
   return ret;
 }
 
-static int stm32_recvlong(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int stm32_recvlong(struct sdio_dev_s *dev, uint32_t cmd,
                           uint32_t rlong[4])
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
@@ -2423,7 +2404,7 @@ static int stm32_recvlong(FAR struct sdio_dev_s *dev, uint32_t cmd,
   return ret;
 }
 
-static int stm32_recvshort(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int stm32_recvshort(struct sdio_dev_s *dev, uint32_t cmd,
                            uint32_t *rshort)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
@@ -2475,7 +2456,7 @@ static int stm32_recvshort(FAR struct sdio_dev_s *dev, uint32_t cmd,
 
 /* MMC responses not supported */
 
-static int stm32_recvnotimpl(FAR struct sdio_dev_s *dev, uint32_t cmd,
+static int stm32_recvnotimpl(struct sdio_dev_s *dev, uint32_t cmd,
                              uint32_t *rnotimpl)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
@@ -2508,7 +2489,7 @@ static int stm32_recvnotimpl(FAR struct sdio_dev_s *dev, uint32_t cmd,
  *
  ****************************************************************************/
 
-static void stm32_waitenable(FAR struct sdio_dev_s *dev,
+static void stm32_waitenable(struct sdio_dev_s *dev,
                              sdio_eventset_t eventset, uint32_t timeout)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
@@ -2605,7 +2586,7 @@ static void stm32_waitenable(FAR struct sdio_dev_s *dev,
  *
  ****************************************************************************/
 
-static sdio_eventset_t stm32_eventwait(FAR struct sdio_dev_s *dev)
+static sdio_eventset_t stm32_eventwait(struct sdio_dev_s *dev)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   sdio_eventset_t wkupevent = 0;
@@ -2725,7 +2706,7 @@ errout_with_waitints:
  *
  ****************************************************************************/
 
-static void stm32_callbackenable(FAR struct sdio_dev_s *dev,
+static void stm32_callbackenable(struct sdio_dev_s *dev,
                                  sdio_eventset_t eventset)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
@@ -2759,7 +2740,7 @@ static void stm32_callbackenable(FAR struct sdio_dev_s *dev,
  *
  ****************************************************************************/
 
-static int stm32_registercallback(FAR struct sdio_dev_s *dev,
+static int stm32_registercallback(struct sdio_dev_s *dev,
                                   worker_t callback, void *arg)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
@@ -2792,8 +2773,8 @@ static int stm32_registercallback(FAR struct sdio_dev_s *dev,
  ****************************************************************************/
 
 #if defined(CONFIG_STM32L4_SDMMC_DMA) && defined(CONFIG_ARCH_HAVE_SDIO_PREFLIGHT)
-static int stm32_dmapreflight(FAR struct sdio_dev_s *dev,
-                              FAR const uint8_t *buffer, size_t buflen)
+static int stm32_dmapreflight(struct sdio_dev_s *dev,
+                              const uint8_t *buffer, size_t buflen)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
 
@@ -2828,8 +2809,8 @@ static int stm32_dmapreflight(FAR struct sdio_dev_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_STM32L4_SDMMC_DMA
-static int stm32_dmarecvsetup(FAR struct sdio_dev_s *dev,
-                              FAR uint8_t *buffer, size_t buflen)
+static int stm32_dmarecvsetup(struct sdio_dev_s *dev,
+                              uint8_t *buffer, size_t buflen)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   uint32_t dblocksize;
@@ -2899,8 +2880,8 @@ static int stm32_dmarecvsetup(FAR struct sdio_dev_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_STM32L4_SDMMC_DMA
-static int stm32_dmasendsetup(FAR struct sdio_dev_s *dev,
-                              FAR const uint8_t *buffer, size_t buflen)
+static int stm32_dmasendsetup(struct sdio_dev_s *dev,
+                              const uint8_t *buffer, size_t buflen)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   uint32_t dblocksize;
@@ -3021,7 +3002,7 @@ static void stm32_callback(void *arg)
 
            mcinfo("Queuing callback to %p(%p)\n",
                   priv->callback, priv->cbarg);
-           work_queue(HPWORK, &priv->cbwork, (worker_t)priv->callback,
+           work_queue(HPWORK, &priv->cbwork, priv->callback,
                       priv->cbarg, 0);
         }
       else
@@ -3075,7 +3056,7 @@ static void stm32_default(struct stm32_dev_s *priv)
  *
  ****************************************************************************/
 
-FAR struct sdio_dev_s *sdio_initialize(int slotno)
+struct sdio_dev_s *sdio_initialize(int slotno)
 {
   struct stm32_dev_s *priv = NULL;
 #ifdef CONFIG_STM32L4_SDMMC_DMA
@@ -3206,7 +3187,7 @@ FAR struct sdio_dev_s *sdio_initialize(int slotno)
  *
  ****************************************************************************/
 
-void sdio_mediachange(FAR struct sdio_dev_s *dev, bool cardinslot)
+void sdio_mediachange(struct sdio_dev_s *dev, bool cardinslot)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   sdio_statset_t cdstatus;
@@ -3253,7 +3234,7 @@ void sdio_mediachange(FAR struct sdio_dev_s *dev, bool cardinslot)
  *
  ****************************************************************************/
 
-void sdio_wrprotect(FAR struct sdio_dev_s *dev, bool wrprotect)
+void sdio_wrprotect(struct sdio_dev_s *dev, bool wrprotect)
 {
   struct stm32_dev_s *priv = (struct stm32_dev_s *)dev;
   irqstate_t flags;

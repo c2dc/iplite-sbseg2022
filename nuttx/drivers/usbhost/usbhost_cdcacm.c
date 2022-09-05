@@ -895,7 +895,7 @@ static void usbhost_notification_callback(FAR void *arg, ssize_t nbytes)
       if (work_available(&priv->ntwork))
         {
           work_queue(HPWORK, &priv->ntwork,
-                     (worker_t)usbhost_notification_work,
+                     usbhost_notification_work,
                      priv, delay);
         }
     }
@@ -1563,19 +1563,19 @@ static int usbhost_cfgdesc(FAR struct usbhost_cdcacm_s *priv,
 
                     found |= (USBHOST_CTRLIF_FOUND | USBHOST_INTIN_FOUND);
 
-                    /* Save the bulk OUT endpoint information */
+                    /* Save the interrupt IN endpoint information */
 
                     iindesc.hport        = hport;
                     iindesc.addr         = epdesc->addr &
                                            USB_EP_ADDR_NUMBER_MASK;
-                    iindesc.in           = false;
+                    iindesc.in           = true;
                     iindesc.xfrtype      = USB_EP_ATTR_XFER_INT;
                     iindesc.interval     = epdesc->interval;
                     iindesc.mxpacketsize =
                       usbhost_getle16(epdesc->mxpacketsize);
 
                     uinfo("Interrupt IN EP addr:%d mxpacketsize:%d\n",
-                          boutdesc.addr, boutdesc.mxpacketsize);
+                          iindesc.addr, iindesc.mxpacketsize);
 #else
                     found |= USBHOST_CTRLIF_FOUND;
 #endif
@@ -2424,7 +2424,7 @@ static int usbhost_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
   uartdev = (FAR struct uart_dev_s *)inode->i_private;
 
   DEBUGASSERT(uartdev && uartdev->priv);
-  priv  = (FAR struct usbhost_cdcacm_s *)uartdev->priv;
+  priv = (FAR struct usbhost_cdcacm_s *)uartdev->priv;
 
   /* Check if the CDC/ACM device is still connected */
 

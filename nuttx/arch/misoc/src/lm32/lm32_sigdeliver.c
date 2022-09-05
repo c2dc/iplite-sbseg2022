@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <sched.h>
 #include <syscall.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
@@ -55,13 +56,6 @@ void lm32_sigdeliver(void)
 {
   struct tcb_s *rtcb = this_task();
   uint32_t regs[XCPTCONTEXT_REGS];
-
-  /* Save the errno.  This must be preserved throughout the signal handling
-   * so that the user code final gets the correct errno value (probably
-   * EINTR).
-   */
-
-  int saved_errno = get_errno();
 
   board_autoled_on(LED_SIGNAL);
 
@@ -94,7 +88,6 @@ void lm32_sigdeliver(void)
         regs[REG_EPC], regs[REG_INT_CTX]);
 
   up_irq_save();
-  set_errno(saved_errno);
 
   /* Modify the saved return state with the actual saved values in the
    * TCB.  This depends on the fact that nested signal handling is

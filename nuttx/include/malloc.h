@@ -31,6 +31,10 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
+/* For Linux and MacOS compatibility */
+
+#define malloc_usable_size malloc_size
+
 /****************************************************************************
  * Public Type Definitions
  ****************************************************************************/
@@ -40,12 +44,22 @@ struct mallinfo
   int arena;    /* This is the total size of memory allocated
                  * for use by malloc in bytes. */
   int ordblks;  /* This is the number of free (not in use) chunks */
+  int aordblks; /* This is the number of allocated (in use) chunks */
   int mxordblk; /* Size of the largest free (not in use) chunk */
   int uordblks; /* This is the total size of memory occupied by
                  * chunks handed out by malloc. */
   int fordblks; /* This is the total size of memory occupied
                  * by free (not in use) chunks. */
 };
+
+#if CONFIG_MM_BACKTRACE >= 0
+struct mallinfo_task
+{
+  pid_t pid;    /* The pid of task */
+  int aordblks; /* This is the number of allocated (in use) chunks for task */
+  int uordblks; /* This is the total size of memory occupied for task */
+};
+#endif
 
 /****************************************************************************
  * Public Function Prototypes
@@ -57,7 +71,10 @@ extern "C"
 #endif
 
 struct mallinfo mallinfo(void);
-size_t malloc_usable_size(FAR void *ptr);
+size_t malloc_size(FAR void *ptr);
+#if CONFIG_MM_BACKTRACE >= 0
+struct mallinfo_task mallinfo_task(pid_t pid);
+#endif
 
 #if defined(__cplusplus)
 }

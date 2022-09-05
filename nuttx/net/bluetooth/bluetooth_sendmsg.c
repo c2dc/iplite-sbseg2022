@@ -82,7 +82,6 @@ struct bluetooth_sendto_s
  ****************************************************************************/
 
 static uint16_t bluetooth_sendto_eventhandler(FAR struct net_driver_s *dev,
-                                               FAR void *pvconn,
                                                FAR void *pvpriv,
                                                uint16_t flags)
 {
@@ -106,7 +105,7 @@ static uint16_t bluetooth_sendto_eventhandler(FAR struct net_driver_s *dev,
 
 #warning Missing logic
 
-  pstate = (FAR struct bluetooth_sendto_s *)pvpriv;
+  pstate = pvpriv;
   radio  = (FAR struct radio_driver_s *)dev;
 
   ninfo("flags: %04x sent: %zd\n", flags, pstate->is_sent);
@@ -145,7 +144,7 @@ static uint16_t bluetooth_sendto_eventhandler(FAR struct net_driver_s *dev,
 
       /* Allocate an IOB to hold the frame data */
 
-      iob = net_ioballoc(false, IOBUSER_NET_SOCK_BLUETOOTH);
+      iob = net_ioballoc(false);
       if (iob == NULL)
         {
           nwarn("WARNING: Failed to allocate IOB\n");
@@ -426,7 +425,7 @@ static ssize_t bluetooth_l2cap_send(FAR struct socket *psock,
   conn = (FAR struct bluetooth_conn_s *)psock->s_conn;
   DEBUGASSERT(conn != NULL);
 
-  if (!_SS_ISCONNECTED(psock->s_flags))
+  if (!_SS_ISCONNECTED(conn->bc_conn.s_flags))
     {
       ret = -ENOTCONN;
     }

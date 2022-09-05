@@ -21,7 +21,7 @@
 include $(APPDIR)/Make.defs
 
 PRIORITY  = 255
-STACKSIZE = 16384
+STACKSIZE = $(CONFIG_NIMBLE_STACKSIZE)
 
 NIMBLE_UNPACKDIR = mynewt-nimble
 NIMBLE_ROOT = $(APPDIR)/wireless/bluetooth/nimble/$(NIMBLE_UNPACKDIR)
@@ -40,14 +40,17 @@ $(NIMBLE_UNPACKDIR): $(NIMBLE_TAR)
 	$(Q) mv mynewt-nimble-$(CONFIG_NIMBLE_REF) $(NIMBLE_UNPACKDIR)
 	$(Q) touch $(NIMBLE_UNPACKDIR)
 
+# Download and unpack tarball if no git repo found
+ifeq ($(wildcard $(NIMBLE_UNPACKDIR)/.git),)
 context:: $(NIMBLE_UNPACKDIR)
 
 distclean::
 	$(call DELFILE,$(NIMBLE_TAR))
 	$(call DELDIR,$(NIMBLE_UNPACKDIR))
+endif
 
 # nimBLE assumes this flag since it expects undefined macros to be zero value
 
-CFLAGS += -Wno-undef
+CFLAGS += -Wno-pointer-to-int-cast -Wno-undef
 
 include $(APPDIR)/Application.mk

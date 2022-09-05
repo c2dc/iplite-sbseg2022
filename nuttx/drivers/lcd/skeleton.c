@@ -28,14 +28,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
 #include <nuttx/arch.h>
 #include <nuttx/spi/spi.h>
 #include <nuttx/lcd/lcd.h>
-
-#include "up_arch.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -107,10 +106,12 @@ struct skel_dev_s
 
 /* LCD Data Transfer Methods */
 
-static int skel_putrun(fb_coord_t row, fb_coord_t col,
+static int skel_putrun(FAR struct lcd_dev_s *dev,
+                       fb_coord_t row, fb_coord_t col,
                        FAR const uint8_t *buffer,
                        size_t npixels);
-static int skel_getrun(fb_coord_t row, fb_coord_t col,
+static int skel_getrun(FAR struct lcd_dev_s *dev,
+                       fb_coord_t row, fb_coord_t col,
                        FAR uint8_t *buffer,
                        size_t npixels);
 
@@ -136,10 +137,10 @@ static int skel_getplaneinfo(FAR struct lcd_dev_s *dev,
 
 /* LCD Specific Controls */
 
-static int skel_getpower(struct lcd_dev_s *dev);
-static int skel_setpower(struct lcd_dev_s *dev, int power);
-static int skel_getcontrast(struct lcd_dev_s *dev);
-static int skel_setcontrast(struct lcd_dev_s *dev,
+static int skel_getpower(FAR struct lcd_dev_s *dev);
+static int skel_setpower(FAR struct lcd_dev_s *dev, int power);
+static int skel_getcontrast(FAR struct lcd_dev_s *dev);
+static int skel_setcontrast(FAR struct lcd_dev_s *dev,
                             unsigned int contrast);
 
 /****************************************************************************
@@ -221,7 +222,8 @@ static struct skel_dev_s g_lcddev =
  *
  ****************************************************************************/
 
-static int skel_putrun(fb_coord_t row, fb_coord_t col,
+static int skel_putrun(FAR struct lcd_dev_s *dev,
+                       fb_coord_t row, fb_coord_t col,
                        FAR const uint8_t *buffer,
                        size_t npixels)
 {
@@ -251,7 +253,9 @@ static int skel_putrun(fb_coord_t row, fb_coord_t col,
  *
  ****************************************************************************/
 
-static int skel_getrun(fb_coord_t row, fb_coord_t col, FAR uint8_t *buffer,
+static int skel_getrun(FAR struct lcd_dev_s *dev,
+                       fb_coord_t row, fb_coord_t col,
+                       FAR uint8_t *buffer,
                        size_t npixels)
 {
   /* Buffer must be provided and aligned to a 16-bit address boundary */
@@ -297,6 +301,7 @@ static int skel_getplaneinfo(FAR struct lcd_dev_s *dev,
   DEBUGASSERT(dev && pinfo && planeno == 0);
   ginfo("planeno: %d bpp: %d\n", planeno, g_planeinfo.bpp);
   memcpy(pinfo, &g_planeinfo, sizeof(struct lcd_planeinfo_s));
+  pinfo->dev = dev;
   return OK;
 }
 
@@ -328,7 +333,7 @@ static int skel_getpower(struct lcd_dev_s *dev)
  *
  ****************************************************************************/
 
-static int skel_setpower(struct lcd_dev_s *dev, int power)
+static int skel_setpower(FAR struct lcd_dev_s *dev, int power)
 {
   struct skel_dev_s *priv = (struct skel_dev_s *)dev;
 
@@ -349,7 +354,7 @@ static int skel_setpower(struct lcd_dev_s *dev, int power)
  *
  ****************************************************************************/
 
-static int skel_getcontrast(struct lcd_dev_s *dev)
+static int skel_getcontrast(FAR struct lcd_dev_s *dev)
 {
   ginfo("Not implemented\n");
 #warning "Missing logic"
@@ -364,7 +369,7 @@ static int skel_getcontrast(struct lcd_dev_s *dev)
  *
  ****************************************************************************/
 
-static int skel_setcontrast(struct lcd_dev_s *dev, unsigned int contrast)
+static int skel_setcontrast(FAR struct lcd_dev_s *dev, unsigned int contrast)
 {
   ginfo("contrast: %d\n", contrast);
 #warning "Missing logic"
@@ -381,8 +386,8 @@ static int skel_setcontrast(struct lcd_dev_s *dev, unsigned int contrast)
  * Description:
  *   Initialize the LCD video hardware.
  *   The initial state of the LCD is fully initialized, display memory
- *   cleared, and the LCD ready to use, but with the power  setting at 0
- *  (full off).
+ *   cleared, and the LCD ready to use, but with the power setting at 0
+ *   (full off).
  *
  ****************************************************************************/
 

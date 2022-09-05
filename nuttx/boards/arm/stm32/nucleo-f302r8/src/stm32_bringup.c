@@ -27,6 +27,8 @@
 #include <sys/types.h>
 #include <syslog.h>
 
+#include <stm32.h>
+
 #include <nuttx/board.h>
 
 #ifdef CONFIG_USERLED
@@ -35,6 +37,14 @@
 
 #ifdef CONFIG_INPUT_BUTTONS
 #  include <nuttx/input/buttons.h>
+#endif
+
+#ifdef CONFIG_SENSORS_QENCODER
+#  include "board_qencoder.h"
+#endif
+
+#ifdef CONFIG_SENSORS_HALL3PHASE
+#  include "board_hall3ph.h"
 #endif
 
 #include "nucleo-f302r8.h"
@@ -67,7 +77,7 @@
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -104,6 +114,73 @@ int stm32_bringup(void)
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: stm32_pwm_setup() failed: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_STM32_FOC
+  /* Initialize and register the FOC device */
+
+  ret = stm32_foc_setup();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: stm32_foc_setup failed: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_ADC
+  /* Initialize ADC and register the ADC driver. */
+
+  ret = stm32_adc_setup();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: stm32_adc_setup failed: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_SENSORS_QENCODER
+  /* Initialize and register the qencoder driver */
+
+  ret = board_qencoder_initialize(0, CONFIG_NUCLEO_F302R8_QETIMER);
+  if (ret != OK)
+    {
+      syslog(LOG_ERR,
+             "ERROR: Failed to register the qencoder: %d\n",
+             ret);
+      return ret;
+    }
+#endif
+
+#ifdef CONFIG_SENSORS_HALL3PHASE
+  /* Initialize and register the 3-phase Hall effect sensor driver */
+
+  ret = board_hall3ph_initialize(0, GPIO_HALL_PHA, GPIO_HALL_PHB,
+                                 GPIO_HALL_PHC);
+  if (ret != OK)
+    {
+      syslog(LOG_ERR,
+             "ERROR: Failed to register the hall : %d\n",
+             ret);
+      return ret;
+    }
+#endif
+
+#ifdef CONFIG_STM32_CAN_CHARDRIVER
+  /* Initialize CAN and register the CAN driver. */
+
+  ret = stm32_can_setup();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: stm32_can_setup failed: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_STM32_CAN_SOCKET
+  /* Initialize CAN socket interface */
+
+  ret = stm32_cansock_setup();
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: stm32_cansock_setup failed: %d\n", ret);
     }
 #endif
 

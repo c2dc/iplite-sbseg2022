@@ -27,12 +27,13 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
 #include <arch/irq.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include "lpc17_40_gpio.h"
 

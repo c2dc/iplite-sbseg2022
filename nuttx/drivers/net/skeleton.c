@@ -76,19 +76,17 @@
 # define CONFIG_SKELETON_NINTERFACES 1
 #endif
 
-/* TX poll delay = 1 seconds.
- * CLK_TCK is the number of clock ticks per second
- */
-
-#define SKELETON_WDDELAY   (1*CLK_TCK)
-
 /* TX timeout = 1 minute */
 
 #define SKELETON_TXTIMEOUT (60*CLK_TCK)
 
+/* Packet buffer size */
+
+#define PKTBUF_SIZE (MAX_NETDEV_PKTSIZE + CONFIG_NET_GUARDSIZE)
+
 /* This is a helper pointer for accessing the contents of Ethernet header */
 
-#define BUF ((struct eth_hdr_s *)priv->sk_dev.d_buf)
+#define BUF ((FAR struct eth_hdr_s *)priv->sk_dev.d_buf)
 
 /****************************************************************************
  * Private Types
@@ -101,7 +99,6 @@
 struct skel_driver_s
 {
   bool sk_bifup;               /* true:ifup false:ifdown */
-  struct wdog_s sk_txpoll;     /* TX poll timer */
   struct wdog_s sk_txtimeout;  /* TX timeout timer */
   struct work_s sk_irqwork;    /* For deferring interrupt work to the work queue */
   struct work_s sk_pollwork;   /* For deferring poll work to the work queue */
@@ -131,7 +128,7 @@ struct skel_driver_s
  * allocated dynamically in cases where more than one are needed.
  */
 
-static uint8_t g_pktbuf[MAX_NETDEV_PKTSIZE + CONFIG_NET_GUARDSIZE];
+static uint16_t g_pktbuf[CONFIG_SKELETON_NINTERFACES][(PKTBUF_SIZE + 1) / 2];
 
 /* Driver state structure */
 
@@ -159,9 +156,6 @@ static int  skel_interrupt(int irq, FAR void *context, FAR void *arg);
 
 static void skel_txtimeout_work(FAR void *arg);
 static void skel_txtimeout_expiry(wdparm_t arg);
-
-static void skel_poll_work(FAR void *arg);
-static void skel_poll_expiry(wdparm_t arg);
 
 /* NuttX callback functions */
 
@@ -447,7 +441,7 @@ static void skel_receive(FAR struct skel_driver_s *priv)
 #ifdef CONFIG_NET_ARP
       /* Check for an ARP packet */
 
-      if (BUF->type == htons(ETHTYPE_ARP))
+      if (BUF->type == HTONS(ETHTYPE_ARP))
         {
           /* Dispatch ARP packet to the network layer */
 
@@ -688,82 +682,6 @@ static void skel_txtimeout_expiry(wdparm_t arg)
 }
 
 /****************************************************************************
- * Name: skel_poll_work
- *
- * Description:
- *   Perform periodic polling from the worker thread
- *
- * Input Parameters:
- *   arg - The argument passed when work_queue() as called.
- *
- * Returned Value:
- *   OK on success
- *
- * Assumptions:
- *   Run on a work queue thread.
- *
- ****************************************************************************/
-
-static void skel_poll_work(FAR void *arg)
-{
-  FAR struct skel_driver_s *priv = (FAR struct skel_driver_s *)arg;
-
-  /* Lock the network and serialize driver operations if necessary.
-   * NOTE: Serialization is only required in the case where the driver work
-   * is performed on an LP worker thread and where more than one LP worker
-   * thread has been configured.
-   */
-
-  net_lock();
-
-  /* Perform the poll */
-
-  /* Check if there is room in the send another TX packet.  We cannot perform
-   * the TX poll if he are unable to accept another packet for transmission.
-   */
-
-  /* If so, update TCP timing states and poll the network for new XMIT data.
-   * Hmmm.. might be bug here.  Does this mean if there is a transmit in
-   * progress, we will missing TCP time state updates?
-   */
-
-  devif_timer(&priv->sk_dev, SKELETON_WDDELAY, skel_txpoll);
-
-  /* Setup the watchdog poll timer again */
-
-  wd_start(&priv->sk_txpoll, SKELETON_WDDELAY,
-           skel_poll_expiry, (wdparm_t)priv);
-  net_unlock();
-}
-
-/****************************************************************************
- * Name: skel_poll_expiry
- *
- * Description:
- *   Periodic timer handler.  Called from the timer interrupt handler.
- *
- * Input Parameters:
- *   arg  - The argument
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   Runs in the context of a the timer interrupt handler.  Local
- *   interrupts are disabled by the interrupt logic.
- *
- ****************************************************************************/
-
-static void skel_poll_expiry(wdparm_t arg)
-{
-  FAR struct skel_driver_s *priv = (FAR struct skel_driver_s *)arg;
-
-  /* Schedule to perform the interrupt processing on the worker thread. */
-
-  work_queue(ETHWORK, &priv->sk_pollwork, skel_poll_work, priv, 0);
-}
-
-/****************************************************************************
  * Name: skel_ifup
  *
  * Description:
@@ -808,11 +726,6 @@ static int skel_ifup(FAR struct net_driver_s *dev)
   skel_ipv6multicast(priv);
 #endif
 
-  /* Set and activate a timer process */
-
-  wd_start(&priv->sk_txpoll, SKELETON_WDDELAY,
-           skel_poll_expiry, (wdparm_t)priv);
-
   /* Enable the Ethernet interrupt */
 
   priv->sk_bifup = true;
@@ -848,9 +761,8 @@ static int skel_ifdown(FAR struct net_driver_s *dev)
   flags = enter_critical_section();
   up_disable_irq(CONFIG_SKELETON_IRQ);
 
-  /* Cancel the TX poll timer and TX timeout timers */
+  /* Cancel the TX timeout timers */
 
-  wd_cancel(&priv->sk_txpoll);
   wd_cancel(&priv->sk_txtimeout);
 
   /* Put the EMAC in its reset, non-operational state.  This should be
@@ -902,7 +814,7 @@ static void skel_txavail_work(FAR void *arg)
 
       /* If so, then poll the network for new XMIT data */
 
-      devif_timer(&priv->sk_dev, 0, skel_txpoll);
+      devif_poll(&priv->sk_dev, skel_txpoll);
     }
 
   net_unlock();
@@ -1162,18 +1074,18 @@ int skel_initialize(int intf)
   /* Initialize the driver structure */
 
   memset(priv, 0, sizeof(struct skel_driver_s));
-  priv->sk_dev.d_buf     = g_pktbuf;      /* Single packet buffer */
-  priv->sk_dev.d_ifup    = skel_ifup;     /* I/F up (new IP address) callback */
-  priv->sk_dev.d_ifdown  = skel_ifdown;   /* I/F down callback */
-  priv->sk_dev.d_txavail = skel_txavail;  /* New TX data callback */
+  priv->sk_dev.d_buf     = (FAR uint8_t *)g_pktbuf[intf]; /* Single packet buffer */
+  priv->sk_dev.d_ifup    = skel_ifup;                     /* I/F up (new IP address) callback */
+  priv->sk_dev.d_ifdown  = skel_ifdown;                   /* I/F down callback */
+  priv->sk_dev.d_txavail = skel_txavail;                  /* New TX data callback */
 #ifdef CONFIG_NET_MCASTGROUP
-  priv->sk_dev.d_addmac  = skel_addmac;   /* Add multicast MAC address */
-  priv->sk_dev.d_rmmac   = skel_rmmac;    /* Remove multicast MAC address */
+  priv->sk_dev.d_addmac  = skel_addmac;                   /* Add multicast MAC address */
+  priv->sk_dev.d_rmmac   = skel_rmmac;                    /* Remove multicast MAC address */
 #endif
 #ifdef CONFIG_NETDEV_IOCTL
-  priv->sk_dev.d_ioctl   = skel_ioctl;    /* Handle network IOCTL commands */
+  priv->sk_dev.d_ioctl   = skel_ioctl;                    /* Handle network IOCTL commands */
 #endif
-  priv->sk_dev.d_private = g_skel;        /* Used to recover private state from dev */
+  priv->sk_dev.d_private = g_skel;                        /* Used to recover private state from dev */
 
   /* Put the interface in the down state.  This usually amounts to resetting
    * the device and/or calling skel_ifdown().

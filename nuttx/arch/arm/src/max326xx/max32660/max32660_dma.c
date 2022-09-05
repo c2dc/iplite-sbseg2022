@@ -29,9 +29,9 @@
 
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
+#include <nuttx/spinlock.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "hardware/max326_dma.h"
 #include "max326_periphclks.h"
 #include "max326_dma.h"
@@ -115,7 +115,7 @@ static void max326_dma_terminate(struct max326_dmach_s *dmach, int result)
  *
  ****************************************************************************/
 
-static int max326_dmach_interrupt(int irq, FAR void *context, FAR void *arg)
+static int max326_dmach_interrupt(int irq, void *context, void *arg)
 {
   struct max326_dmach_s *dmach = (struct max326_dmach_s *)arg;
   uintptr_t base;

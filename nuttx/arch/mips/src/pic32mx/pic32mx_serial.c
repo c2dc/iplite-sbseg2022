@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -42,9 +43,7 @@
 
 #include <arch/board/board.h>
 
-#include "mips_arch.h"
 #include "mips_internal.h"
-
 #include "pic32mx_config.h"
 #include "chip.h"
 #include "pic32mx_uart.h"

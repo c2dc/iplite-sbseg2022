@@ -47,7 +47,7 @@ menuconfig 16550_UART
 	default n
 
 if 16550_UART
-source drivers/serial/Kconfig-16550
+source "drivers/serial/Kconfig-16550"
 endif
 
 #
@@ -66,7 +66,7 @@ config MCU_SERIAL
 config RPMSG_UART
 	bool "UART rpmsg support"
 	default n
-	depends on OPENAMP
+	depends on RPTUN
 	select ARCH_HAVE_SERIAL_TERMIOS
 	select SERIAL_RXDMA
 	select SERIAL_TXDMA
@@ -91,11 +91,10 @@ config STANDARD_SERIAL
 
 config SERIAL_NPOLLWAITERS
 	int "Number of poll threads"
-	default 2
-	depends on STANDARD_SERIAL
+	default 4
 	---help---
 		Maximum number of threads than can be waiting for POLL events.
-		Default: 2
+		Default: 4
 
 config SERIAL_IFLOWCONTROL
 	bool
@@ -174,10 +173,87 @@ config SERIAL_TERMIOS
 		If this is not defined, then the terminal settings (baud, parity, etc).
 		are not configurable at runtime; serial streams cannot be flushed, etc..
 
+config TTY_LAUNCH
+	bool "Enable feature TTY launch program"
+	default n
+	---help---
+		If select this, then user can launch a program with a special input.
+
+if TTY_LAUNCH
+
+config TTY_LAUNCH_CHAR
+	hex "TTY launch program characters"
+	default 0x12
+	---help---
+		Use Ctrl-R 0x12 inputs to determine whether launch a program
+
+config TTY_LAUNCH_ARGS
+	string "TTY launch argument list"
+	default INIT_ARGS
+	---help---
+		The argument list for user applications. e.g.:
+		  "\"arg1\",\"arg2\",\"arg3\""
+
+config TTY_LAUNCH_PRIORITY
+	int "TTY launch program priority"
+	default INIT_PRIORITY
+
+config TTY_LAUNCH_STACKSIZE
+	hex "TTY launch program stack size"
+	default INIT_STACKSIZE
+
+choice
+	prompt "TTY launch method"
+	default TTY_LAUNCH_ENTRY
+
+config TTY_LAUNCH_ENTRY
+	bool "TTY launch program"
+
+config TTY_LAUNCH_FILE
+	bool "TTY launch file"
+	depends on !BINFMT_DISABLE
+
+endchoice
+
+config TTY_LAUNCH_ENTRYPOINT
+	string "TTY launch program entry"
+	depends on TTY_LAUNCH_ENTRY
+	default INIT_ENTRYPOINT
+
+config TTY_LAUNCH_ENTRYNAME
+	string "TTY launch program name"
+	depends on TTY_LAUNCH_ENTRY
+	default TTY_LAUNCH_ENTRYPOINT
+
+config TTY_LAUNCH_FILEPATH
+	string "TTY launch file path"
+	depends on TTY_LAUNCH_FILE
+	default INIT_FILEPATH
+	---help---
+		The name of the entry point for user applications.  For the example
+		applications this is of the form 'app_main' where 'app' is the application
+		name. If not defined, INIT_ENTRYPOINT defaults to "main".
+
+endif # TTY_LAUNCH
+
+config TTY_FORCE_PANIC
+	bool "Enable TTY force crash"
+	default n
+	depends on DEBUG_FEATURES
+	---help---
+		This is for debugging system busyloop or deadlock, when the shell can't run,
+		then use this force crash the system to see the dumplog.
+
+config TTY_FORCE_PANIC_CHAR
+	hex "TTY force crash characters"
+	default 0x1F
+	depends on TTY_FORCE_PANIC
+	---help---
+		Use Ctrl-? 0x1F inputs to determine whether panic system
+
 config TTY_SIGINT
 	bool "Support SIGINT"
 	default n
-	depends on SERIAL_TERMIOS
 	---help---
 		Whether support Ctrl-c/x event.  Enabled automatically for console
 		devices.  May be enabled for other serial devices using the ISIG bit
@@ -221,7 +297,6 @@ config TTY_SIGINT_CHAR
 config TTY_SIGTSTP
 	bool "Support SIGTSTP"
 	default n
-	depends on SERIAL_TERMIOS
 	---help---
 		Whether support Ctrl-z event.  Enabled automatically for console
 		devices.  May be enabled for other serial devices using the ISIG bit
@@ -411,6 +486,41 @@ config LPUART8_SERIAL_CONSOLE
 	depends on LPUART8_SERIALDRIVER
 	select SERIAL_CONSOLE
 
+config LPUART9_SERIAL_CONSOLE
+	bool "LPUART9"
+	depends on LPUART9_SERIALDRIVER
+	select SERIAL_CONSOLE
+
+config LPUART10_SERIAL_CONSOLE
+	bool "LPUART10"
+	depends on LPUART10_SERIALDRIVER
+	select SERIAL_CONSOLE
+
+config LPUART11_SERIAL_CONSOLE
+	bool "LPUART11"
+	depends on LPUART11_SERIALDRIVER
+	select SERIAL_CONSOLE
+
+config LPUART12_SERIAL_CONSOLE
+	bool "LPUART12"
+	depends on LPUART12_SERIALDRIVER
+	select SERIAL_CONSOLE
+
+config LPUART13_SERIAL_CONSOLE
+	bool "LPUART13"
+	depends on LPUART13_SERIALDRIVER
+	select SERIAL_CONSOLE
+
+config LPUART14_SERIAL_CONSOLE
+	bool "LPUART14"
+	depends on LPUART14_SERIALDRIVER
+	select SERIAL_CONSOLE
+
+config LPUART15_SERIAL_CONSOLE
+	bool "LPUART15"
+	depends on LPUART15_SERIALDRIVER
+	select SERIAL_CONSOLE
+
 config SCI0_SERIAL_CONSOLE
 	bool "SCI0"
 	depends on SCI0_SERIALDRIVER
@@ -561,10 +671,10 @@ config UART_RXDMA
 
 endmenu
 
-source drivers/serial/Kconfig-uart
-source drivers/serial/Kconfig-lpuart
-source drivers/serial/Kconfig-usart
-source drivers/serial/Kconfig-sci
+source "drivers/serial/Kconfig-uart"
+source "drivers/serial/Kconfig-lpuart"
+source "drivers/serial/Kconfig-usart"
+source "drivers/serial/Kconfig-sci"
 
 menuconfig PSEUDOTERM
 	bool "Pseudo-Terminal (PTY) support"
@@ -576,24 +686,9 @@ menuconfig PSEUDOTERM
 
 if PSEUDOTERM
 
-choice
-	prompt "PTY model"
-	default PSEUDOTERM_BSD if DISABLE_PSEUDOFS_OPERATIONS
-	default PSEUDOTERM_SUSV1 if !DISABLE_PSEUDOFS_OPERATIONS
-
-config PSEUDOTERM_BSD
-	bool "BSD style"
-	---help---
-		Deprecated BSD style PTYs.
-
-		Master: /dev/ptyN
-		Slave: /dev/ttypN
-
-		Where N is the minor number
-
 config PSEUDOTERM_SUSV1
 	bool "SUSv1 style"
-	depends on !DISABLE_PSEUDOFS_OPERATIONS
+	default y
 	---help---
 		PTYs as specified in the Single Unix Specification (SUSv1).
 
@@ -601,8 +696,6 @@ config PSEUDOTERM_SUSV1
 		Slave: /dev/pts/N
 
 		Where N is the minor number
-
-endchoice # PTY model
 
 config PSEUDOTERM_RXBUFSIZE
 	int "Pseudo-Terminal Rx buffer size"
@@ -617,5 +710,38 @@ config PSEUDOTERM_TXBUFSIZE
 		Slave-to-master pipe buffer size.  Default: 256
 
 endif # PSEUDOTERM
+
+menuconfig UART_BTH4
+	bool "BT H4 uart pseudo device"
+	default n
+	select MM_CIRCBUF
+	---help---
+		Enable support for Bluetooth H4 UART Pseudo Device(eg. /dev/ttyHCI).
+		This instantiates a serial-like interface over an existing bluetooth
+		controller via HCI interface. Useful for external Bluetooth
+		stacks working this way instead of the socket based interface.
+
+if UART_BTH4
+
+config UART_BTH4_TXBUFSIZE
+	int "BT H4 uart TX buffer size"
+	default 1024
+	---help---
+		H4 UART TX buffer size.  Default: 1024
+
+config UART_BTH4_RXBUFSIZE
+	int "BT H4 uart RX buffer size"
+	default 1024
+	---help---
+		H4 UART RX buffer size.  Default: 1024
+
+config UART_BTH4_NPOLLWAITERS
+	int "Number of poll threads"
+	default 2
+	---help---
+		Maximum number of threads than can be waiting for POLL events.
+		Default: 2
+
+endif # UART_BTH4
 
 endif # SERIAL

@@ -22,30 +22,38 @@
  * Included Files
  ****************************************************************************/
 
-#include <nuttx/config.h>
-
-#include <debug.h>
-
 #include <nuttx/arch.h>
 #include <nuttx/audio/audio.h>
-#include <nuttx/drivers/drivers.h>
-#include <nuttx/fs/loop.h>
-#include <nuttx/fs/ioctl.h>
-#include <nuttx/net/loopback.h>
-#include <nuttx/net/tun.h>
-#include <nuttx/net/telnet.h>
+#include <nuttx/kthread.h>
+#include <nuttx/motor/foc/foc_dummy.h>
 #include <nuttx/mtd/mtd.h>
-#include <nuttx/note/note_driver.h>
-#include <nuttx/syslog/syslog_console.h>
-#include <nuttx/serial/pty.h>
-#include <nuttx/crypto/crypto.h>
 #include <nuttx/power/pm.h>
+#include <nuttx/spi/spi_flash.h>
+#include <nuttx/spi/qspi_flash.h>
+
+#include <stdlib.h>
 
 #include "up_internal.h"
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+#ifndef CONFIG_DISABLE_ENVIRON
+static void up_init_cmdline(void)
+{
+  char cmdline[ARG_MAX] = "";
+  int i;
+
+  for (i = 1; i < g_argc; i++)
+    {
+      strlcat(cmdline, g_argv[i], sizeof(cmdline));
+      strlcat(cmdline, " ", sizeof(cmdline));
+    }
+
+  setenv("CMDLINE", cmdline, true);
+}
+#endif
 
 /****************************************************************************
  * Name: up_init_smartfs
@@ -56,23 +64,24 @@
  *
  ****************************************************************************/
 
-#if defined(CONFIG_FS_SMARTFS) && (defined(CONFIG_SIM_SPIFLASH) || defined(CONFIG_SIM_QSPIFLASH))
+#if defined(CONFIG_FS_SMARTFS) && defined(CONFIG_MTD_SMART) && \
+    (defined(CONFIG_SPI_FLASH) || defined(CONFIG_QSPI_FLASH))
 static void up_init_smartfs(void)
 {
-  FAR struct mtd_dev_s *mtd;
-  int minor = 0;
 #if defined(CONFIG_MTD_M25P) || defined(CONFIG_MTD_W25) || defined(CONFIG_MTD_SST26)
-  FAR struct spi_dev_s *spi;
+  struct mtd_dev_s *mtd;
+  struct spi_dev_s *spi;
+  int minor = 0;
 #endif
 #ifdef CONFIG_MTD_N25QXXX
-  FAR struct qspi_dev_s *qspi;
+  struct qspi_dev_s *qspi;
 #endif
 
-#ifdef CONFIG_SIM_SPIFLASH
+#ifdef CONFIG_SPI_FLASH
 #ifdef CONFIG_MTD_M25P
   /* Initialize a simulated SPI FLASH block device m25p MTD driver */
 
-  spi = up_spiflashinitialize("m25p");
+  spi = spi_flash_initialize("m25p");
   if (spi != NULL)
     {
       mtd = m25p_initialize(spi);
@@ -91,7 +100,7 @@ static void up_init_smartfs(void)
 #ifdef CONFIG_MTD_SST26
   /* Initialize a simulated SPI FLASH block device sst26 MTD driver */
 
-  spi = up_spiflashinitialize("sst26");
+  spi = spi_flash_initialize("sst26");
   if (spi != NULL)
     {
       mtd = sst26_initialize_spi(spi);
@@ -110,7 +119,7 @@ static void up_init_smartfs(void)
 #ifdef CONFIG_MTD_W25
   /* Initialize a simulated SPI FLASH block device w25 MTD driver */
 
-  spi = up_spiflashinitialize("w25");
+  spi = spi_flash_initialize("w25");
   if (spi != NULL)
     {
       mtd = w25_initialize(spi);
@@ -125,12 +134,12 @@ static void up_init_smartfs(void)
         }
     }
 #endif
-#endif      /* CONFIG_SIM_SPIFLASH */
+#endif /* CONFIG_SPI_FLASH */
 
-#if defined(CONFIG_MTD_N25QXXX) && defined(CONFIG_SIM_QSPIFLASH)
+#if defined(CONFIG_MTD_N25QXXX) && defined(CONFIG_QSPI_FLASH)
   /* Initialize a simulated SPI FLASH block device n25qxxx MTD driver */
 
-  qspi = up_qspiflashinitialize();
+  qspi = qspi_flash_initialize();
   if (qspi != NULL)
     {
       mtd = n25qxxx_initialize(qspi, 0);
@@ -147,6 +156,57 @@ static void up_init_smartfs(void)
 #endif
 }
 #endif
+
+static int up_loop_task(int argc, char **argv)
+{
+  while (1)
+    {
+      /* Handle UART data availability */
+
+      up_uartloop();
+
+#if defined(CONFIG_SIM_TOUCHSCREEN) || defined(CONFIG_SIM_AJOYSTICK) || \
+    defined(CONFIG_SIM_BUTTONS)
+      /* Drive the X11 event loop */
+
+      up_x11events();
+#endif
+
+#ifdef CONFIG_SIM_NETDEV
+      /* Run the network if enabled */
+
+      netdriver_loop();
+#endif
+
+#ifdef CONFIG_SIM_NETUSRSOCK
+      usrsock_loop();
+#endif
+
+#ifdef CONFIG_RPTUN
+      up_rptun_loop();
+#endif
+
+#ifdef CONFIG_SIM_HCISOCKET
+      bthcisock_loop();
+#endif
+
+#ifdef CONFIG_SIM_SOUND
+      sim_audio_loop();
+#endif
+
+#ifdef CONFIG_MOTOR_FOC_DUMMY
+      /* Update simulated FOC device */
+
+      foc_dummy_update();
+#endif
+
+      /* Sleep minimal time, let the idle run */
+
+      usleep(USEC_PER_TICK);
+    }
+
+  return 0;
+}
 
 /****************************************************************************
  * Public Functions
@@ -184,59 +244,13 @@ void up_initialize(void)
   pm_initialize();
 #endif
 
-  /* Register devices */
-
-#if defined(CONFIG_DEV_NULL)
-  devnull_register();       /* Standard /dev/null */
-#endif
-
-#if defined(CONFIG_DEV_RANDOM)
-  devrandom_register(); /* Standard /dev/random */
-#endif
-
-#if defined(CONFIG_DEV_URANDOM)
-  devurandom_register();   /* Standard /dev/urandom */
-#endif
-
-#if defined(CONFIG_DEV_ZERO)
-  devzero_register();       /* Standard /dev/zero */
-#endif
-
-#if defined(CONFIG_DEV_LOOP)
-  loop_register();          /* Standard /dev/loop */
-#endif
-
-#if defined(CONFIG_DRIVER_NOTE)
-  note_register();          /* Non-standard /dev/note */
-#endif
-
-#ifdef CONFIG_RPMSG_UART
-  rpmsg_serialinit();
+#ifndef CONFIG_DISABLE_ENVIRON
+  up_init_cmdline();
 #endif
 
   /* Register some tty-port to access tty-port on sim platform */
 
   up_uartinit();
-
-#if defined(CONFIG_CONSOLE_SYSLOG)
-  syslog_console_init();
-#endif
-
-#ifdef CONFIG_PSEUDOTERM_SUSV1
-  /* Register the master pseudo-terminal multiplexor device */
-
-  ptmx_register();
-#endif
-
-#if defined(CONFIG_CRYPTO)
-  /* Initialize the HW crypto and /dev/crypto */
-
-  up_cryptoinitialize();
-#endif
-
-#ifdef CONFIG_CRYPTO_CRYPTODEV
-  devcrypto_register();
-#endif
 
 #if defined(CONFIG_FS_FAT) && !defined(CONFIG_DISABLE_MOUNTPOINT)
   up_registerblockdevice(); /* Our FAT ramdisk at /dev/ram0 */
@@ -246,25 +260,14 @@ void up_initialize(void)
   netdriver_init();         /* Our "real" network driver */
 #endif
 
-#ifdef CONFIG_NET_LOOPBACK
-  /* Initialize the local loopback device */
+#ifdef CONFIG_SIM_NETUSRSOCK
+  /* Register the usrsock native socket device */
 
-  localhost_initialize();
+  usrsock_init();
 #endif
 
-#ifdef CONFIG_NET_TUN
-  /* Initialize the TUN device */
-
-  tun_initialize();
-#endif
-
-#ifdef CONFIG_NETDEV_TELNET
-  /* Initialize the Telnet session factory */
-
-  telnet_initialize();
-#endif
-
-#if defined(CONFIG_FS_SMARTFS) && (defined(CONFIG_SIM_SPIFLASH) || defined(CONFIG_SIM_QSPIFLASH))
+#if defined(CONFIG_FS_SMARTFS) && defined(CONFIG_MTD_SMART) && \
+    (defined(CONFIG_SPI_FLASH) || defined(CONFIG_QSPI_FLASH))
   up_init_smartfs();
 #endif
 
@@ -272,4 +275,8 @@ void up_initialize(void)
   audio_register("pcm0p", sim_audio_initialize(true));
   audio_register("pcm0c", sim_audio_initialize(false));
 #endif
+
+  kthread_create("loop_task", SCHED_PRIORITY_MAX,
+                 CONFIG_DEFAULT_TASK_STACKSIZE,
+                 up_loop_task, NULL);
 }

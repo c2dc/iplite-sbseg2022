@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -43,9 +44,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "hardware/sam_flexcom.h"
 #include "sam_config.h"
@@ -216,7 +215,7 @@ struct flexus_dev_s
  * Private Function Prototypes
  ****************************************************************************/
 
-static int  flexus_interrupt(int irq, void *context, FAR void *arg);
+static int  flexus_interrupt(int irq, void *context, void *arg);
 static int  flexus_setup(struct uart_dev_s *dev);
 static void flexus_shutdown(struct uart_dev_s *dev);
 static int  flexus_attach(struct uart_dev_s *dev);
@@ -513,7 +512,7 @@ static void flexus_disableallints(struct flexus_dev_s *priv, uint32_t *imr)
  *
  ****************************************************************************/
 
-static int flexus_interrupt(int irq, void *context, FAR void *arg)
+static int flexus_interrupt(int irq, void *context, void *arg)
 {
   struct uart_dev_s *dev = (struct uart_dev_s *)arg;
   struct flexus_dev_s *priv;

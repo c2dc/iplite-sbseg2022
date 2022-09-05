@@ -41,6 +41,7 @@ config CRYPTO_CRYPTODEV
 
 config CRYPTO_SW_AES
 	bool "Software AES library"
+	depends on ALLOW_BSD_COMPONENTS
 	default n
 	---help---
 		Enable the software AES library as described in

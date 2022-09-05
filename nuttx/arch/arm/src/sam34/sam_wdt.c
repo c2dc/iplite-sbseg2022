@@ -1,36 +1,20 @@
 /****************************************************************************
  * arch/arm/src/sam34/sam_wdt.c
  *
- *   Copyright (C) 2014-2016 Gregory Nutt. All rights reserved.
- *   Authors: Gregory Nutt <gnutt@nuttx.org>
- *            Bob Doiron
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -45,6 +29,7 @@
 
 #include <inttypes.h>
 #include <stdint.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -52,7 +37,7 @@
 #include <nuttx/timers/watchdog.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam_wdt.h"
 
 #if defined(CONFIG_WATCHDOG) && defined(CONFIG_SAM34_WDT)
@@ -99,7 +84,7 @@
 
 struct sam34_lowerhalf_s
 {
-  FAR const struct watchdog_ops_s  *ops;  /* Lower half operations */
+  const struct watchdog_ops_s  *ops;  /* Lower half operations */
 
   xcpt_t   handler;  /* Current EWI interrupt handler */
   uint32_t timeout;  /* The actual timeout value */
@@ -124,20 +109,20 @@ static void     sam34_putreg(uint32_t val, uint32_t addr);
 
 /* Interrupt handling *******************************************************/
 
-static int      sam34_interrupt(int irq, FAR void *context, FAR void *arg);
+static int      sam34_interrupt(int irq, void *context, void *arg);
 
 /* "Lower half" driver methods **********************************************/
 
-static int      sam34_start(FAR struct watchdog_lowerhalf_s *lower);
-static int      sam34_stop(FAR struct watchdog_lowerhalf_s *lower);
-static int      sam34_keepalive(FAR struct watchdog_lowerhalf_s *lower);
-static int      sam34_getstatus(FAR struct watchdog_lowerhalf_s *lower,
-                  FAR struct watchdog_status_s *status);
-static int      sam34_settimeout(FAR struct watchdog_lowerhalf_s *lower,
+static int      sam34_start(struct watchdog_lowerhalf_s *lower);
+static int      sam34_stop(struct watchdog_lowerhalf_s *lower);
+static int      sam34_keepalive(struct watchdog_lowerhalf_s *lower);
+static int      sam34_getstatus(struct watchdog_lowerhalf_s *lower,
+                  struct watchdog_status_s *status);
+static int      sam34_settimeout(struct watchdog_lowerhalf_s *lower,
                   uint32_t timeout);
-static xcpt_t   sam34_capture(FAR struct watchdog_lowerhalf_s *lower,
+static xcpt_t   sam34_capture(struct watchdog_lowerhalf_s *lower,
                   xcpt_t handler);
-static int      sam34_ioctl(FAR struct watchdog_lowerhalf_s *lower, int cmd,
+static int      sam34_ioctl(struct watchdog_lowerhalf_s *lower, int cmd,
                   unsigned long arg);
 
 /****************************************************************************
@@ -263,9 +248,9 @@ static void sam34_putreg(uint32_t val, uint32_t addr)
  *
  ****************************************************************************/
 
-static int sam34_interrupt(int irq, FAR void *context, FAR void *arg)
+static int sam34_interrupt(int irq, void *context, void *arg)
 {
-  FAR struct sam34_lowerhalf_s *priv = &g_wdgdev;
+  struct sam34_lowerhalf_s *priv = &g_wdgdev;
   uint16_t regval;
 
   /* Check if the EWI interrupt is really pending */
@@ -306,9 +291,9 @@ static int sam34_interrupt(int irq, FAR void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static int sam34_start(FAR struct watchdog_lowerhalf_s *lower)
+static int sam34_start(struct watchdog_lowerhalf_s *lower)
 {
-  FAR struct sam34_lowerhalf_s *priv = (FAR struct sam34_lowerhalf_s *)lower;
+  struct sam34_lowerhalf_s *priv = (struct sam34_lowerhalf_s *)lower;
   uint32_t mr_val = 0;
 
   wdinfo("Entry\n");
@@ -351,7 +336,7 @@ static int sam34_start(FAR struct watchdog_lowerhalf_s *lower)
  *
  ****************************************************************************/
 
-static int sam34_stop(FAR struct watchdog_lowerhalf_s *lower)
+static int sam34_stop(struct watchdog_lowerhalf_s *lower)
 {
   /* The watchdog is always disabled after a reset. It is enabled by clearing
    * the WDDIS bit in the WDT_CR register, then it cannot be disabled again
@@ -382,7 +367,7 @@ static int sam34_stop(FAR struct watchdog_lowerhalf_s *lower)
  *
  ****************************************************************************/
 
-static int sam34_keepalive(FAR struct watchdog_lowerhalf_s *lower)
+static int sam34_keepalive(struct watchdog_lowerhalf_s *lower)
 {
   wdinfo("Entry\n");
 
@@ -406,10 +391,10 @@ static int sam34_keepalive(FAR struct watchdog_lowerhalf_s *lower)
  *
  ****************************************************************************/
 
-static int sam34_getstatus(FAR struct watchdog_lowerhalf_s *lower,
-                           FAR struct watchdog_status_s *status)
+static int sam34_getstatus(struct watchdog_lowerhalf_s *lower,
+                           struct watchdog_status_s *status)
 {
-  FAR struct sam34_lowerhalf_s *priv = (FAR struct sam34_lowerhalf_s *)lower;
+  struct sam34_lowerhalf_s *priv = (struct sam34_lowerhalf_s *)lower;
   uint32_t elapsed;
 
   wdinfo("Entry\n");
@@ -464,10 +449,10 @@ static int sam34_getstatus(FAR struct watchdog_lowerhalf_s *lower,
  *
  ****************************************************************************/
 
-static int sam34_settimeout(FAR struct watchdog_lowerhalf_s *lower,
+static int sam34_settimeout(struct watchdog_lowerhalf_s *lower,
                             uint32_t timeout)
 {
-  FAR struct sam34_lowerhalf_s *priv = (FAR struct sam34_lowerhalf_s *)lower;
+  struct sam34_lowerhalf_s *priv = (struct sam34_lowerhalf_s *)lower;
   uint32_t reload;
 
   DEBUGASSERT(priv);
@@ -532,11 +517,11 @@ static int sam34_settimeout(FAR struct watchdog_lowerhalf_s *lower,
  *
  ****************************************************************************/
 
-static xcpt_t sam34_capture(FAR struct watchdog_lowerhalf_s *lower,
+static xcpt_t sam34_capture(struct watchdog_lowerhalf_s *lower,
                             xcpt_t handler)
 {
 #if 0 /* TODO */
-  FAR struct sam34_lowerhalf_s *priv = (FAR struct sam34_lowerhalf_s *)lower;
+  struct sam34_lowerhalf_s *priv = (struct sam34_lowerhalf_s *)lower;
   irqstate_t flags;
   xcpt_t oldhandler;
   uint16_t regval;
@@ -579,7 +564,7 @@ static xcpt_t sam34_capture(FAR struct watchdog_lowerhalf_s *lower,
   return oldhandler;
 
 #endif
-  DEBUGASSERT(0);
+  DEBUGPANIC();
   return NULL;
 }
 
@@ -603,10 +588,10 @@ static xcpt_t sam34_capture(FAR struct watchdog_lowerhalf_s *lower,
  *
  ****************************************************************************/
 
-static int sam34_ioctl(FAR struct watchdog_lowerhalf_s *lower, int cmd,
-                    unsigned long arg)
+static int sam34_ioctl(struct watchdog_lowerhalf_s *lower, int cmd,
+                       unsigned long arg)
 {
-  FAR struct sam34_lowerhalf_s *priv = (FAR struct sam34_lowerhalf_s *)lower;
+  struct sam34_lowerhalf_s *priv = (struct sam34_lowerhalf_s *)lower;
   int ret = -ENOTTY;
 
   DEBUGASSERT(priv);
@@ -665,9 +650,9 @@ static int sam34_ioctl(FAR struct watchdog_lowerhalf_s *lower, int cmd,
  ****************************************************************************/
 
 #ifndef CONFIG_WDT_DISABLE_ON_RESET
-void sam_wdtinitialize(FAR const char *devpath)
+void sam_wdtinitialize(const char *devpath)
 {
-  FAR struct sam34_lowerhalf_s *priv = &g_wdgdev;
+  struct sam34_lowerhalf_s *priv = &g_wdgdev;
   uint32_t mr_val;
 
   /* Enable watchdog with 5 sec timeout */
@@ -698,7 +683,7 @@ void sam_wdtinitialize(FAR const char *devpath)
    * device option bits, the watchdog is automatically enabled at power-on.
    */
 
-  sam34_settimeout((FAR struct watchdog_lowerhalf_s *)priv,
+  sam34_settimeout((struct watchdog_lowerhalf_s *)priv,
                    CONFIG_WDT_TIMEOUT);
 
   /* Disable minimum time feature for now. */
@@ -709,7 +694,7 @@ void sam_wdtinitialize(FAR const char *devpath)
    * (default /dev/watchdog0).
    */
 
-  watchdog_register(devpath, (FAR struct watchdog_lowerhalf_s *)priv);
+  watchdog_register(devpath, (struct watchdog_lowerhalf_s *)priv);
 }
 #endif /* CONFIG_WDT_DISABLE_ON_RESET */
 

@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __BOARDS_ARM_STM32_CLICKER2_STM32_SRC_CLICKER2_H
-#define __BOARDS_ARM_STM32_CLICKER2_STM32_SRC_CLICKER2_H
+#ifndef __BOARDS_ARM_STM32_CLICKER2_STM32_SRC_CLICKER2_STM32_H
+#define __BOARDS_ARM_STM32_CLICKER2_STM32_SRC_CLICKER2_STM32_H
 
 /****************************************************************************
  * Included Files
@@ -272,7 +272,7 @@ void weak_function stm32_spidev_initialize(void);
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=y && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -312,7 +312,7 @@ int stm32_adc_setup(void);
  *
  ****************************************************************************/
 
-#ifdef CONFIG_CAN
+#ifdef CONFIG_STM32_CAN_CHARDRIVER
 int stm32_can_setup(void);
 #endif
 
@@ -423,4 +423,4 @@ void stm32_automount_event(int slotno, bool inserted);
 #endif
 
 #endif /* __ASSEMBLY__ */
-#endif /* __BOARDS_ARM_STM32_CLICKER2_STM32_SRC_CLICKER2_H */
+#endif /* __BOARDS_ARM_STM32_CLICKER2_STM32_SRC_CLICKER2_STM32_H */

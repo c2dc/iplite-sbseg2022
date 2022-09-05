@@ -24,6 +24,8 @@
 
 #include <nuttx/config.h>
 
+#include <nuttx/atexit.h>
+
 #include <unistd.h>
 #include <sched.h>
 #include <errno.h>
@@ -207,23 +209,21 @@ long sysconf(int name)
 
   switch (name)
     {
+      case _SC_CLK_TCK:
+        return CLOCKS_PER_SEC;
+
       case _SC_OPEN_MAX:
-        return _POSIX_OPEN_MAX;
+        return OPEN_MAX;
 
       case _SC_ATEXIT_MAX:
-#ifdef CONFIG_SCHED_EXIT_MAX
-        return CONFIG_SCHED_EXIT_MAX;
-#else
-        return 0;
-#endif
+        return ATEXIT_MAX;
 
       case _SC_NPROCESSORS_CONF:
       case _SC_NPROCESSORS_ONLN:
-#ifdef CONFIG_SMP_NCPUS
         return CONFIG_SMP_NCPUS;
-#else
+
+      case _SC_MONOTONIC_CLOCK:
         return 1;
-#endif
 
       case _SC_PAGESIZE:
 #ifdef CONFIG_MM_PGSIZE

@@ -157,10 +157,10 @@
 
 #ifdef CONFIG_HIDMOUSE_TSCIF
 #  define DEV_FORMAT        "/dev/input%d"
-#  define DEV_NAMELEN       13
+#  define DEV_NAMELEN       14
 #else
 #  define DEV_FORMAT        "/dev/mouse%d"
-#  define DEV_NAMELEN       13
+#  define DEV_NAMELEN       14
 #endif
 
 /* Used in usbhost_cfgdesc() */
@@ -380,32 +380,35 @@ static int usbhost_poll(FAR struct file *filep, FAR struct pollfd *fds,
 
 static const struct usbhost_id_s g_hidmouse_id =
 {
-  USB_CLASS_HID,           /* base     */
+  USB_CLASS_HID,           /* base */
   USBHID_SUBCLASS_BOOTIF,  /* subclass */
-  USBHID_PROTOCOL_MOUSE,   /* proto    */
-  0,                       /* vid      */
-  0                        /* pid      */
+  USBHID_PROTOCOL_MOUSE,   /* proto */
+  0,                       /* vid */
+  0                        /* pid */
 };
 
 /* This is the USB host storage class's registry entry */
 
 static struct usbhost_registry_s g_hidmouse =
 {
-  NULL,                    /* flink     */
-  usbhost_create,          /* create    */
-  1,                       /* nids      */
-  &g_hidmouse_id           /* id[]      */
+  NULL,                    /* flink */
+  usbhost_create,          /* create */
+  1,                       /* nids */
+  &g_hidmouse_id           /* id[] */
 };
 
 static const struct file_operations g_hidmouse_fops =
 {
-  usbhost_open,            /* open      */
-  usbhost_close,           /* close     */
-  usbhost_read,            /* read      */
-  usbhost_write,           /* write     */
-  NULL,                    /* seek      */
-  NULL,                    /* ioctl     */
-  usbhost_poll             /* poll      */
+  usbhost_open,            /* open */
+  usbhost_close,           /* close */
+  usbhost_read,            /* read */
+  usbhost_write,           /* write */
+  NULL,                    /* seek */
+  NULL,                    /* ioctl */
+  usbhost_poll             /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL                   /* unlink */
+#endif
 };
 
 /* This is a bitmap that is used to allocate device names /dev/mouse0-31. */
@@ -480,7 +483,7 @@ static void usbhost_pollnotify(FAR struct usbhost_state_s *priv)
           fds->revents |= (fds->events & POLLIN);
           if (fds->revents != 0)
             {
-              uinfo("Report events: %02x\n", fds->revents);
+              uinfo("Report events: %08" PRIx32 "\n", fds->revents);
               nxsem_post(fds->sem);
             }
         }
@@ -697,7 +700,7 @@ static void usbhost_notify(FAR struct usbhost_state_s *priv)
       if (fds)
         {
           fds->revents |= POLLIN;
-          iinfo("Report events: %02x\n", fds->revents);
+          iinfo("Report events: %08" PRIx32 "\n", fds->revents);
           nxsem_post(fds->sem);
         }
     }
@@ -1700,20 +1703,20 @@ static inline int usbhost_devinit(FAR struct usbhost_state_s *priv)
 
   g_priv = priv;
 
-  priv->pollpid = kthread_create("mouse", CONFIG_HIDMOUSE_DEFPRIO,
-                                 CONFIG_HIDMOUSE_STACKSIZE,
-                                 (main_t)usbhost_mouse_poll,
-                                 (FAR char * const *)NULL);
-  if (priv->pollpid < 0)
+  ret = kthread_create("mouse", CONFIG_HIDMOUSE_DEFPRIO,
+                       CONFIG_HIDMOUSE_STACKSIZE, (main_t)usbhost_mouse_poll,
+                       (FAR char * const *)NULL);
+  if (ret < 0)
     {
       /* Failed to started the poll thread...
        * probably due to memory resources
        */
 
       usbhost_givesem(&g_exclsem);
-      ret = priv->pollpid;
       goto errout;
     }
+
+  priv->pollpid = (pid_t)ret;
 
   /* Now wait for the poll task to get properly initialized */
 

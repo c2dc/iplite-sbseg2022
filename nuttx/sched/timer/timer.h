@@ -55,7 +55,6 @@ struct posix_timer_s
   uint8_t          pt_crefs;       /* Reference count */
   pid_t            pt_owner;       /* Creator of timer */
   int              pt_delay;       /* If non-zero, used to reset repetitive timers */
-  int              pt_last;        /* Last value used to set watchdog */
   struct wdog_s    pt_wdog;        /* The watchdog that provides the timing */
   struct sigevent  pt_event;       /* Notification information */
   struct sigwork_s pt_work;
@@ -82,8 +81,8 @@ extern volatile sq_queue_t g_alloctimers;
  * Public Function Prototypes
  ****************************************************************************/
 
-void weak_function timer_initialize(void);
-void weak_function timer_deleteall(pid_t pid);
+void timer_initialize(void);
+void timer_deleteall(pid_t pid);
 int timer_release(FAR struct posix_timer_s *timer);
 
 #endif /* __SCHED_TIMER_TIMER_H */

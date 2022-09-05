@@ -32,7 +32,6 @@
 #include <arch/board/board.h>
 #include <arch/irq.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
 #include "nvic.h"
 
@@ -89,9 +88,7 @@
  * NOTE:  ARM EABI requires 64 bit stack alignment.
  */
 
-#define IDLE_STACKSIZE (CONFIG_IDLETHREAD_STACKSIZE & ~7)
-#define IDLE_STACK     ((uintptr_t)&_ebss + IDLE_STACKSIZE)
-#define HEAP_BASE      ((uintptr_t)&_ebss + IDLE_STACKSIZE)
+#define HEAP_BASE      ((uintptr_t)&_ebss + CONFIG_IDLETHREAD_STACKSIZE)
 
 /****************************************************************************
  * Name: showprogress
@@ -126,93 +123,6 @@ const uintptr_t g_idle_topstack = HEAP_BASE;
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
-
-/****************************************************************************
- * Name: s32k1xx_fpu_config
- *
- * Description:
- *   Configure the FPU.  Relative bit settings:
- *
- *     CPACR:  Enables access to CP10 and CP11
- *     CONTROL.FPCA: Determines whether the FP extension is active in the
- *       current context:
- *     FPCCR.ASPEN:  Enables automatic FP state preservation, then the
- *       processor sets this bit to 1 on successful completion of any FP
- *       instruction.
- *     FPCCR.LSPEN:  Enables lazy context save of FP state. When this is
- *       done, the processor reserves space on the stack for the FP state,
- *       but does not save that state information to the stack.
- *
- *  Software must not change the value of the ASPEN bit or LSPEN bit while
- *  either:
- *   - the CPACR permits access to CP10 and CP11, that give access to the FP
- *     extension, or
- *   - the CONTROL.FPCA bit is set to 1
- *
- ****************************************************************************/
-
-#ifdef CONFIG_ARCH_FPU
-#ifndef CONFIG_ARMV7M_LAZYFPU
-static inline void s32k1xx_fpu_config(void)
-{
-  uint32_t regval;
-
-  /* Set CONTROL.FPCA so that we always get the extended context frame
-   * with the volatile FP registers stacked above the basic context.
-   */
-
-  regval = getcontrol();
-  regval |= (1 << 2);
-  setcontrol(regval);
-
-  /* Ensure that FPCCR.LSPEN is disabled, so that we don't have to contend
-   * with the lazy FP context save behavior.  Clear FPCCR.ASPEN since we
-   * are going to turn on CONTROL.FPCA for all contexts.
-   */
-
-  regval = getreg32(NVIC_FPCCR);
-  regval &= ~((1 << 31) | (1 << 30));
-  putreg32(regval, NVIC_FPCCR);
-
-  /* Enable full access to CP10 and CP11 */
-
-  regval = getreg32(NVIC_CPACR);
-  regval |= ((3 << (2 * 10)) | (3 << (2 * 11)));
-  putreg32(regval, NVIC_CPACR);
-}
-#else
-static inline void s32k1xx_fpu_config(void)
-{
-  uint32_t regval;
-
-  /* Clear CONTROL.FPCA so that we do not get the extended context frame
-   * with the volatile FP registers stacked in the saved context.
-   */
-
-  regval = getcontrol();
-  regval &= ~(1 << 2);
-  setcontrol(regval);
-
-  /* Ensure that FPCCR.LSPEN is disabled, so that we don't have to contend
-   * with the lazy FP context save behavior.  Clear FPCCR.ASPEN since we
-   * are going to keep CONTROL.FPCA off for all contexts.
-   */
-
-  regval = getreg32(NVIC_FPCCR);
-  regval &= ~((1 << 31) | (1 << 30));
-  putreg32(regval, NVIC_FPCCR);
-
-  /* Enable full access to CP10 and CP11 */
-
-  regval = getreg32(NVIC_CPACR);
-  regval |= ((3 << (2 * 10)) | (3 << (2 * 11)));
-  putreg32(regval, NVIC_CPACR);
-}
-#endif
-
-#else
-#  define s32k1xx_fpu_config()
-#endif
 
 /****************************************************************************
  * Name: s32k1xx_cache_config
@@ -265,7 +175,7 @@ static inline void s32k1xx_mpu_config(void)
  ****************************************************************************/
 
 /****************************************************************************
- * Name: _start
+ * Name: __start
  *
  * Description:
  *   This is the reset entry point.
@@ -342,7 +252,7 @@ void __start(void)
 
   /* Initialize the FPU (if configured) */
 
-  s32k1xx_fpu_config();
+  arm_fpuconfig();
   showprogress('C');
 
 #if defined(CONFIG_ARCH_USE_MPU) && defined(CONFIG_S32K1XX_ENET)

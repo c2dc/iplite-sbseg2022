@@ -29,6 +29,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -44,9 +45,7 @@
 
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "hardware/sam_uart.h"
 #include "sam_config.h"
@@ -421,7 +420,7 @@ struct up_dev_s
  * Private Function Prototypes
  ****************************************************************************/
 
-static int  up_interrupt(int irq, void *context, FAR void *arg);
+static int  up_interrupt(int irq, void *context, void *arg);
 static int  up_setup(struct uart_dev_s *dev);
 static void up_shutdown(struct uart_dev_s *dev);
 static int  up_attach(struct uart_dev_s *dev);
@@ -937,7 +936,7 @@ static void up_disableallints(struct up_dev_s *priv, uint32_t *imr)
  *
  ****************************************************************************/
 
-static int up_interrupt(int irq, void *context, FAR void *arg)
+static int up_interrupt(int irq, void *context, void *arg)
 {
   struct uart_dev_s *dev = (struct uart_dev_s *)arg;
   struct up_dev_s   *priv;
@@ -1073,13 +1072,13 @@ static int up_setup(struct uart_dev_s *dev)
            && priv->usartbase != SAM_UART1_VBASE
 #endif
 #if defined(CONFIG_SAMA5_UART2)
-#  warning REVIST
+#  warning REVISIT
 #endif
 #if defined(CONFIG_SAMA5_UART3)
-#  warning REVIST
+#  warning REVISIT
 #endif
 #if defined(CONFIG_SAMA5_UART4)
-#  warning REVIST
+#  warning REVISIT
 #endif
           )
     {

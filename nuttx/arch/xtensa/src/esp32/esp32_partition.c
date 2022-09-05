@@ -59,11 +59,11 @@
 
 /* Partition offset in SPI Flash */
 
-#define ESP32_PARTITION_OFFSET CONFIG_ESP32_PARTITION_OFFSET
+#define PARTITION_TABLE_OFFSET CONFIG_ESP32_PARTITION_TABLE_OFFSET
 
 /* Partition MTD device mount point */
 
-#define ESP32_PARTITION_MOUNT CONFIG_ESP32_PARTITION_MOUNT
+#define PARTITION_MOUNT_POINT CONFIG_ESP32_PARTITION_MOUNTPT
 
 /****************************************************************************
  * Private Types
@@ -362,7 +362,7 @@ static int ota_set_bootseq(struct mtd_dev_priv *dev, int num)
  *
  ****************************************************************************/
 
-static int esp32_part_erase(FAR struct mtd_dev_s *dev, off_t startblock,
+static int esp32_part_erase(struct mtd_dev_s *dev, off_t startblock,
                             size_t nblocks)
 {
   struct mtd_dev_priv *mtd_priv = (struct mtd_dev_priv *)dev;
@@ -387,8 +387,8 @@ static int esp32_part_erase(FAR struct mtd_dev_s *dev, off_t startblock,
  *
  ****************************************************************************/
 
-static ssize_t esp32_part_read(FAR struct mtd_dev_s *dev, off_t offset,
-                               size_t nbytes, FAR uint8_t *buffer)
+static ssize_t esp32_part_read(struct mtd_dev_s *dev, off_t offset,
+                               size_t nbytes, uint8_t *buffer)
 {
   struct mtd_dev_priv *mtd_priv = (struct mtd_dev_priv *)dev;
 
@@ -412,8 +412,8 @@ static ssize_t esp32_part_read(FAR struct mtd_dev_s *dev, off_t offset,
  *
  ****************************************************************************/
 
-static ssize_t esp32_part_bread(FAR struct mtd_dev_s *dev, off_t startblock,
-                                size_t nblocks, FAR uint8_t *buffer)
+static ssize_t esp32_part_bread(struct mtd_dev_s *dev, off_t startblock,
+                                size_t nblocks, uint8_t *buffer)
 {
   struct mtd_dev_priv *mtd_priv = (struct mtd_dev_priv *)dev;
 
@@ -437,8 +437,8 @@ static ssize_t esp32_part_bread(FAR struct mtd_dev_s *dev, off_t startblock,
  *
  ****************************************************************************/
 
-static ssize_t esp32_part_write(FAR struct mtd_dev_s *dev, off_t offset,
-                                size_t nbytes, FAR const uint8_t *buffer)
+static ssize_t esp32_part_write(struct mtd_dev_s *dev, off_t offset,
+                                size_t nbytes, const uint8_t *buffer)
 {
   struct mtd_dev_priv *mtd_priv = (struct mtd_dev_priv *)dev;
 
@@ -463,8 +463,8 @@ static ssize_t esp32_part_write(FAR struct mtd_dev_s *dev, off_t offset,
  *
  ****************************************************************************/
 
-static ssize_t esp32_part_bwrite(FAR struct mtd_dev_s *dev, off_t startblock,
-                                 size_t nblocks, FAR const uint8_t *buffer)
+static ssize_t esp32_part_bwrite(struct mtd_dev_s *dev, off_t startblock,
+                                 size_t nblocks, const uint8_t *buffer)
 {
   struct mtd_dev_priv *mtd_priv = (struct mtd_dev_priv *)dev;
 
@@ -487,19 +487,13 @@ static ssize_t esp32_part_bwrite(FAR struct mtd_dev_s *dev, off_t startblock,
  *
  ****************************************************************************/
 
-static int esp32_part_ioctl(FAR struct mtd_dev_s *dev, int cmd,
+static int esp32_part_ioctl(struct mtd_dev_s *dev, int cmd,
                             unsigned long arg)
 {
   int ret;
   struct mtd_dev_priv *mtd_priv = (struct mtd_dev_priv *)dev;
 
   finfo("INFO: cmd=%d(%x) arg=%x\n", cmd, cmd, arg);
-
-  if (!_MTDIOCVALID(cmd))
-    {
-      finfo("INFO: cmd=%d(%x) is error\n", cmd, cmd);
-      return -ENOTTY;
-    }
 
   switch (_IOC_NR(cmd))
     {
@@ -566,7 +560,7 @@ int esp32_partition_init(void)
   struct mtd_dev_priv *mtd_priv;
   int ret = 0;
   const int num = PARTITION_MAX_SIZE / sizeof(struct partition_info_priv);
-  const char path_base[] = ESP32_PARTITION_MOUNT;
+  const char path_base[] = PARTITION_MOUNT_POINT;
   char label[PARTITION_LABEL_LEN + 1];
   char path[PARTITION_LABEL_LEN + sizeof(path_base)];
 
@@ -594,8 +588,7 @@ int esp32_partition_init(void)
       goto errout_with_mtd;
     }
 
-  ret = MTD_READ(mtd, ESP32_PARTITION_OFFSET,
-                 PARTITION_MAX_SIZE, pbuf);
+  ret = MTD_READ(mtd, PARTITION_TABLE_OFFSET, PARTITION_MAX_SIZE, pbuf);
   if (ret != PARTITION_MAX_SIZE)
     {
       ferr("ERROR: Failed to get read data from MTD\n");
@@ -611,8 +604,7 @@ int esp32_partition_init(void)
           break;
         }
 
-      strncpy(label, (char *)info->label, PARTITION_LABEL_LEN);
-      label[PARTITION_LABEL_LEN] = 0;
+      strlcpy(label, (char *)info->label, sizeof(label));
       sprintf(path, "%s%s", path_base, label);
 
       finfo("INFO: [label]:   %s\n", label);
@@ -657,7 +649,7 @@ int esp32_partition_init(void)
       ret = register_mtddriver(path, mtd_part, 0777, NULL);
       if (ret < 0)
         {
-          ferr("ERROR: Failed to regitser MTD @ %s\n", path);
+          ferr("ERROR: Failed to register MTD @ %s\n", path);
           kmm_free(mtd_priv);
           ret = -1;
           goto errout_with_mtd;

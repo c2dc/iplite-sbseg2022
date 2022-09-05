@@ -40,6 +40,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -52,7 +53,7 @@
 
 #include <nuttx/irq.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "kinetis.h"
 #include "kinetis_usbotg.h"
 #include "hardware/kinetis_sim.h"
@@ -579,7 +580,7 @@ static void   khci_ep0outcomplete(struct khci_usbdev_s *priv);
 static void   khci_ep0incomplete(struct khci_usbdev_s *priv);
 static void   khci_ep0transfer(struct khci_usbdev_s *priv,
                 uint16_t ustat);
-static int    khci_interrupt(int irq, void *context, FAR void *arg);
+static int    khci_interrupt(int irq, void *context, void *arg);
 
 /* Endpoint helpers *********************************************************/
 
@@ -673,7 +674,7 @@ static const struct usbdev_ops_s g_devops =
  */
 
 static volatile struct usbotg_bdtentry_s g_bdt[4*KHCI_NENDPOINTS]
-  __attribute__ ((aligned(512)));
+  aligned_data(512);
 
 /****************************************************************************
  * Private Private Functions
@@ -2875,7 +2876,7 @@ static void khci_ep0transfer(struct khci_usbdev_s *priv, uint16_t ustat)
  * Name: khci_interrupt
  ****************************************************************************/
 
-static int khci_interrupt(int irq, void *context, FAR void *arg)
+static int khci_interrupt(int irq, void *context, void *arg)
 {
   uint16_t usbir;
   uint32_t regval;
@@ -4411,7 +4412,7 @@ static void khci_hwinitialize(struct khci_usbdev_s *priv)
   khci_putreg((uint8_t)(((uint32_t)g_bdt >> 8) & USB_BDTPAGE1_MASK),
       KINETIS_USB0_BDTPAGE1);
 
-  uinfo("BDT Address %p \n", (const void *)&g_bdt);
+  uinfo("BDT Address %p\n", (const void *)&g_bdt);
   uinfo("BDTPAGE3 %hhx\n", khci_getreg(KINETIS_USB0_BDTPAGE3));
   uinfo("BDTPAGE2 %hhx\n", khci_getreg(KINETIS_USB0_BDTPAGE2));
   uinfo("BDTPAGE1 %hhx\n", khci_getreg(KINETIS_USB0_BDTPAGE1));

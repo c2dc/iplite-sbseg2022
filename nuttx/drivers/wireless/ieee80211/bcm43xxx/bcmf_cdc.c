@@ -1,35 +1,20 @@
 /****************************************************************************
  * drivers/wireless/ieee80211/bcm43xxx/bcmf_cdc.c
  *
- *   Copyright (C) 2017 Gregory Nutt. All rights reserved.
- *   Author: Simon Piriou <spiriou31@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -63,19 +48,19 @@
 #define BCMF_CONTROL_INTERFACE_SHIFT 12
 #define BCMF_CONTROL_REQID_SHIFT     16
 
-#define BCMF_CONTROL_TIMEOUT_MS 1000
+#define BCMF_CONTROL_TIMEOUT_MS 10000
 
 /****************************************************************************
  * Private Types
  ****************************************************************************/
 
-struct __attribute__((packed)) bcmf_cdc_header
+begin_packed_struct struct bcmf_cdc_header
 {
   uint32_t cmd;    /* Command to be sent */
   uint32_t len;    /* Size of command data */
   uint32_t flags;  /* cdc request flags, see above */
   uint32_t status; /* Returned status code from chip */
-};
+} end_packed_struct;
 
 /****************************************************************************
  * Private Function Prototypes
@@ -181,7 +166,7 @@ int bcmf_cdc_control_request(FAR struct bcmf_dev_s *priv,
 
   /* Take device control mutex */
 
-  if ((ret = nxsem_wait(&priv->control_mutex)) < 0)
+  if ((ret = nxsem_wait_uninterruptible(&priv->control_mutex)) < 0)
     {
       return ret;
     }
@@ -213,6 +198,29 @@ int bcmf_cdc_control_request_unsafe(FAR struct bcmf_dev_s *priv,
       return -ENOMEM;
     }
 
+#ifdef CONFIG_DEBUG_WIRELESS_INFO
+  if (cmd == WLC_SET_VAR  ||  cmd == WLC_GET_VAR)
+    {
+      wlinfo(">>> Sending control %d %d 0x%08lX [%d] %s %s \n",
+             ifidx,
+             set,
+             cmd,
+             out_len,
+             set ? "set" : "get",
+             name);
+    }
+  else
+    {
+      wlinfo(">>> Sending control %d %d 0x%08lX [%d] %s cmd: %d\n",
+             ifidx,
+             set,
+             cmd,
+             out_len,
+             set ? "set" : "get",
+             cmd);
+    }
+#endif
+
   /* Setup buffer to store response */
 
   priv->control_rxdata = set ? NULL : data;
@@ -225,6 +233,7 @@ int bcmf_cdc_control_request_unsafe(FAR struct bcmf_dev_s *priv,
     {
       /* Free allocated iovar buffer */
 
+      wlerr("cdc send frame failed: %d\n", ret);
       priv->bus->free_frame(priv, frame);
       return ret;
     }
@@ -277,6 +286,10 @@ int bcmf_cdc_ioctl(FAR struct bcmf_dev_s *priv,
 {
   return bcmf_cdc_control_request(priv, ifidx, set, cmd, NULL, data, len);
 }
+
+/****************************************************************************
+ * Name: bcmf_cdc_process_control_frame
+ ****************************************************************************/
 
 int bcmf_cdc_process_control_frame(FAR struct bcmf_dev_s *priv,
                    struct bcmf_frame_s *frame)

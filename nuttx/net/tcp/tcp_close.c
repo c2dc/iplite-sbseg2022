@@ -40,33 +40,35 @@
 #include "socket/socket.h"
 
 /****************************************************************************
- * Private Types
- ****************************************************************************/
-
-struct tcp_close_s
-{
-  FAR struct devif_callback_s *cl_cb;     /* Reference to TCP callback instance */
-  FAR struct socket           *cl_psock;  /* Reference to the TCP socket */
-  sem_t                        cl_sem;    /* Signals disconnect completion */
-  int                          cl_result; /* The result of the close */
-};
-
-/****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: tcp_close_work
+ ****************************************************************************/
+
+static void tcp_close_work(FAR void *param)
+{
+  FAR struct tcp_conn_s *conn = (FAR struct tcp_conn_s *)param;
+
+  net_lock();
+
+  /* Stop the network monitor for all sockets */
+
+  tcp_stop_monitor(conn, TCP_CLOSE);
+  tcp_free(conn);
+
+  net_unlock();
+}
 
 /****************************************************************************
  * Name: tcp_close_eventhandler
  ****************************************************************************/
 
 static uint16_t tcp_close_eventhandler(FAR struct net_driver_s *dev,
-                                       FAR void *pvconn, FAR void *pvpriv,
-                                       uint16_t flags)
+                                       FAR void *pvpriv, uint16_t flags)
 {
-  FAR struct tcp_close_s *pstate = (FAR struct tcp_close_s *)pvpriv;
-  FAR struct tcp_conn_s *conn = (FAR struct tcp_conn_s *)pvconn;
-
-  DEBUGASSERT(pstate != NULL);
+  FAR struct tcp_conn_s *conn = pvpriv;
 
   ninfo("flags: %04x\n", flags);
 
@@ -106,22 +108,19 @@ static uint16_t tcp_close_eventhandler(FAR struct net_driver_s *dev,
        *   NETWORK_DOWN event is processed further.
        */
 
-      if ((flags & NETDEV_DOWN) != 0)
-        {
-          pstate->cl_result = -ENODEV;
-        }
-      else
-        {
-          pstate->cl_result = OK;
-        }
-
       goto end_wait;
     }
 
-#ifdef CONFIG_NET_TCP_WRITE_BUFFERS
-  /* Check if all outstanding bytes have been ACKed */
+  /* Check if all outstanding bytes have been ACKed.
+   *
+   * Note: in case of passive close, this ensures our FIN is acked.
+   */
 
-  else if (conn->tx_unacked != 0 || !sq_empty(&conn->write_q))
+  else if (conn->tx_unacked != 0
+#ifdef CONFIG_NET_TCP_WRITE_BUFFERS
+           || !sq_empty(&conn->write_q)
+#endif /* CONFIG_NET_TCP_WRITE_BUFFERS */
+          )
     {
       /* No... we are still waiting for ACKs.  Drop any received data, but
        * do not yet report TCP_CLOSE in the response.
@@ -129,15 +128,44 @@ static uint16_t tcp_close_eventhandler(FAR struct net_driver_s *dev,
 
       dev->d_len = 0;
       flags &= ~TCP_NEWDATA;
+      ninfo("waiting for ack\n");
     }
-
-#endif /* CONFIG_NET_TCP_WRITE_BUFFERS */
-
   else
     {
+      /* Note: the following state shouldn't reach here because
+       *
+       * FIN_WAIT_1, CLOSING, LAST_ACK
+       *   should have tx_unacked != 0, already handled above
+       *
+       * CLOSED, TIME_WAIT
+       *   a TCP_CLOSE callback should have already cleared this callback
+       *   when transitioning to these states.
+       *
+       * FIN_WAIT_2
+       *   new data is dropped by tcp_input without invoking tcp_callback.
+       *   timer is handled by tcp_timer without invoking tcp_callback.
+       *   TCP_CLOSE is handled above.
+       */
+
+      DEBUGASSERT(conn->tcpstateflags == TCP_ESTABLISHED);
+
       /* Drop data received in this state and make sure that TCP_CLOSE
        * is set in the response
        */
+
+#ifdef CONFIG_NET_TCP_WRITE_BUFFERS
+      /* We don't need the send callback anymore. */
+
+      if (conn->sndcb != NULL)
+        {
+          conn->sndcb->flags = 0;
+          conn->sndcb->event = NULL;
+
+          /* The callback will be freed by tcp_free. */
+
+          conn->sndcb = NULL;
+        }
+#endif
 
       dev->d_len = 0;
       flags = (flags & ~TCP_NEWDATA) | TCP_CLOSE;
@@ -147,12 +175,12 @@ static uint16_t tcp_close_eventhandler(FAR struct net_driver_s *dev,
   return flags;
 
 end_wait:
-  pstate->cl_cb->flags = 0;
-  pstate->cl_cb->priv  = NULL;
-  pstate->cl_cb->event = NULL;
-  nxsem_post(&pstate->cl_sem);
+  tcp_callback_free(conn, conn->clscb);
 
-  ninfo("Resuming\n");
+  /* Free network resources */
+
+  work_queue(LPWORK, &conn->work, tcp_close_work, conn, 0);
+
   return flags;
 }
 
@@ -222,7 +250,6 @@ static inline void tcp_close_txnotify(FAR struct socket *psock,
 
 static inline int tcp_close_disconnect(FAR struct socket *psock)
 {
-  struct tcp_close_s state;
   FAR struct tcp_conn_s *conn;
   int ret = OK;
 
@@ -246,11 +273,11 @@ static inline int tcp_close_disconnect(FAR struct socket *psock)
    *   state of the option and linger interval.
    */
 
-  if (_SO_GETOPT(psock->s_options, SO_LINGER))
+  if (_SO_GETOPT(conn->sconn.s_options, SO_LINGER))
     {
       /* Wait until for the buffered TX data to be sent. */
 
-      ret = tcp_txdrain(psock, _SO_TIMEOUT(psock->s_linger));
+      ret = tcp_txdrain(psock, _SO_TIMEOUT(conn->sconn.s_linger));
       if (ret < 0)
         {
           /* tcp_txdrain may fail, but that won't stop us from closing
@@ -262,83 +289,44 @@ static inline int tcp_close_disconnect(FAR struct socket *psock)
     }
 #endif
 
-#ifdef CONFIG_NET_TCP_WRITE_BUFFERS
-  /* If we have a semi-permanent write buffer callback in place, then
-   * is needs to be be nullified.
+  /* Discard our reference to the connection */
+
+  conn->crefs = 0;
+
+  /* TCP_ESTABLISHED
+   *   We need to initiate an active close and wait for its completion.
    *
-   * Commit f1ef2c6cdeb032eaa1833cc534a63b50c5058270:
-   * "When a socket is closed, it should make sure that any pending write
-   *  data is sent before the FIN is sent.  It already would wait for all
-   *  sent data to be acked, however it would discard any pending write
-   *  data that had not been sent at least once.
-   *
-   * "This change adds a check for pending write data in addition to unacked
-   *  data.  However, to be able to actually send any new data, the send
-   *  callback must be left.  The callback should be freed later when the
-   *  socket is actually destroyed."
-   *
-   * REVISIT:  Where and how exactly is s_sndcb ever freed?  Is there a
-   * memory leak here?
+   * TCP_LAST_ACK
+   *   We still need to wait for the ACK for our FIN, possibly
+   *   retransmitting the FIN, before disposing the connection.
    */
 
-  psock->s_sndcb = NULL;
-#endif
-
-  /* Check for the case where the host beat us and disconnected first */
-
-  if (conn->tcpstateflags == TCP_ESTABLISHED &&
-      (state.cl_cb = tcp_callback_alloc(conn)) != NULL)
+  if ((conn->tcpstateflags == TCP_ESTABLISHED ||
+       conn->tcpstateflags == TCP_LAST_ACK) &&
+      (conn->clscb = tcp_callback_alloc(conn)) != NULL)
     {
       /* Set up to receive TCP data event callbacks */
 
-      state.cl_cb->flags = (TCP_NEWDATA | TCP_POLL | TCP_DISCONN_EVENTS);
-      state.cl_cb->event = tcp_close_eventhandler;
-
-      /* A non-NULL value of the priv field means that lingering is
-       * enabled.
-       */
-
-      state.cl_cb->priv  = (FAR void *)&state;
-
-      /* Set up for the lingering wait */
-
-      state.cl_psock     = psock;
-      state.cl_result    = -EBUSY;
-
-      /* This semaphore is used for signaling and, hence, should not have
-       * priority inheritance enabled.
-       */
-
-      nxsem_init(&state.cl_sem, 0, 0);
-      nxsem_set_protocol(&state.cl_sem, SEM_PRIO_NONE);
+      conn->clscb->flags = TCP_NEWDATA | TCP_POLL | TCP_DISCONN_EVENTS;
+      conn->clscb->event = tcp_close_eventhandler;
+      conn->clscb->priv  = conn; /* reference for event handler to free cb */
 
       /* Notify the device driver of the availability of TX data */
 
       tcp_close_txnotify(psock, conn);
+    }
+  else
+    {
+      /* Stop the network monitor for all sockets */
 
-      /* Wait for the disconnect event */
+      tcp_stop_monitor(conn, TCP_CLOSE);
 
-      net_lockedwait(&state.cl_sem);
+      /* Free network resources */
 
-      /* We are now disconnected */
-
-      nxsem_destroy(&state.cl_sem);
-      tcp_callback_free(conn, state.cl_cb);
-
-      /* Free the connection
-       * No more references on the connection
-       */
-
-      conn->crefs = 0;
-
-      /* Get the result of the close */
-
-      ret = state.cl_result;
+      tcp_free(conn);
     }
 
-  /* Free network resources */
-
-  tcp_free(conn);
+  psock->s_conn = NULL;
 
   net_unlock();
   return ret;
@@ -365,30 +353,14 @@ static inline int tcp_close_disconnect(FAR struct socket *psock)
 int tcp_close(FAR struct socket *psock)
 {
   FAR struct tcp_conn_s *conn = psock->s_conn;
-  int ret;
 
   /* Perform the disconnection now */
 
   tcp_unlisten(conn); /* No longer accepting connections */
-  conn->crefs = 0;    /* Discard our reference to the connection */
 
   /* Break any current connections and close the socket */
 
-  ret = tcp_close_disconnect(psock);
-  if (ret < 0)
-    {
-      /* This would normally occur only if there is a timeout
-       * from a lingering close.
-       */
-
-      nerr("ERROR: tcp_close_disconnect failed: %d\n", ret);
-      return ret;
-    }
-
-  /* Stop the network monitor for all sockets */
-
-  tcp_stop_monitor(conn, TCP_CLOSE);
-  return OK;
+  return tcp_close_disconnect(psock);
 }
 
 #endif /* CONFIG_NET_TCP */

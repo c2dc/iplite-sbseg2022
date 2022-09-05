@@ -40,10 +40,11 @@
 
 #include <arch/irq.h>
 #include <arch/chip/core-isa.h>
+#include <arch/xtensa/xtensa_abi.h>
 #include <arch/xtensa/xtensa_specregs.h>
 
+#include "xtensa_macros.S"
 #include "xtensa.h"
-#include "xtensa_abi.h"
 
 /****************************************************************************
  * Public Functions
@@ -109,13 +110,13 @@ _xtensa_level3_vector:
 
 _xtensa_level4_vector:
 	wsr			a0, EXCSAVE_4			/* Preserve a0 */
-	call0		_xtensa_level4_handler	/* Call level 5 interrupt handling */
+	call0		_xtensa_level4_handler	/* Call level 4 interrupt handling */
 
 	/* Never returns here - call0 is used as a jump */
 
 	.end		literal_prefix
 
-	.size	_xtensa_level5_vector, . - _xtensa_level5_vector
+	.size	_xtensa_level4_vector, . - _xtensa_level4_vector
 #endif
 
 #if XCHAL_EXCM_LEVEL >= 5
@@ -182,39 +183,16 @@ _xtensa_level6_vector:
 	.begin		literal_prefix .nmi_vector
 	.section	.nmi_vector.text, "ax"
 	.global		_xtensa_nmi_vector
+	.global		_xtensa_nmi_handler
 	.type		_xtensa_nmi_vector, @function
 	.align		4
 
 _xtensa_nmi_vector:
+	wsr 	a0, EXCSAVE + XCHAL_NMILEVEL	/* Preserve a0 */
+	call0	_xtensa_nmi_handler
 
-#if 1
-	/* For now, just panic */
-
-	wsr		a0, EXCSAVE + XCHAL_NMILEVEL	/* Preserve a0 */
-
-	mov		a0, sp							/* sp == a1 */
-	addi	sp, sp, -(4 * XCPTCONTEXT_SIZE)	/* Allocate interrupt stack frame */
-	s32i	a0, sp, (4 * REG_A1)			/* Save pre-interrupt SP */
-	rsr		a0, EPS + XCHAL_NMILEVEL		/* Save interruptee's PS */
-	s32i	a0, sp, (4 * REG_PS)
-	rsr		a0, EPC_2						/* Save interruptee's PC */
-	s32i	a0, sp, (4 * REG_PC)
-	rsr		a0, EXCSAVE + XCHAL_NMILEVEL	/* Save interruptee's a0 */
-	s32i	a0, sp, (4 * REG_A0)
-
-	s32i	a2, sp, (4 * REG_A2)
-	movi	a2, XTENSA_NMI_EXCEPTION		/* Argument 1: Error code */
-	call0	_xtensa_panic					/* Does not return */
-
-#else
-	/* Add high priority non-maskable interrupt (NMI) handler code here. */
-
-	rfi		XCHAL_NMILEVEL
-
-#endif
-
-	.size		_xtensa_nmi_vector, . - _xtensa_nmi_vector
-	.end		literal_prefix
+	.size	_xtensa_nmi_vector, . - _xtensa_nmi_vector
+	.end	literal_prefix
 
 #endif /* XCHAL_HAVE_NMI */
 
@@ -230,24 +208,15 @@ _xtensa_nmi_vector:
 	.begin		literal_prefix .debug_exception_vector
 	.section	.debug_exception_vector.text, "ax"
 	.global		_debug_exception_vector
+	.global		_xtensa_debug_handler
+	.type		_debug_exception_vector, @function
 	.align		4
 
 _debug_exception_vector:
+	wsr 	a0, EXCSAVE + XCHAL_DEBUGLEVEL	/* Preserve a0 */
+	call0	_xtensa_debug_handler
 
-	mov		a0, sp							/* sp == a1 */
-	addi	sp, sp, -(4 * XCPTCONTEXT_SIZE)	/* Allocate interrupt stack frame */
-	s32i	a0, sp, (4 * REG_A1)			/* Save pre-interrupt SP */
-	rsr		a0, EPS + XCHAL_DEBUGLEVEL		/* Save interruptee's PS */
-	s32i	a0, sp, (4 * REG_PS)
-	rsr		a0, EPC + XCHAL_DEBUGLEVEL		/* Save interruptee's PC */
-	s32i	a0, sp, (4 * REG_PC)
-	rsr		a0, EXCSAVE + XCHAL_DEBUGLEVEL	/* Save interruptee's a0 */
-	s32i	a0, sp, (4 * REG_A0)
-
-	s32i	a2, sp, (4 * REG_A2)
-	movi	a2, XTENSA_DEBUG_EXCEPTION		/* Argument 1: Error code */
-	call0	_xtensa_panic					/* Does not return */
-
+	.size	_debug_exception_vector, . - _debug_exception_vector
 	.end	literal_prefix
 
 #endif /* XCHAL_HAVE_DEBUG */
@@ -273,14 +242,22 @@ _double_exception_vector:
 	break	1, 4							/* Unhandled double exception */
 #endif
 
+	/* Can't use excetpion_entry because there is no relationship between EPC1
+	 * DEPC and the current level.  This can be handled by a separate ifeq
+	 * block in the macro, however this part is not used, so let's not add
+	 * this special case until we have an application for it.
+	 */
+
+	wsr		a0, EXCSAVE_1		/* Preserve a0 */
+
 	mov		a0, sp							/* sp == a1 */
-	addi	sp, sp, -(4 * XCPTCONTEXT_SIZE)	/* Allocate interrupt stack frame */
+	addi	sp, sp, -XCPTCONTEXT_SIZE	/* Allocate interrupt stack frame */
 	s32i	a0, sp, (4 * REG_A1)			/* Save pre-interrupt SP */
 	rsr		a0, PS							/* Save interruptee's PS -- REVISIT */
 	s32i	a0, sp, (4 * REG_PS)
 	rsr		a0, DEPC						/* Save interruptee's PC */
 	s32i	a0, sp, (4 * REG_PC)
-	rsr		a0, EXCSAVE						/* Save interruptee's a0 -- REVISIT */
+	rsr		a0, EXCSAVE_1				/* Save interruptee's a0 -- REVISIT */
 	s32i	a0, sp, (4 * REG_A0)
 
 	rsr		a0, EXCCAUSE					/* Save the EXCCAUSE register */
@@ -307,6 +284,8 @@ _double_exception_vector:
 	.begin		literal_prefix .kernel_exception_vector
 	.section	.kernel_exception_vector.text, "ax"
 	.global		_kernel_exception_vector
+	.global		_xtensa_kernel_handler
+	.type		_kernel_exception_vector, @function
 	.align		4
 
 _kernel_exception_vector:
@@ -315,20 +294,10 @@ _kernel_exception_vector:
 	break	1, 0							/* Unhandled kernel exception */
 #endif
 
-	mov		a0, sp							/* sp == a1 */
-	addi	sp, sp, -(4 * XCPTCONTEXT_SIZE)	/* Allocate interrupt stack frame */
-	s32i	a0, sp, (4 * REG_A1)			/* Save pre-interrupt SP */
-	rsr		a0, PS							/* Save interruptee's PS */
-	s32i	a0, sp, (4 * REG_PS)
-	rsr		a0, EPC_1						/* Save interruptee's PC */
-	s32i	a0, sp, (4 * REG_PC)
-	rsr		a0, EXCSAVE_1					/* Save interruptee's a0 */
-	s32i	a0, sp, (4 * REG_A0)
+	wsr		a0, EXCSAVE_1					/* Preserve a0 */
+	call0	_xtensa_kernel_handler
 
-	s32i	a2, sp, (4 * REG_A2)
-	movi	a2, XTENSA_KERNEL_EXCEPTION		/* Argument 1: Error code */
-	call0	_xtensa_panic					/* Does not return */
-
+	.size	_kernel_exception_vector, . - _kernel_exception_vector
 	.end	literal_prefix
 
 /****************************************************************************

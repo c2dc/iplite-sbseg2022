@@ -24,17 +24,19 @@
 
 #include <nuttx/config.h>
 
-#ifdef CONFIG_ESP32_WIRELESS
+#ifdef CONFIG_ESP32_WIFI
 
 #include <queue.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
-#include <crc64.h>
 #include <arpa/inet.h>
 
+#include <nuttx/crc64.h>
 #include <nuttx/nuttx.h>
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/wdog.h>
 #include <nuttx/wqueue.h>
 #include <nuttx/net/arp.h>
@@ -46,16 +48,11 @@
 #include "esp32_wlan.h"
 #include "esp32_wifi_utils.h"
 #include "esp32_wifi_adapter.h"
+#include "esp32_systemreset.h"
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
-
-/* TX poll delay = 1 seconds.
- * CLK_TCK is the number of clock ticks per second
- */
-
-#define WLAN_WDDELAY              (1 * CLK_TCK)
 
 /* TX timeout = 1 minute */
 
@@ -127,7 +124,7 @@ struct wlan_ops
   int (*rssi)(struct iwreq *iwr, bool set);
   int (*connect)(void);
   int (*disconnect)(void);
-  int (*event)(pid_t pid, FAR struct sigevent *event);
+  int (*event)(pid_t pid, struct sigevent *event);
   int (*stop)(void);
 };
 
@@ -137,11 +134,10 @@ struct wlan_ops
 
 struct wlan_priv_s
 {
-  bool   ref;                   /* Referernce count */
+  int    ref;                   /* Referernce count */
 
   bool   ifup;                  /* true:ifup false:ifdown */
 
-  struct wdog_s txpoll;         /* TX poll timer */
   struct wdog_s txtimeout;      /* TX timeout timer */
 
   struct work_s rxwork;         /* Send packet work */
@@ -170,11 +166,19 @@ struct wlan_priv_s
   /* Free packet buffer queue */
 
   sq_queue_t    freeb;
+
+  /* Device specific lock */
+
+  spinlock_t    lock;
 };
 
 /****************************************************************************
  * Private Data
  ****************************************************************************/
+
+/* Reference count of register Wi-Fi handler */
+
+static uint8_t g_callback_register_ref = 0;
 
 static struct wlan_priv_s g_wlan_priv[ESP32_WLAN_DEVS];
 
@@ -230,33 +234,30 @@ static const struct wlan_ops g_softap_ops =
 
 /* Common TX logic */
 
-static void wlan_transmit(FAR struct wlan_priv_s *priv);
-static void wlan_rxpoll(FAR void *arg);
-static int  wlan_txpoll(FAR struct net_driver_s *dev);
-static void wlan_dopoll(FAR struct wlan_priv_s *priv);
+static void wlan_transmit(struct wlan_priv_s *priv);
+static void wlan_rxpoll(void *arg);
+static int  wlan_txpoll(struct net_driver_s *dev);
+static void wlan_dopoll(struct wlan_priv_s *priv);
 
 /* Watchdog timer expirations */
 
-static void wlan_txtimeout_work(FAR void *arg);
+static void wlan_txtimeout_work(void *arg);
 static void wlan_txtimeout_expiry(wdparm_t arg);
-
-static void wlan_poll_work(FAR void *arg);
-static void wlan_poll_expiry(wdparm_t arg);
 
 /* NuttX callback functions */
 
 static int wlan_ifup(struct net_driver_s *dev);
 static int wlan_ifdown(struct net_driver_s *dev);
 
-static void wlan_txavail_work(FAR void *arg);
+static void wlan_txavail_work(void *arg);
 static int wlan_txavail(struct net_driver_s *dev);
 
 #if defined(CONFIG_NET_MCASTGROUP) || defined(CONFIG_NET_ICMPv6)
-static int wlan_addmac(struct net_driver_s *dev, FAR const uint8_t *mac);
+static int wlan_addmac(struct net_driver_s *dev, const uint8_t *mac);
 #endif
 
 #ifdef CONFIG_NET_MCASTGROUP
-static int wlan_rmmac(struct net_driver_s *dev, FAR const uint8_t *mac);
+static int wlan_rmmac(struct net_driver_s *dev, const uint8_t *mac);
 #endif
 
 #ifdef CONFIG_NETDEV_IOCTL
@@ -274,7 +275,7 @@ static int wlan_ioctl(struct net_driver_s *dev, int cmd,
  *       * wlan_rx_done
  *       * wlan_tx_done
  *
- *     These functions are called in a WiFi private thread. So we just use
+ *     These functions are called in a Wi-Fi private thread. So we just use
  *     mutex/semaphore instead of disable interrupt, if necessary.
  */
 
@@ -297,7 +298,7 @@ static inline void wlan_init_buffer(struct wlan_priv_s *priv)
   int i;
   irqstate_t flags;
 
-  flags = enter_critical_section();
+  flags = spin_lock_irqsave(&priv->lock);
 
   priv->dev.d_buf = NULL;
   priv->dev.d_len = 0;
@@ -311,7 +312,7 @@ static inline void wlan_init_buffer(struct wlan_priv_s *priv)
       sq_addlast(&priv->pktbuf[i].entry, &priv->freeb);
     }
 
-  leave_critical_section(flags);
+  spin_unlock_irqrestore(&priv->lock, flags);
 }
 
 /****************************************************************************
@@ -334,7 +335,7 @@ static inline struct wlan_pktbuf *wlan_alloc_buffer(struct wlan_priv_s *priv)
   irqstate_t flags;
   struct wlan_pktbuf *pktbuf = NULL;
 
-  flags = enter_critical_section();
+  flags = spin_lock_irqsave(&priv->lock);
 
   entry = sq_remfirst(&priv->freeb);
   if (entry)
@@ -342,7 +343,7 @@ static inline struct wlan_pktbuf *wlan_alloc_buffer(struct wlan_priv_s *priv)
       pktbuf = container_of(entry, struct wlan_pktbuf, entry);
     }
 
-  leave_critical_section(flags);
+  spin_unlock_irqrestore(&priv->lock, flags);
 
   return pktbuf;
 }
@@ -368,12 +369,12 @@ static inline void wlan_free_buffer(struct wlan_priv_s *priv,
   struct wlan_pktbuf *pktbuf;
   irqstate_t flags;
 
-  flags = enter_critical_section();
+  flags = spin_lock_irqsave(&priv->lock);
 
   pktbuf = container_of(buffer, struct wlan_pktbuf, buffer);
   sq_addlast(&pktbuf->entry, &priv->freeb);
 
-  leave_critical_section(flags);
+  spin_unlock_irqrestore(&priv->lock, flags);
 }
 
 /****************************************************************************
@@ -399,9 +400,9 @@ static inline void wlan_cache_txpkt_tail(struct wlan_priv_s *priv)
   pktbuf = container_of(dev->d_buf, struct wlan_pktbuf, buffer);
   pktbuf->len = dev->d_len;
 
-  flags = enter_critical_section();
+  flags = spin_lock_irqsave(&priv->lock);
   sq_addlast(&pktbuf->entry, &priv->txb);
-  leave_critical_section(flags);
+  spin_unlock_irqrestore(&priv->lock, flags);
 
   dev->d_buf = NULL;
   dev->d_len = 0;
@@ -426,9 +427,9 @@ static inline void wlan_add_txpkt_head(struct wlan_priv_s *priv,
 {
   irqstate_t flags;
 
-  flags = enter_critical_section();
+  flags = spin_lock_irqsave(&priv->lock);
   sq_addfirst(&pktbuf->entry, &priv->txb);
-  leave_critical_section(flags);
+  spin_unlock_irqrestore(&priv->lock, flags);
 }
 
 /****************************************************************************
@@ -445,13 +446,13 @@ static inline void wlan_add_txpkt_head(struct wlan_priv_s *priv,
  *
  ****************************************************************************/
 
-static struct wlan_pktbuf *wlan_recvframe(FAR struct wlan_priv_s *priv)
+static struct wlan_pktbuf *wlan_recvframe(struct wlan_priv_s *priv)
 {
   irqstate_t flags;
   sq_entry_t *entry;
   struct wlan_pktbuf *pktbuf = NULL;
 
-  flags = enter_critical_section();
+  flags = spin_lock_irqsave(&priv->lock);
 
   entry = sq_remfirst(&priv->rxb);
   if (entry)
@@ -459,7 +460,7 @@ static struct wlan_pktbuf *wlan_recvframe(FAR struct wlan_priv_s *priv)
       pktbuf = container_of(entry, struct wlan_pktbuf, entry);
     }
 
-  leave_critical_section(flags);
+  spin_unlock_irqrestore(&priv->lock, flags);
 
   return pktbuf;
 }
@@ -478,13 +479,13 @@ static struct wlan_pktbuf *wlan_recvframe(FAR struct wlan_priv_s *priv)
  *
  ****************************************************************************/
 
-static struct wlan_pktbuf *wlan_txframe(FAR struct wlan_priv_s *priv)
+static struct wlan_pktbuf *wlan_txframe(struct wlan_priv_s *priv)
 {
   irqstate_t flags;
   sq_entry_t *entry;
   struct wlan_pktbuf *pktbuf = NULL;
 
-  flags = enter_critical_section();
+  flags = spin_lock_irqsave(&priv->lock);
 
   entry = sq_remfirst(&priv->txb);
   if (entry)
@@ -492,7 +493,7 @@ static struct wlan_pktbuf *wlan_txframe(FAR struct wlan_priv_s *priv)
       pktbuf = container_of(entry, struct wlan_pktbuf, entry);
     }
 
-  leave_critical_section(flags);
+  spin_unlock_irqrestore(&priv->lock, flags);
 
   return pktbuf;
 }
@@ -501,7 +502,7 @@ static struct wlan_pktbuf *wlan_txframe(FAR struct wlan_priv_s *priv)
  * Name: wlan_transmit
  *
  * Description:
- *   Try to send all TX packets in TX ready queue to WiFi driver. If this
+ *   Try to send all TX packets in TX ready queue to Wi-Fi driver. If this
  *    sending fails, then breaks loop and returns.
  *
  * Input Parameters:
@@ -512,7 +513,7 @@ static struct wlan_pktbuf *wlan_txframe(FAR struct wlan_priv_s *priv)
  *
  ****************************************************************************/
 
-static void wlan_transmit(FAR struct wlan_priv_s *priv)
+static void wlan_transmit(struct wlan_priv_s *priv)
 {
   struct wlan_pktbuf *pktbuf;
   int ret;
@@ -520,7 +521,7 @@ static void wlan_transmit(FAR struct wlan_priv_s *priv)
   while ((pktbuf = wlan_txframe(priv)))
     {
       ret = priv->ops->send(pktbuf->buffer, pktbuf->len);
-      if (ret < 0)
+      if (ret == -ENOMEM)
         {
           wlan_add_txpkt_head(priv, pktbuf);
           wd_start(&priv->txtimeout, WLAN_TXTOUT,
@@ -529,6 +530,11 @@ static void wlan_transmit(FAR struct wlan_priv_s *priv)
         }
       else
         {
+          if (ret < 0)
+            {
+              nwarn("WARN: Failed to send pkt, ret: %d\n", ret);
+            }
+
           wlan_free_buffer(priv, pktbuf->buffer);
         }
     }
@@ -538,7 +544,7 @@ static void wlan_transmit(FAR struct wlan_priv_s *priv)
  * Name: wlan_tx_done
  *
  * Description:
- *   WiFi TX done callback function. If this is called, it means sending
+ *   Wi-Fi TX done callback function. If this is called, it means sending
  *   next packet.
  *
  * Input Parameters:
@@ -549,7 +555,7 @@ static void wlan_transmit(FAR struct wlan_priv_s *priv)
  *
  ****************************************************************************/
 
-static void wlan_tx_done(FAR struct wlan_priv_s *priv)
+static void wlan_tx_done(struct wlan_priv_s *priv)
 {
   wd_cancel(&priv->txtimeout);
 
@@ -560,21 +566,21 @@ static void wlan_tx_done(FAR struct wlan_priv_s *priv)
  * Function: wlan_rx_done
  *
  * Description:
- *   WiFi RX done callback function. If this is called, it means receiving
+ *   Wi-Fi RX done callback function. If this is called, it means receiving
  *   packet.
  *
  * Input Parameters:
  *   priv   - Reference to the driver state structure
- *   buffer - WiFi received packet buffer
+ *   buffer - Wi-Fi received packet buffer
  *   len    - Length of received packet
- *   eb     - WiFi receive callback input eb pointer
+ *   eb     - Wi-Fi receive callback input eb pointer
  *
  * Returned Value:
  *   0 on success or a negated errno on failure
  *
  ****************************************************************************/
 
-static int wlan_rx_done(FAR struct wlan_priv_s *priv, void *buffer,
+static int wlan_rx_done(struct wlan_priv_s *priv, void *buffer,
                         uint16_t len, void *eb)
 {
   struct wlan_pktbuf *pktbuf;
@@ -609,9 +615,9 @@ static int wlan_rx_done(FAR struct wlan_priv_s *priv, void *buffer,
       esp_wifi_free_eb(eb);
     }
 
-  flags = enter_critical_section();
+  flags = spin_lock_irqsave(&priv->lock);
   sq_addlast(&pktbuf->entry, &priv->rxb);
-  leave_critical_section(flags);
+  spin_unlock_irqrestore(&priv->lock, flags);
 
   if (work_available(&priv->rxwork))
     {
@@ -644,12 +650,12 @@ out:
  *
  ****************************************************************************/
 
-static void wlan_rxpoll(FAR void *arg)
+static void wlan_rxpoll(void *arg)
 {
   struct wlan_pktbuf *pktbuf;
   struct eth_hdr_s *eth_hdr;
-  FAR struct wlan_priv_s *priv = (FAR struct wlan_priv_s *)arg;
-  FAR struct net_driver_s *dev = &priv->dev;
+  struct wlan_priv_s *priv = (struct wlan_priv_s *)arg;
+  struct net_driver_s *dev = &priv->dev;
 #ifdef WLAN_RX_THRESHOLD
   uint32_t rbytes = 0;
 #endif
@@ -786,7 +792,7 @@ static void wlan_rxpoll(FAR void *arg)
       else
 #endif
 #ifdef CONFIG_NET_ARP
-      if (eth_hdr->type == htons(ETHTYPE_ARP))
+      if (eth_hdr->type == HTONS(ETHTYPE_ARP))
         {
           ninfo("ARP frame\n");
 
@@ -867,10 +873,10 @@ static void wlan_rxpoll(FAR void *arg)
  *
  ****************************************************************************/
 
-static int wlan_txpoll(FAR struct net_driver_s *dev)
+static int wlan_txpoll(struct net_driver_s *dev)
 {
   struct wlan_pktbuf *pktbuf;
-  FAR struct wlan_priv_s *priv = (FAR struct wlan_priv_s *)dev->d_private;
+  struct wlan_priv_s *priv = (struct wlan_priv_s *)dev->d_private;
 
   DEBUGASSERT(dev->d_buf != NULL);
 
@@ -940,9 +946,9 @@ static int wlan_txpoll(FAR struct net_driver_s *dev)
  *
  ****************************************************************************/
 
-static void wlan_dopoll(FAR struct wlan_priv_s *priv)
+static void wlan_dopoll(struct wlan_priv_s *priv)
 {
-  FAR struct net_driver_s *dev = &priv->dev;
+  struct net_driver_s *dev = &priv->dev;
   struct wlan_pktbuf *pktbuf;
   uint8_t *txbuf;
   int ret;
@@ -1042,101 +1048,6 @@ static void wlan_txtimeout_expiry(wdparm_t arg)
 }
 
 /****************************************************************************
- * Name: wlan_poll_work
- *
- * Description:
- *   Perform periodic polling from the worker thread
- *
- * Input Parameters:
- *   arg - The argument passed when work_queue() as called.
- *
- * Returned Value:
- *   OK on success
- *
- * Assumptions:
- *   The network is locked.
- *
- ****************************************************************************/
-
-static void wlan_poll_work(FAR void *arg)
-{
-  int32_t delay = WLAN_WDDELAY;
-  FAR struct wlan_priv_s *priv = (FAR struct wlan_priv_s *)arg;
-  struct net_driver_s *dev = &priv->dev;
-  struct wlan_pktbuf *pktbuf;
-
-  /* Lock the network and serialize driver operations if necessary.
-   * NOTE: Serialization is only required in the case where the driver work
-   * is performed on an LP worker thread and where more than one LP worker
-   * thread has been configured.
-   */
-
-  net_lock();
-
-  pktbuf = wlan_alloc_buffer(priv);
-  if (!pktbuf)
-    {
-      delay = 1;
-      goto exit;
-    }
-
-  dev->d_buf = pktbuf->buffer;
-  dev->d_len = WLAN_BUF_SIZE;
-
-  /* Check if there is room in the send another TX packets. We cannot perform
-   * the TX poll if he are unable to accept another packet for transmission.
-   *
-   * If there is no room, we should reset the timeout value to be 1 to
-   * trigger the timer as soon as possible.
-   */
-
-  /* Update TCP timing states and poll the network for new XMIT data. */
-
-  devif_timer(&priv->dev, delay, wlan_txpoll);
-
-  if (dev->d_buf)
-    {
-      wlan_free_buffer(priv, dev->d_buf);
-
-      dev->d_buf = NULL;
-      dev->d_len = 0;
-    }
-
-  /* Try to send all cached TX packets */
-
-  wlan_transmit(priv);
-
-exit:
-  wd_start(&priv->txpoll, delay, wlan_poll_expiry, (wdparm_t)priv);
-  net_unlock();
-}
-
-/****************************************************************************
- * Name: wlan_poll_expiry
- *
- * Description:
- *   Periodic timer handler.  Called from the timer callback handler.
- *
- * Input Parameters:
- *   argc - The number of available arguments
- *   arg  - The first argument
- *
- * Returned Value:
- *   None
- *
- ****************************************************************************/
-
-static void wlan_poll_expiry(wdparm_t arg)
-{
-  FAR struct wlan_priv_s *priv = (FAR struct wlan_priv_s *)arg;
-
-  if (priv->ifup)
-    {
-      work_queue(WLAN_WORK, &priv->pollwork, wlan_poll_work, priv, 0);
-    }
-}
-
-/****************************************************************************
  * Name: wlan_txavail_work
  *
  * Description:
@@ -1153,9 +1064,9 @@ static void wlan_poll_expiry(wdparm_t arg)
  *
  ****************************************************************************/
 
-static void wlan_txavail_work(FAR void *arg)
+static void wlan_txavail_work(void *arg)
 {
-  FAR struct wlan_priv_s *priv = (FAR struct wlan_priv_s *)arg;
+  struct wlan_priv_s *priv = (struct wlan_priv_s *)arg;
 
   /* Try to send all cached TX packets even if net is down */
 
@@ -1196,10 +1107,10 @@ static void wlan_txavail_work(FAR void *arg)
  *
  ****************************************************************************/
 
-static int wlan_ifup(FAR struct net_driver_s *dev)
+static int wlan_ifup(struct net_driver_s *dev)
 {
   int ret;
-  FAR struct wlan_priv_s *priv = (FAR struct wlan_priv_s *)dev->d_private;
+  struct wlan_priv_s *priv = (struct wlan_priv_s *)dev->d_private;
 
 #ifdef CONFIG_NET_IPv4
   ninfo("Bringing up: %d.%d.%d.%d\n",
@@ -1225,7 +1136,7 @@ static int wlan_ifup(FAR struct net_driver_s *dev)
   if (ret < 0)
     {
       net_unlock();
-      nerr("ERROR: Failed to start WiFi ret=%d\n", ret);
+      nerr("ERROR: Failed to start Wi-Fi ret=%d\n", ret);
       return ret;
     }
 
@@ -1238,12 +1149,17 @@ static int wlan_ifup(FAR struct net_driver_s *dev)
 
   wlan_init_buffer(priv);
 
-  /* Set and activate a timer process */
-
-  wd_start(&priv->txpoll, WLAN_WDDELAY, wlan_poll_expiry, (wdparm_t)priv);
-
   priv->ifup = true;
+  if (g_callback_register_ref == 0)
+    {
+      ret = esp32_register_shutdown_handler(esp_wifi_stop_callback);
+      if (ret < 0)
+        {
+          nwarn("WARN: Failed to register handler ret=%d\n", ret);
+        }
+    }
 
+  ++g_callback_register_ref;
   net_unlock();
 
   return OK;
@@ -1263,10 +1179,10 @@ static int wlan_ifup(FAR struct net_driver_s *dev)
  *
  ****************************************************************************/
 
-static int wlan_ifdown(FAR struct net_driver_s *dev)
+static int wlan_ifdown(struct net_driver_s *dev)
 {
   int ret;
-  FAR struct wlan_priv_s *priv = (FAR struct wlan_priv_s *)dev->d_private;
+  struct wlan_priv_s *priv = (struct wlan_priv_s *)dev->d_private;
 
   net_lock();
 
@@ -1278,7 +1194,6 @@ static int wlan_ifdown(FAR struct net_driver_s *dev)
 
   /* Cancel the TX poll timer and TX timeout timers */
 
-  wd_cancel(&priv->txpoll);
   wd_cancel(&priv->txtimeout);
 
   /* Mark the device "down" */
@@ -1288,7 +1203,17 @@ static int wlan_ifdown(FAR struct net_driver_s *dev)
   ret = priv->ops->stop();
   if (ret < 0)
     {
-      nerr("ERROR: Failed to stop WiFi ret=%d\n", ret);
+      nerr("ERROR: Failed to stop Wi-Fi ret=%d\n", ret);
+    }
+
+  --g_callback_register_ref;
+  if (g_callback_register_ref == 0)
+    {
+      ret = esp32_unregister_shutdown_handler(esp_wifi_stop_callback);
+      if (ret < 0)
+        {
+          nwarn("WARN: Failed to unregister handler ret=%d\n", ret);
+        }
     }
 
   net_unlock();
@@ -1315,9 +1240,9 @@ static int wlan_ifdown(FAR struct net_driver_s *dev)
  *
  ****************************************************************************/
 
-static int wlan_txavail(FAR struct net_driver_s *dev)
+static int wlan_txavail(struct net_driver_s *dev)
 {
-  FAR struct wlan_priv_s *priv = (FAR struct wlan_priv_s *)dev->d_private;
+  struct wlan_priv_s *priv = (struct wlan_priv_s *)dev->d_private;
 
   if (work_available(&priv->txwork))
     {
@@ -1346,9 +1271,9 @@ static int wlan_txavail(FAR struct net_driver_s *dev)
  ****************************************************************************/
 
 #if defined(CONFIG_NET_MCASTGROUP) || defined(CONFIG_NET_ICMPv6)
-static int wlan_addmac(FAR struct net_driver_s *dev, FAR const uint8_t *mac)
+static int wlan_addmac(struct net_driver_s *dev, const uint8_t *mac)
 {
-  FAR struct wlan_priv_s *priv = (FAR struct wlan_priv_s *)dev->d_private;
+  struct wlan_priv_s *priv = (struct wlan_priv_s *)dev->d_private;
 
   /* Add the MAC address to the hardware multicast routing table */
 
@@ -1373,9 +1298,9 @@ static int wlan_addmac(FAR struct net_driver_s *dev, FAR const uint8_t *mac)
  ****************************************************************************/
 
 #ifdef CONFIG_NET_MCASTGROUP
-static int wlan_rmmac(FAR struct net_driver_s *dev, FAR const uint8_t *mac)
+static int wlan_rmmac(struct net_driver_s *dev, const uint8_t *mac)
 {
-  FAR struct wlan_priv_s *priv = (FAR struct wlan_priv_s *)dev->d_private;
+  struct wlan_priv_s *priv = (struct wlan_priv_s *)dev->d_private;
 
   /* Add the MAC address to the hardware multicast routing table */
 
@@ -1398,9 +1323,9 @@ static int wlan_rmmac(FAR struct net_driver_s *dev, FAR const uint8_t *mac)
  ****************************************************************************/
 
 #ifdef CONFIG_NET_ICMPv6
-static void wlan_ipv6multicast(FAR struct wlan_priv_s *priv)
+static void wlan_ipv6multicast(struct wlan_priv_s *priv)
 {
-  FAR struct net_driver_s *dev;
+  struct net_driver_s *dev;
   uint16_t tmp16;
   uint8_t mac[6];
 
@@ -1470,7 +1395,7 @@ static void wlan_ipv6multicast(FAR struct wlan_priv_s *priv)
  ****************************************************************************/
 
 #ifdef CONFIG_NETDEV_IOCTL
-static int wlan_ioctl(FAR struct net_driver_s *dev,
+static int wlan_ioctl(struct net_driver_s *dev,
                       int cmd,
                       unsigned long arg)
 {
@@ -1658,8 +1583,8 @@ static int esp32_net_initialize(int devno, uint8_t *mac_addr,
                                 const struct wlan_ops *ops)
 {
   int ret;
-  FAR struct wlan_priv_s *priv;
-  FAR struct net_driver_s *netdev;
+  struct wlan_priv_s *priv;
+  struct net_driver_s *netdev;
 
   priv = &g_wlan_priv[devno];
   if (priv->ref)
@@ -1702,7 +1627,7 @@ static int esp32_net_initialize(int devno, uint8_t *mac_addr,
 
   priv->ref++;
 
-  ninfo("INFO: Initialize WiFi adapter No.%d success\n", devno);
+  ninfo("INFO: Initialize Wi-Fi adapter No.%d success\n", devno);
 
   return OK;
 }
@@ -1711,13 +1636,13 @@ static int esp32_net_initialize(int devno, uint8_t *mac_addr,
  * Function: wlan_sta_rx_done
  *
  * Description:
- *   WiFi station RX done callback function. If this is called, it means
+ *   Wi-Fi station RX done callback function. If this is called, it means
  *   station receiveing packet.
  *
  * Input Parameters:
- *   buffer - WiFi received packet buffer
+ *   buffer - Wi-Fi received packet buffer
  *   len    - Length of received packet
- *   eb     - WiFi receive callback input eb pointer
+ *   eb     - Wi-Fi receive callback input eb pointer
  *
  * Returned Value:
  *   0 on success or a negated errno on failure
@@ -1727,7 +1652,7 @@ static int esp32_net_initialize(int devno, uint8_t *mac_addr,
 #ifdef ESP32_WLAN_HAS_STA
 static int wlan_sta_rx_done(void *buffer, uint16_t len, void *eb)
 {
-  FAR struct wlan_priv_s *priv = &g_wlan_priv[ESP32_WLAN_STA_DEVNO];
+  struct wlan_priv_s *priv = &g_wlan_priv[ESP32_WLAN_STA_DEVNO];
 
   return wlan_rx_done(priv, buffer, len, eb);
 }
@@ -1736,7 +1661,7 @@ static int wlan_sta_rx_done(void *buffer, uint16_t len, void *eb)
  * Name: wlan_sta_tx_done
  *
  * Description:
- *   WiFi station TX done callback function. If this is called, it means
+ *   Wi-Fi station TX done callback function. If this is called, it means
  *   station sending next packet.
  *
  * Input Parameters:
@@ -1752,7 +1677,7 @@ static int wlan_sta_rx_done(void *buffer, uint16_t len, void *eb)
 
 static void wlan_sta_tx_done(uint8_t *data, uint16_t *len, bool status)
 {
-  FAR struct wlan_priv_s *priv = &g_wlan_priv[ESP32_WLAN_STA_DEVNO];
+  struct wlan_priv_s *priv = &g_wlan_priv[ESP32_WLAN_STA_DEVNO];
 
   wlan_tx_done(priv);
 }
@@ -1762,13 +1687,13 @@ static void wlan_sta_tx_done(uint8_t *data, uint16_t *len, bool status)
  * Function: wlan_softap_rx_done
  *
  * Description:
- *   WiFi softAP RX done callback function. If this is called, it means
+ *   Wi-Fi softAP RX done callback function. If this is called, it means
  *   softAP receiveing packet.
  *
  * Input Parameters:
- *   buffer - WiFi received packet buffer
+ *   buffer - Wi-Fi received packet buffer
  *   len    - Length of received packet
- *   eb     - WiFi receive callback input eb pointer
+ *   eb     - Wi-Fi receive callback input eb pointer
  *
  * Returned Value:
  *   0 on success or a negated errno on failure
@@ -1778,7 +1703,7 @@ static void wlan_sta_tx_done(uint8_t *data, uint16_t *len, bool status)
 #ifdef ESP32_WLAN_HAS_SOFTAP
 static int wlan_softap_rx_done(void *buffer, uint16_t len, void *eb)
 {
-  FAR struct wlan_priv_s *priv = &g_wlan_priv[ESP32_WLAN_SOFTAP_DEVNO];
+  struct wlan_priv_s *priv = &g_wlan_priv[ESP32_WLAN_SOFTAP_DEVNO];
 
   return wlan_rx_done(priv, buffer, len, eb);
 }
@@ -1787,7 +1712,7 @@ static int wlan_softap_rx_done(void *buffer, uint16_t len, void *eb)
  * Name: wlan_softap_tx_done
  *
  * Description:
- *   WiFi softAP TX done callback function. If this is called, it means
+ *   Wi-Fi softAP TX done callback function. If this is called, it means
  *   softAP sending next packet.
  *
  * Input Parameters:
@@ -1803,7 +1728,7 @@ static int wlan_softap_rx_done(void *buffer, uint16_t len, void *eb)
 
 static void wlan_softap_tx_done(uint8_t *data, uint16_t *len, bool status)
 {
-  FAR struct wlan_priv_s *priv = &g_wlan_priv[ESP32_WLAN_SOFTAP_DEVNO];
+  struct wlan_priv_s *priv = &g_wlan_priv[ESP32_WLAN_SOFTAP_DEVNO];
 
   wlan_tx_done(priv);
 }
@@ -1836,7 +1761,7 @@ int esp32_wlan_sta_initialize(void)
   ret = esp_wifi_adapter_init();
   if (ret < 0)
     {
-      nerr("ERROR: Initialize WiFi adapter error: %d\n", ret);
+      nerr("ERROR: Initialize Wi-Fi adapter error: %d\n", ret);
       return ret;
     }
 
@@ -1847,14 +1772,14 @@ int esp32_wlan_sta_initialize(void)
       return ret;
     }
 
-  ninfo("WiFi station MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+  ninfo("Wi-Fi station MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
         eth_mac[0], eth_mac[1], eth_mac[2],
         eth_mac[3], eth_mac[4], eth_mac[5]);
 
   ret = esp_wifi_scan_init();
   if (ret < 0)
     {
-      nerr("ERROR: Initialize WiFi scan parameter error: %d\n", ret);
+      nerr("ERROR: Initialize Wi-Fi scan parameter error: %d\n", ret);
       return ret;
     }
 
@@ -1874,7 +1799,7 @@ int esp32_wlan_sta_initialize(void)
 
   esp_wifi_sta_register_txdone_cb(wlan_sta_tx_done);
 
-  ninfo("INFO: Initialize WiFi station success net\n");
+  ninfo("INFO: Initialize Wi-Fi station success net\n");
 
   return OK;
 }
@@ -1903,7 +1828,7 @@ int esp32_wlan_softap_initialize(void)
   ret = esp_wifi_adapter_init();
   if (ret < 0)
     {
-      nerr("ERROR: Initialize WiFi adapter error: %d\n", ret);
+      nerr("ERROR: Initialize Wi-Fi adapter error: %d\n", ret);
       return ret;
     }
 
@@ -1914,14 +1839,14 @@ int esp32_wlan_softap_initialize(void)
       return ret;
     }
 
-  ninfo("WiFi softAP MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+  ninfo("Wi-Fi softAP MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
         eth_mac[0], eth_mac[1], eth_mac[2],
         eth_mac[3], eth_mac[4], eth_mac[5]);
 
   ret = esp_wifi_scan_init();
   if (ret < 0)
     {
-      nerr("ERROR: Initialize WiFi scan parameter error: %d\n", ret);
+      nerr("ERROR: Initialize Wi-Fi scan parameter error: %d\n", ret);
       return ret;
     }
 
@@ -1942,10 +1867,10 @@ int esp32_wlan_softap_initialize(void)
 
   esp_wifi_softap_register_txdone_cb(wlan_softap_tx_done);
 
-  ninfo("INFO: Initialize WiFi softAP net success\n");
+  ninfo("INFO: Initialize Wi-Fi softAP net success\n");
 
   return OK;
 }
 #endif
 
-#endif  /* CONFIG_ESP32_WIRELESS */
+#endif  /* CONFIG_ESP32_WIFI */

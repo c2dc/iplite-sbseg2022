@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -117,7 +118,9 @@ static const struct usbdevclass_driverops_s g_driverops =
 
 const char g_compvendorstr[]  = CONFIG_COMPOSITE_VENDORSTR;
 const char g_compproductstr[] = CONFIG_COMPOSITE_PRODUCTSTR;
+#ifndef CONFIG_COMPOSITE_BOARD_SERIALSTR
 const char g_compserialstr[]  = CONFIG_COMPOSITE_SERIALSTR;
+#endif
 
 /****************************************************************************
  * Private Functions
@@ -598,7 +601,7 @@ static int composite_setup(FAR struct usbdevclass_driver_s *driver,
 
                       buf->len = 18;
                       buf->type = USB_DESC_TYPE_STRING;
-                      memcpy(buf->data, msft_response, 16);
+                      memcpy(buf + 1, msft_response, 16);
                       ret = buf->len;
                     }
 #endif

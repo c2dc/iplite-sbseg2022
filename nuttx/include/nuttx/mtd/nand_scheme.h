@@ -1,13 +1,6 @@
 /****************************************************************************
  * include/nuttx/mtd/nand_scheme.h
  *
- *   Copyright (C) 2013 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *
- * This logic was based largely on Atmel sample code with modifications for
- * better integration with NuttX.  The Atmel sample code has a BSD
- * compatible license that requires this copyright notice:
- *
  *   Copyright (c) 2012, Atmel Corporation
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,8 +32,8 @@
  *
  ****************************************************************************/
 
-#ifndef __INCLUDE_NUTTX_MTD_SCHEME_H
-#define __INCLUDE_NUTTX_MTD_SCHEME_H
+#ifndef __INCLUDE_NUTTX_MTD_NAND_SCHEME_H
+#define __INCLUDE_NUTTX_MTD_NAND_SCHEME_H
 
 /****************************************************************************
  * Included Files
@@ -319,4 +312,4 @@ int nandscheme_build4086(FAR struct nand_scheme_s *scheme,
 #endif
 
 #endif /* __ASSEMBLY__ */
-#endif /* __INCLUDE_NUTTX_MTD_SCHEME_H */
+#endif /* __INCLUDE_NUTTX_MTD_NAND_SCHEME_H */

@@ -164,6 +164,8 @@ Public Function Prototypes
   - :c:func:`iob_remove_queue()`
   - :c:func:`iob_peek_queue()`
   - :c:func:`iob_free_queue()`
+  - :c:func:`iob_free_queue_qentry()`
+  - :c:func:`iob_get_queue_size()`
   - :c:func:`iob_copyin()`
   - :c:func:`iob_trycopyin()`
   - :c:func:`iob_copyout()`
@@ -235,6 +237,15 @@ Public Function Prototypes
 
   Free an entire queue of I/O buffer chains.
 
+.. c:function:: void iob_free_queue_qentry(FAR struct iob_s *iob, \
+                  FAR struct iob_queue_s *iobq);
+
+  Queue helper for get the iob queue buffer size.
+
+.. c:function:: unsigned int iob_get_queue_size(FAR struct iob_queue_s *queue);
+
+  Free an iob entire queue of I/O buffer chains.
+
 .. c:function:: int iob_copyin(FAR struct iob_s *iob, FAR const uint8_t *src, \
                   unsigned int len, unsigned int offset, bool throttled);
 
@@ -265,7 +276,8 @@ Public Function Prototypes
 
   Concatenate iob_s chain iob2 to iob1.
 
-.. c:function:: FAR struct iob_s *iob_trimhead(FAR struct iob_s *iob, unsigned int trimlen)
+.. c:function:: FAR struct iob_s *iob_trimhead(FAR struct iob_s *iob, \
+                   unsigned int trimlen)
 
   Remove bytes from the beginning of an I/O chain.
   Emptied I/O buffers are freed and, hence, the beginning of the
@@ -285,7 +297,8 @@ Public Function Prototypes
   :return: The new iob at the head of the queue is
     returned.
 
-.. c:function:: FAR struct iob_s *iob_trimtail(FAR struct iob_s *iob, unsigned int trimlen);
+.. c:function:: FAR struct iob_s *iob_trimtail(FAR struct iob_s *iob, \
+                                        unsigned int trimlen);
 
   Remove bytes from the end of an I/O chain.
   Emptied I/O buffers are freed NULL will be returned in the special

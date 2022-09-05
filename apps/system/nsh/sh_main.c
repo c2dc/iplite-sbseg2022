@@ -1,5 +1,5 @@
 /****************************************************************************
- * system/nsh/sh_main.c
+ * apps/system/nsh/sh_main.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -49,5 +49,5 @@ int main(int argc, FAR char *argv[])
    * system() and popen() interfaces.
    */
 
-  return nsh_system(argc, argv);
+  return nsh_system_ctty(argc, argv);
 }

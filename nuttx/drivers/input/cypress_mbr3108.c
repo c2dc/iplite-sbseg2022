@@ -1,35 +1,20 @@
 /****************************************************************************
  * drivers/input/cypress_mbr3108.c
  *
- *   Copyright (C) 2014 Haltian Ltd. All rights reserved.
- *   Author: Jussi Kivilinna <jussi.kivilinna@haltian.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -43,6 +28,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <poll.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -239,6 +225,9 @@ static const struct file_operations g_mbr3108_fileops =
   NULL,           /* seek */
   NULL,           /* ioctl */
   mbr3108_poll    /* poll */
+#ifndef CONFIG_DISABLE_PSEUDOFS_OPERATIONS
+  , NULL          /* unlink */
+#endif
 };
 
 /****************************************************************************
@@ -251,18 +240,12 @@ static int mbr3108_i2c_write(FAR struct mbr3108_dev_s *dev, uint8_t reg,
   struct i2c_msg_s msgv[2] =
   {
     {
-      .frequency = CONFIG_MBR3108_I2C_FREQUENCY,
-      .addr      = dev->addr,
-      .flags     = 0,
-      .buffer    = &reg,
-      .length    = 1
+      CONFIG_MBR3108_I2C_FREQUENCY,
+      dev->addr, 0, &reg, sizeof(reg)
     },
     {
-      .frequency = CONFIG_MBR3108_I2C_FREQUENCY,
-      .addr      = dev->addr,
-      .flags     = I2C_M_NOSTART,
-      .buffer    = (void *)buf,
-      .length    = buflen
+      CONFIG_MBR3108_I2C_FREQUENCY,
+      dev->addr, I2C_M_NOSTART, buf, buflen
     }
   };
 
@@ -305,18 +288,12 @@ static int mbr3108_i2c_read(FAR struct mbr3108_dev_s *dev, uint8_t reg,
   struct i2c_msg_s msgv[2] =
   {
     {
-      .frequency = CONFIG_MBR3108_I2C_FREQUENCY,
-      .addr      = dev->addr,
-      .flags     = 0,
-      .buffer    = &reg,
-      .length    = 1
+      CONFIG_MBR3108_I2C_FREQUENCY,
+      dev->addr, 0, &reg, sizeof(reg)
     },
     {
-      .frequency = CONFIG_MBR3108_I2C_FREQUENCY,
-      .addr      = dev->addr,
-      .flags     = I2C_M_READ,
-      .buffer    = buf,
-      .length    = buflen
+      CONFIG_MBR3108_I2C_FREQUENCY,
+      dev->addr, I2C_M_READ, buf, buflen
     }
   };
 
@@ -1015,7 +992,7 @@ static void mbr3108_poll_notify(FAR struct mbr3108_dev_s *priv)
       struct pollfd *fds = priv->fds[i];
       if (fds)
         {
-          mbr3108_dbg("Report events: %02x\n", fds->revents);
+          mbr3108_dbg("Report events: %08" PRIx32 "\n", fds->revents);
 
           fds->revents |= POLLIN;
           nxsem_post(fds->sem);

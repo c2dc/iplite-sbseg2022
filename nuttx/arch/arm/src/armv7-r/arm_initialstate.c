@@ -31,7 +31,6 @@
 
 #include "arm.h"
 #include "arm_internal.h"
-#include "arm_arch.h"
 
 /****************************************************************************
  * Public Functions
@@ -56,23 +55,45 @@ void up_initial_state(struct tcb_s *tcb)
   struct xcptcontext *xcp = &tcb->xcp;
   uint32_t cpsr;
 
-  /* Initialize the idle thread stack */
-
-  if (tcb->pid == 0)
-    {
-      tcb->stack_alloc_ptr = (void *)(g_idle_topstack -
-                                      CONFIG_IDLETHREAD_STACKSIZE);
-      tcb->adj_stack_ptr   = (void *)g_idle_topstack;
-      tcb->adj_stack_size  = CONFIG_IDLETHREAD_STACKSIZE;
-    }
-
   /* Initialize the initial exception register context structure */
 
   memset(xcp, 0, sizeof(struct xcptcontext));
 
+  /* Initialize the idle thread stack */
+
+  if (tcb->pid == IDLE_PROCESS_ID)
+    {
+      tcb->stack_alloc_ptr = (void *)(g_idle_topstack -
+                                      CONFIG_IDLETHREAD_STACKSIZE);
+      tcb->stack_base_ptr  = tcb->stack_alloc_ptr;
+      tcb->adj_stack_size  = CONFIG_IDLETHREAD_STACKSIZE;
+
+#ifdef CONFIG_STACK_COLORATION
+      /* If stack debug is enabled, then fill the stack with a
+       * recognizable value that we can use later to test for high
+       * water marks.
+       */
+
+      arm_stack_color(tcb->stack_alloc_ptr, 0);
+#endif /* CONFIG_STACK_COLORATION */
+
+      return;
+    }
+
+  /* Initialize the context registers to stack top */
+
+  xcp->regs = (void *)((uint32_t)tcb->stack_base_ptr +
+                                 tcb->adj_stack_size -
+                                 XCPTCONTEXT_SIZE);
+
+  /* Initialize the xcp registers */
+
+  memset(xcp->regs, 0, XCPTCONTEXT_SIZE);
+
   /* Save the initial stack pointer */
 
-  xcp->regs[REG_SP] = (uint32_t)tcb->adj_stack_ptr;
+  xcp->regs[REG_SP] = (uint32_t)tcb->stack_base_ptr +
+                                tcb->adj_stack_size;
 
   /* Save the task entry point */
 
@@ -100,7 +121,7 @@ void up_initial_state(struct tcb_s *tcb)
    * privileges will be dropped before transitioning to user code.
    */
 
-  cpsr = PSR_MODE_SVC;
+  cpsr = PSR_MODE_SYS;
 
   /* Enable or disable interrupts, based on user configuration */
 

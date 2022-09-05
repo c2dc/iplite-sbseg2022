@@ -27,6 +27,7 @@
 #include <debug.h>
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
+#include <nuttx/mm/mm.h>
 #include <nuttx/random.h>
 #include <nuttx/sched_note.h>
 
@@ -37,6 +38,12 @@
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
+
+#ifdef CONFIG_ARCH_MINIMAL_VECTORTABLE
+#  define NUSER_IRQS CONFIG_ARCH_NUSER_INTERRUPTS
+#else
+#  define NUSER_IRQS NR_IRQS
+#endif
 
 /* INCR_COUNT - Increment the count of interrupts taken on this IRQ number */
 
@@ -65,43 +72,40 @@
  * interrupt request
  */
 
-#ifndef CONFIG_SCHED_IRQMONITOR
-#  define CALL_VECTOR(ndx, vector, irq, context, arg) \
-     vector(irq, context, arg)
-#elif defined(CONFIG_SCHED_CRITMONITOR)
+#ifndef CONFIG_SCHED_CRITMONITOR_MAXTIME_IRQ
+#  define CONFIG_SCHED_CRITMONITOR_MAXTIME_IRQ 0
+#endif
+
+#ifdef CONFIG_SCHED_IRQMONITOR
 #  define CALL_VECTOR(ndx, vector, irq, context, arg) \
      do \
        { \
          struct timespec delta; \
          uint32_t start; \
          uint32_t elapsed; \
-         start = up_critmon_gettime(); \
+         start = up_perf_gettime(); \
          vector(irq, context, arg); \
-         elapsed = up_critmon_gettime() - start; \
-         up_critmon_convert(elapsed, &delta); \
-         if (delta.tv_nsec > g_irqvector[ndx].time) \
+         elapsed = up_perf_gettime() - start; \
+         up_perf_convert(elapsed, &delta); \
+         if (ndx < NUSER_IRQS) \
            { \
-             g_irqvector[ndx].time = delta.tv_nsec; \
+             INCR_COUNT(ndx); \
+             if (delta.tv_nsec > g_irqvector[ndx].time) \
+               { \
+                 g_irqvector[ndx].time = delta.tv_nsec; \
+               } \
+           } \
+         if (CONFIG_SCHED_CRITMONITOR_MAXTIME_IRQ > 0 && \
+             elapsed > CONFIG_SCHED_CRITMONITOR_MAXTIME_IRQ) \
+           { \
+             serr("IRQ %d(%p), execute time too long %"PRIu32"\n", \
+                  irq, vector, elapsed); \
            } \
        } \
      while (0)
 #else
 #  define CALL_VECTOR(ndx, vector, irq, context, arg) \
-     do \
-       { \
-         struct timespec start; \
-         struct timespec end; \
-         struct timespec delta; \
-         clock_systime_timespec(&start); \
-         vector(irq, context, arg); \
-         clock_systime_timespec(&end); \
-         clock_timespec_subtract(&end, &start, &delta); \
-         if (delta.tv_nsec > g_irqvector[ndx].time) \
-           { \
-             g_irqvector[ndx].time = delta.tv_nsec; \
-           } \
-       } \
-     while (0)
+     vector(irq, context, arg)
 #endif /* CONFIG_SCHED_IRQMONITOR */
 
 /****************************************************************************
@@ -136,8 +140,6 @@ void irq_dispatch(int irq, FAR void *context)
               vector = g_irqvector[ndx].handler;
               arg    = g_irqvector[ndx].arg;
             }
-
-          INCR_COUNT(ndx);
         }
 #else
       if (g_irqvector[ndx].handler)
@@ -145,8 +147,6 @@ void irq_dispatch(int irq, FAR void *context)
           vector = g_irqvector[ndx].handler;
           arg    = g_irqvector[ndx].arg;
         }
-
-      INCR_COUNT(ndx);
 #endif
     }
 #endif
@@ -172,6 +172,14 @@ void irq_dispatch(int irq, FAR void *context)
   /* Notify that we are leaving from the interrupt handler */
 
   sched_note_irqhandler(irq, vector, false);
+#endif
+
+#ifdef CONFIG_DEBUG_MM
+  if ((g_running_tasks[this_cpu()]->flags & TCB_FLAG_HEAPCHECK) || \
+       (this_task()->flags & TCB_FLAG_HEAPCHECK))
+    {
+      kmm_checkcorruption();
+    }
 #endif
 
   /* Record the new "running" task.  g_running_tasks[] is only used by

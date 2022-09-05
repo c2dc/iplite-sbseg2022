@@ -1,35 +1,20 @@
 /****************************************************************************
  * fs/hostfs/hostfs.c
  *
- *   Copyright (C) 2015 Ken Pettit. All rights reserved.
- *   Author: Ken Pettit <pettitkd@gmail.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -54,7 +39,6 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/fs/fat.h>
-#include <nuttx/fs/dirent.h>
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/fs/hostfs.h>
 
@@ -65,6 +49,16 @@
  ****************************************************************************/
 
 #define HOSTFS_RETRY_DELAY_MS       10
+
+/****************************************************************************
+ * Private Types
+ ****************************************************************************/
+
+struct hostfs_dir_s
+{
+  struct fs_dirent_s base;
+  FAR void *dir;
+};
 
 /****************************************************************************
  * Private Function Prototypes
@@ -87,16 +81,19 @@ static int     hostfs_dup(FAR const struct file *oldp,
                         FAR struct file *newp);
 static int     hostfs_fstat(FAR const struct file *filep,
                         FAR struct stat *buf);
+static int     hostfs_fchstat(FAR const struct file *filep,
+                        FAR const struct stat *buf, int flags);
 static int     hostfs_ftruncate(FAR struct file *filep,
                         off_t length);
 
 static int     hostfs_opendir(FAR struct inode *mountpt,
                         FAR const char *relpath,
-                        FAR struct fs_dirent_s *dir);
+                        FAR struct fs_dirent_s **dir);
 static int     hostfs_closedir(FAR struct inode *mountpt,
                         FAR struct fs_dirent_s *dir);
 static int     hostfs_readdir(FAR struct inode *mountpt,
-                        FAR struct fs_dirent_s *dir);
+                        FAR struct fs_dirent_s *dir,
+                        FAR struct dirent *entry);
 static int     hostfs_rewinddir(FAR struct inode *mountpt,
                         FAR struct fs_dirent_s *dir);
 
@@ -117,6 +114,9 @@ static int     hostfs_rename(FAR struct inode *mountpt,
                         FAR const char *newrelpath);
 static int     hostfs_stat(FAR struct inode *mountpt,
                         FAR const char *relpath, FAR struct stat *buf);
+static int     hostfs_chstat(FAR struct inode *mountpt,
+                        FAR const char *relpath,
+                        FAR const struct stat *buf, int flags);
 
 /****************************************************************************
  * Private Data
@@ -146,6 +146,7 @@ const struct mountpt_operations hostfs_operations =
   hostfs_sync,          /* sync */
   hostfs_dup,           /* dup */
   hostfs_fstat,         /* fstat */
+  hostfs_fchstat,       /* fchstat */
   hostfs_ftruncate,     /* ftruncate */
 
   hostfs_opendir,       /* opendir */
@@ -161,7 +162,8 @@ const struct mountpt_operations hostfs_operations =
   hostfs_mkdir,         /* mkdir */
   hostfs_rmdir,         /* rmdir */
   hostfs_rename,        /* rename */
-  hostfs_stat           /* stat */
+  hostfs_stat,          /* stat */
+  hostfs_chstat,        /* chstat */
 };
 
 /****************************************************************************
@@ -203,7 +205,7 @@ static void hostfs_mkpath(FAR struct hostfs_mountpt_s  *fs,
 
   /* Copy base host path to output */
 
-  strncpy(path, fs->fs_root, pathlen);
+  strlcpy(path, fs->fs_root, pathlen);
 
   /* Be sure we aren't trying to use ".." to display outside of our
    * mounted path.
@@ -498,21 +500,7 @@ static ssize_t hostfs_write(FAR struct file *filep, const char *buffer,
   FAR struct hostfs_ofile_s *hf;
   ssize_t ret;
 
-  /* Sanity checks.  I have seen the following assertion misfire if
-   * CONFIG_DEBUG_MM is enabled while re-directing output to a
-   * file.  In this case, the debug output can get generated while
-   * the file is being opened,  FAT data structures are being allocated,
-   * and things are generally in a perverse state.
-   */
-
-#ifdef CONFIG_DEBUG_MM
-  if (filep->f_priv == NULL || filep->f_inode == NULL)
-    {
-      return -ENXIO;
-    }
-#else
   DEBUGASSERT(filep->f_priv != NULL && filep->f_inode != NULL);
-#endif
 
   /* Recover our private data from the struct file instance */
 
@@ -753,6 +741,52 @@ static int hostfs_fstat(FAR const struct file *filep, FAR struct stat *buf)
 }
 
 /****************************************************************************
+ * Name: hostfs_fchstat
+ *
+ * Description:
+ *   Change information about an open file associated with the file
+ *   descriptor 'fd'.
+ *
+ ****************************************************************************/
+
+static int hostfs_fchstat(FAR const struct file *filep,
+                          FAR const struct stat *buf, int flags)
+{
+  FAR struct inode *inode;
+  FAR struct hostfs_mountpt_s *fs;
+  FAR struct hostfs_ofile_s *hf;
+  int ret = OK;
+
+  /* Sanity checks */
+
+  DEBUGASSERT(filep != NULL && buf != NULL);
+
+  /* Recover our private data from the struct file instance */
+
+  DEBUGASSERT(filep->f_priv != NULL && filep->f_inode != NULL);
+  hf    = filep->f_priv;
+  inode = filep->f_inode;
+
+  fs    = inode->i_private;
+  DEBUGASSERT(fs != NULL);
+
+  /* Take the semaphore */
+
+  ret = hostfs_semtake(fs);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  /* Call the host to perform the change */
+
+  ret = host_fchstat(hf->fd, buf, flags);
+
+  hostfs_semgive(fs);
+  return ret;
+}
+
+/****************************************************************************
  * Name: hostfs_ftruncate
  *
  * Description:
@@ -805,9 +839,10 @@ static int hostfs_ftruncate(FAR struct file *filep, off_t length)
  ****************************************************************************/
 
 static int hostfs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
-                          FAR struct fs_dirent_s *dir)
+                          FAR struct fs_dirent_s **dir)
 {
   FAR struct hostfs_mountpt_s *fs;
+  FAR struct hostfs_dir_s *hdir;
   char path[HOSTFS_MAX_PATH];
   int ret;
 
@@ -818,13 +853,18 @@ static int hostfs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
   /* Recover our private data from the inode instance */
 
   fs = mountpt->i_private;
+  hdir = kmm_zalloc(sizeof(struct hostfs_dir_s));
+  if (hdir == NULL)
+    {
+      return -ENOMEM;
+    }
 
   /* Take the semaphore */
 
   ret = hostfs_semtake(fs);
   if (ret < 0)
     {
-      return ret;
+      goto errout_with_hdir;
     }
 
   /* Append to the host's root directory */
@@ -833,18 +873,22 @@ static int hostfs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
 
   /* Call the host's opendir function */
 
-  dir->u.hostfs.fs_dir = host_opendir(path);
-  if (dir->u.hostfs.fs_dir == NULL)
+  hdir->dir = host_opendir(path);
+  if (hdir->dir == NULL)
     {
       ret = -ENOENT;
       goto errout_with_semaphore;
     }
 
-  ret = OK;
+  *dir = (FAR struct fs_dirent_s *)hdir;
+  hostfs_semgive(fs);
+  return OK;
 
 errout_with_semaphore:
-
   hostfs_semgive(fs);
+
+errout_with_hdir:
+  kmm_free(hdir);
   return ret;
 }
 
@@ -858,7 +902,8 @@ errout_with_semaphore:
 static int hostfs_closedir(FAR struct inode *mountpt,
                            FAR struct fs_dirent_s *dir)
 {
-  struct hostfs_mountpt_s  *fs;
+  FAR struct hostfs_mountpt_s *fs;
+  FAR struct hostfs_dir_s *hdir;
   int ret;
 
   /* Sanity checks */
@@ -868,6 +913,7 @@ static int hostfs_closedir(FAR struct inode *mountpt,
   /* Recover our private data from the inode instance */
 
   fs = mountpt->i_private;
+  hdir = (FAR struct hostfs_dir_s *)dir;
 
   /* Take the semaphore */
 
@@ -879,9 +925,10 @@ static int hostfs_closedir(FAR struct inode *mountpt,
 
   /* Call the host's closedir function */
 
-  host_closedir(dir->u.hostfs.fs_dir);
+  host_closedir(hdir->dir);
 
   hostfs_semgive(fs);
+  kmm_free(hdir);
   return OK;
 }
 
@@ -893,9 +940,11 @@ static int hostfs_closedir(FAR struct inode *mountpt,
  ****************************************************************************/
 
 static int hostfs_readdir(FAR struct inode *mountpt,
-                          FAR struct fs_dirent_s *dir)
+                          FAR struct fs_dirent_s *dir,
+                          FAR struct dirent *entry)
 {
   FAR struct hostfs_mountpt_s *fs;
+  FAR struct hostfs_dir_s *hdir;
   int ret;
 
   /* Sanity checks */
@@ -905,6 +954,7 @@ static int hostfs_readdir(FAR struct inode *mountpt,
   /* Recover our private data from the inode instance */
 
   fs = mountpt->i_private;
+  hdir = (FAR struct hostfs_dir_s *)dir;
 
   /* Take the semaphore */
 
@@ -916,7 +966,7 @@ static int hostfs_readdir(FAR struct inode *mountpt,
 
   /* Call the host OS's readdir function */
 
-  ret = host_readdir(dir->u.hostfs.fs_dir, &dir->fd_dir);
+  ret = host_readdir(hdir->dir, entry);
 
   hostfs_semgive(fs);
   return ret;
@@ -932,14 +982,32 @@ static int hostfs_readdir(FAR struct inode *mountpt,
 static int hostfs_rewinddir(FAR struct inode *mountpt,
                             FAR struct fs_dirent_s *dir)
 {
+  FAR struct hostfs_mountpt_s *fs;
+  FAR struct hostfs_dir_s *hdir;
+  int ret;
+
   /* Sanity checks */
 
   DEBUGASSERT(mountpt != NULL && mountpt->i_private != NULL);
 
+  /* Recover our private data from the inode instance */
+
+  fs = mountpt->i_private;
+  hdir = (FAR struct hostfs_dir_s *)dir;
+
+  /* Take the semaphore */
+
+  ret = hostfs_semtake(fs);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
   /* Call the host and let it do all the work */
 
-  host_rewinddir(dir->u.hostfs.fs_dir);
+  host_rewinddir(hdir->dir);
 
+  hostfs_semgive(fs);
   return OK;
 }
 
@@ -959,7 +1027,8 @@ static int hostfs_bind(FAR struct inode *blkdriver, FAR const void *data,
 {
   FAR struct hostfs_mountpt_s  *fs;
   FAR char *options;
-  char *ptr, *saveptr;
+  char *saveptr;
+  char *ptr;
   int len;
   int ret;
 
@@ -996,7 +1065,7 @@ static int hostfs_bind(FAR struct inode *blkdriver, FAR const void *data,
     {
       if ((strncmp(ptr, "fs=", 3) == 0))
         {
-          strncpy(fs->fs_root, &ptr[3], sizeof(fs->fs_root));
+          strlcpy(fs->fs_root, &ptr[3], sizeof(fs->fs_root));
         }
 
       ptr = strtok_r(NULL, ",", &saveptr);
@@ -1289,10 +1358,10 @@ int hostfs_rename(FAR struct inode *mountpt, FAR const char *oldrelpath,
 
   /* Append to the host's root directory */
 
-  strncpy(oldpath, fs->fs_root, sizeof(oldpath));
-  strncat(oldpath, oldrelpath, sizeof(oldpath)-strlen(oldpath)-1);
-  strncpy(newpath, fs->fs_root, sizeof(newpath));
-  strncat(newpath, newrelpath, sizeof(newpath)-strlen(newpath)-1);
+  strlcpy(oldpath, fs->fs_root, sizeof(oldpath));
+  strlcat(oldpath, oldrelpath, sizeof(oldpath));
+  strlcpy(newpath, fs->fs_root, sizeof(newpath));
+  strlcat(newpath, newrelpath, sizeof(newpath));
 
   /* Call the host FS to do the mkdir */
 
@@ -1337,6 +1406,46 @@ static int hostfs_stat(FAR struct inode *mountpt, FAR const char *relpath,
   /* Call the host FS to do the stat operation */
 
   ret = host_stat(path, buf);
+
+  hostfs_semgive(fs);
+  return ret;
+}
+
+/****************************************************************************
+ * Name: hostfs_chstat
+ *
+ * Description: Change information about a file or directory
+ *
+ ****************************************************************************/
+
+static int hostfs_chstat(FAR struct inode *mountpt, FAR const char *relpath,
+                         FAR const struct stat *buf, int flags)
+{
+  FAR struct hostfs_mountpt_s *fs;
+  char path[HOSTFS_MAX_PATH];
+  int ret;
+
+  /* Sanity checks */
+
+  DEBUGASSERT(mountpt && mountpt->i_private);
+
+  /* Get the mountpoint private data from the inode structure */
+
+  fs = mountpt->i_private;
+
+  ret = hostfs_semtake(fs);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  /* Append to the host's root directory */
+
+  hostfs_mkpath(fs, relpath, path, sizeof(path));
+
+  /* Call the host FS to do the chstat operation */
+
+  ret = host_chstat(path, buf, flags);
 
   hostfs_semgive(fs);
   return ret;

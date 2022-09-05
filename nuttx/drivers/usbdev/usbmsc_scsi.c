@@ -49,6 +49,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <queue.h>
 #include <debug.h>
@@ -171,6 +172,8 @@ static int    usbmsc_cmdstatusstate(FAR struct usbmsc_dev_s *priv);
 /****************************************************************************
  * Private Data
  ****************************************************************************/
+
+static const char *g_productrevision = "0101";
 
 /****************************************************************************
  * Private Functions
@@ -662,12 +665,14 @@ static inline int usbmsc_cmdinquiry(FAR struct usbmsc_dev_s *priv,
           response->qualtype = SCSIRESP_INQUIRYPQ_NOTCAPABLE |
                                SCSIRESP_INQUIRYPD_UNKNOWN;
         }
+#ifndef CONFIG_USBMSC_NOT_STALL_BULKEP
       else if ((inquiry->flags != 0) || (inquiry->pagecode != 0))
         {
           usbtrace(TRACE_CLSERROR(USBMSC_TRACEERR_INQUIRYFLAGS), 0);
           priv->lun->sd = SCSI_KCQIR_INVALIDFIELDINCBA;
           ret = -EINVAL;
         }
+#endif
       else
         {
           memset(response, 0, SCSIRESP_INQUIRY_SIZEOF);
@@ -700,13 +705,13 @@ static inline int usbmsc_cmdinquiry(FAR struct usbmsc_dev_s *priv,
 
           memcpy(response->productid, g_mscproductstr, len);
 
-          len = strlen(g_mscserialstr);
+          len = strlen(g_productrevision);
           if (len > 4)
             {
               len = 4;
             }
 
-          memcpy(response->revision, g_mscserialstr, len);
+          memcpy(response->revision, g_productrevision, len);
         }
     }
 
@@ -821,7 +826,9 @@ static int inline usbmsc_cmdmodesense6(FAR struct usbmsc_dev_s *priv,
              (FAR struct scsicmd_modesense6_s *)priv->cdb;
   FAR struct scsiresp_modeparameterhdr6_s *mph =
              (FAR struct scsiresp_modeparameterhdr6_s *)buf;
+#ifndef CONFIG_USBMSC_NOT_STALL_BULKEP
   int mdlen;
+#endif
   int ret;
 
   priv->u.alloclen = modesense->alloclen;
@@ -829,6 +836,11 @@ static int inline usbmsc_cmdmodesense6(FAR struct usbmsc_dev_s *priv,
                         USBMSC_FLAGS_DIRDEVICE2HOST);
   if (ret == OK)
     {
+#ifdef CONFIG_USBMSC_NOT_STALL_BULKEP
+      priv->residue = priv->cbwlen = priv->nreqbytes =
+        SCSIRESP_MODEPARAMETERHDR6_SIZEOF;
+#endif
+
       if ((modesense->flags & ~SCSICMD_MODESENSE6_DBD) != 0 ||
            modesense->subpgcode != 0)
         {
@@ -850,6 +862,7 @@ static int inline usbmsc_cmdmodesense6(FAR struct usbmsc_dev_s *priv,
             (priv->lun->readonly ? SCSIRESP_MODEPARMHDR_DAPARM_WP : 0x00);
           mph->bdlen = 0; /* Block descriptor length */
 
+#ifndef CONFIG_USBMSC_NOT_STALL_BULKEP
           /* There are no block descriptors, only the following mode page: */
 
           ret = usbmsc_modepage(priv,
@@ -866,6 +879,7 @@ static int inline usbmsc_cmdmodesense6(FAR struct usbmsc_dev_s *priv,
               priv->nreqbytes =
                 mdlen + SCSIRESP_MODEPARAMETERHDR6_SIZEOF;
             }
+#endif
         }
     }
 
@@ -2430,8 +2444,24 @@ static int usbmsc_cmdwritestate(FAR struct usbmsc_dev_s *priv)
           src  = &req->buf[xfrd - priv->nreqbytes];
           dest = &priv->iobuffer[priv->nsectbytes];
 
-          nbytes = MIN(lun->sectorsize - priv->nsectbytes, priv->nreqbytes);
+#ifdef CONFIG_USBMSC_WRMULTIPLE
+          /* nbytes may end up being zero, after which the loop no longer
+           * proceeds but will be stuck forever.  Make sure nbytes isn't
+           * zero.
+           */
 
+          if (lun->sectorsize > priv->nsectbytes)
+            {
+              nbytes = MIN(lun->sectorsize - priv->nsectbytes,
+                           priv->nreqbytes);
+            }
+          else
+            {
+              nbytes = priv->nreqbytes;
+            }
+#else
+          nbytes = MIN(lun->sectorsize - priv->nsectbytes, priv->nreqbytes);
+#endif
           /* Copy the data from the sector buffer to the USB request and
            * update counts
            */
@@ -2440,9 +2470,34 @@ static int usbmsc_cmdwritestate(FAR struct usbmsc_dev_s *priv)
           priv->nsectbytes += nbytes;
           priv->nreqbytes  -= nbytes;
 
+#ifdef CONFIG_USBMSC_WRMULTIPLE
+          uint32_t nrbufs = MIN(priv->u.xfrlen, CONFIG_USBMSC_NWRREQS);
+
           /* Is the I/O buffer full? */
 
-          if (priv->nsectbytes >= lun->sectorsize)
+          if ((priv->nsectbytes >= lun->sectorsize * priv->u.xfrlen) ||
+              (priv->nsectbytes >= lun->sectorsize * CONFIG_USBMSC_NWRREQS))
+            {
+              /* Yes.. Write next sectors */
+
+              nwritten = USBMSC_DRVR_WRITE(lun, priv->iobuffer,
+                                           priv->sector, nrbufs);
+              if (nwritten < 0)
+                {
+                  usbtrace(TRACE_CLSERROR(USBMSC_TRACEERR_CMDWRITEWRITEFAIL),
+                           -nwritten);
+                  lun->sd     = SCSI_KCQME_WRITEFAULTAUTOREALLOCFAILED;
+                  lun->sdinfo = priv->sector;
+                  goto errout;
+                }
+
+              priv->nsectbytes = 0;
+              priv->residue   -= lun->sectorsize * nrbufs;
+              priv->u.xfrlen  -= nrbufs;
+              priv->sector    += nrbufs;
+            }
+#else
+          if ((priv->nsectbytes >= lun->sectorsize))
             {
               /* Yes.. Write the next sector */
 
@@ -2462,6 +2517,7 @@ static int usbmsc_cmdwritestate(FAR struct usbmsc_dev_s *priv)
               priv->u.xfrlen--;
               priv->sector++;
             }
+#endif
         }
 
       /* In either case, we are finished with this read request and can
@@ -2583,6 +2639,7 @@ static int usbmsc_cmdfinishstate(FAR struct usbmsc_dev_s *priv)
 
           if (priv->residue > 0)
             {
+#ifndef CONFIG_USBMSC_NOT_STALL_BULKEP
               usbtrace(TRACE_CLSERROR(USBMSC_TRACEERR_CMDFINISHRESIDUE),
                        (uint16_t)priv->residue);
 
@@ -2600,6 +2657,9 @@ static int usbmsc_cmdfinishstate(FAR struct usbmsc_dev_s *priv)
               nxsig_usleep (100000);
 #else
               EP_STALL(priv->epbulkin);
+#endif
+#else
+              priv->residue = 0;
 #endif
             }
         }

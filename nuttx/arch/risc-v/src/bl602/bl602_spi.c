@@ -24,6 +24,8 @@
 
 #include <nuttx/config.h>
 
+#include <assert.h>
+#include <debug.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -43,7 +45,7 @@
 #include "hardware/bl602_glb.h"
 #include "hardware/bl602_spi.h"
 #include "hardware/bl602_hbn.h"
-#include "riscv_arch.h"
+#include "riscv_internal.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -141,41 +143,41 @@ struct bl602_spi_priv_s
  * Private Function Prototypes
  ****************************************************************************/
 
-static int bl602_spi_lock(FAR struct spi_dev_s *dev, bool lock);
+static int bl602_spi_lock(struct spi_dev_s *dev, bool lock);
 
-static void bl602_spi_select(FAR struct spi_dev_s *dev, uint32_t devid,
+static void bl602_spi_select(struct spi_dev_s *dev, uint32_t devid,
                              bool selected);
 
-static uint32_t bl602_spi_setfrequency(FAR struct spi_dev_s *dev,
+static uint32_t bl602_spi_setfrequency(struct spi_dev_s *dev,
                                        uint32_t frequency);
-static void bl602_spi_setmode(FAR struct spi_dev_s *dev,
+static void bl602_spi_setmode(struct spi_dev_s *dev,
                               enum spi_mode_e mode);
-static void bl602_spi_setbits(FAR struct spi_dev_s *dev, int nbits);
+static void bl602_spi_setbits(struct spi_dev_s *dev, int nbits);
 #ifdef CONFIG_SPI_HWFEATURES
-static int bl602_spi_hwfeatures(FAR struct spi_dev_s *dev,
+static int bl602_spi_hwfeatures(struct spi_dev_s *dev,
                                 spi_hwfeatures_t features);
 #endif
-static uint8_t bl602_spi_status(FAR struct spi_dev_s *dev,
+static uint8_t bl602_spi_status(struct spi_dev_s *dev,
                                 uint32_t devid);
 #ifdef CONFIG_SPI_CMDDATA
-static int bl602_spi_cmddata(FAR struct spi_dev_s *dev,
+static int bl602_spi_cmddata(struct spi_dev_s *dev,
                               uint32_t devid, bool cmd);
 #endif
-static uint32_t bl602_spi_send(FAR struct spi_dev_s *dev, uint32_t wd);
-static void bl602_spi_exchange(FAR struct spi_dev_s *dev,
-                               FAR const void *txbuffer,
-                               FAR void *rxbuffer, size_t nwords);
+static uint32_t bl602_spi_send(struct spi_dev_s *dev, uint32_t wd);
+static void bl602_spi_exchange(struct spi_dev_s *dev,
+                               const void *txbuffer,
+                               void *rxbuffer, size_t nwords);
 #ifndef CONFIG_SPI_EXCHANGE
-static void bl602_spi_sndblock(FAR struct spi_dev_s *dev,
-                               FAR const void *txbuffer, size_t nwords);
-static void bl602_spi_recvblock(FAR struct spi_dev_s *dev,
-                                FAR void *rxbuffer, size_t nwords);
+static void bl602_spi_sndblock(struct spi_dev_s *dev,
+                               const void *txbuffer, size_t nwords);
+static void bl602_spi_recvblock(struct spi_dev_s *dev,
+                                void *rxbuffer, size_t nwords);
 #endif
 #ifdef CONFIG_SPI_TRIGGER
-static int bl602_spi_trigger(FAR struct spi_dev_s *dev);
+static int bl602_spi_trigger(struct spi_dev_s *dev);
 #endif
-static void bl602_spi_init(FAR struct spi_dev_s *dev);
-static void bl602_spi_deinit(FAR struct spi_dev_s *dev);
+static void bl602_spi_init(struct spi_dev_s *dev);
+static void bl602_spi_deinit(struct spi_dev_s *dev);
 
 /****************************************************************************
  * Private Data
@@ -194,7 +196,7 @@ static const struct spi_ops_s bl602_spi_ops =
     .lock = bl602_spi_lock,
     .select = bl602_spi_select,
     .setfrequency = bl602_spi_setfrequency,
-#ifdef CONFIG_SPI_CS_DELAY_CONTROL
+#ifdef CONFIG_SPI_DELAY_CONTROL
     .setdelay = bl602_spi_setdelay,
 #endif
     .setmode = bl602_spi_setmode,
@@ -393,10 +395,10 @@ static void bl602_clockconfig(struct spi_clock_cfg_s *clockcfg)
  *
  ****************************************************************************/
 
-static int bl602_spi_lock(FAR struct spi_dev_s *dev, bool lock)
+static int bl602_spi_lock(struct spi_dev_s *dev, bool lock)
 {
   int ret;
-  FAR struct bl602_spi_priv_s *priv = (FAR struct bl602_spi_priv_s *)dev;
+  struct bl602_spi_priv_s *priv = (struct bl602_spi_priv_s *)dev;
 
   if (lock)
     {
@@ -433,12 +435,21 @@ static int bl602_spi_lock(FAR struct spi_dev_s *dev, bool lock)
  *
  ****************************************************************************/
 
-static void bl602_spi_select(FAR struct spi_dev_s *dev, uint32_t devid,
+static void bl602_spi_select(struct spi_dev_s *dev, uint32_t devid,
                              bool selected)
 {
   /* we used hardware CS */
 
   spiinfo("devid: %lu, CS: %s\n", devid, selected ? "select" : "free");
+
+#ifdef CONFIG_SPI_CMDDATA
+  /* revert MISO from GPIO Pin to SPI Pin */
+
+  if (!selected)
+    {
+      bl602_configgpio(BOARD_SPI_MISO);
+    }
+#endif
 }
 
 /****************************************************************************
@@ -456,10 +467,10 @@ static void bl602_spi_select(FAR struct spi_dev_s *dev, uint32_t devid,
  *
  ****************************************************************************/
 
-static uint32_t bl602_spi_setfrequency(FAR struct spi_dev_s *dev,
+static uint32_t bl602_spi_setfrequency(struct spi_dev_s *dev,
                                        uint32_t frequency)
 {
-  FAR struct bl602_spi_priv_s *priv = (FAR struct bl602_spi_priv_s *)dev;
+  struct bl602_spi_priv_s *priv = (struct bl602_spi_priv_s *)dev;
   struct spi_clock_cfg_s clockcfg;
   size_t count;
   uint8_t ticks;
@@ -516,6 +527,7 @@ static uint32_t bl602_spi_setfrequency(FAR struct spi_dev_s *dev,
  *   startdelay - The delay between CS active and first CLK
  *   stopdelay  - The delay between last CLK and CS inactive
  *   csdelay    - The delay between CS inactive and CS active again
+ *   ifdelay    - The delay between frames
  *
  * Returned Value:
  *   Returns zero (OK) on success; a negated errno value is return on any
@@ -523,9 +535,10 @@ static uint32_t bl602_spi_setfrequency(FAR struct spi_dev_s *dev,
  *
  ****************************************************************************/
 
-#ifdef CONFIG_SPI_CS_DELAY_CONTROL
-static int bl602_spi_setdelay(FAR struct spi_dev_s *dev, uint32_t startdelay,
-                                uint32_t stopdelay, uint32_t csdelay)
+#ifdef CONFIG_SPI_DELAY_CONTROL
+static int bl602_spi_setdelay(struct spi_dev_s *dev, uint32_t startdelay,
+                                uint32_t stopdelay, uint32_t csdelay,
+                                uint32_t ifdelay)
 {
   spierr("SPI CS delay control not supported\n");
   DEBUGPANIC();
@@ -550,9 +563,9 @@ static int bl602_spi_setdelay(FAR struct spi_dev_s *dev, uint32_t startdelay,
  ****************************************************************************/
 
 static void
-bl602_spi_setmode(FAR struct spi_dev_s *dev, enum spi_mode_e mode)
+bl602_spi_setmode(struct spi_dev_s *dev, enum spi_mode_e mode)
 {
-  FAR struct bl602_spi_priv_s *priv = (FAR struct bl602_spi_priv_s *)dev;
+  struct bl602_spi_priv_s *priv = (struct bl602_spi_priv_s *)dev;
 
   spiinfo("mode=%d\n", mode);
 
@@ -605,9 +618,9 @@ bl602_spi_setmode(FAR struct spi_dev_s *dev, enum spi_mode_e mode)
  *
  ****************************************************************************/
 
-static void bl602_spi_setbits(FAR struct spi_dev_s *dev, int nbits)
+static void bl602_spi_setbits(struct spi_dev_s *dev, int nbits)
 {
-  FAR struct bl602_spi_priv_s *priv = (FAR struct bl602_spi_priv_s *)dev;
+  struct bl602_spi_priv_s *priv = (struct bl602_spi_priv_s *)dev;
 
   spiinfo("nbits=%d\n", nbits);
 
@@ -656,7 +669,7 @@ static void bl602_spi_setbits(FAR struct spi_dev_s *dev, int nbits)
  *
  ****************************************************************************/
 
-static uint8_t bl602_spi_status(FAR struct spi_dev_s *dev, uint32_t devid)
+static uint8_t bl602_spi_status(struct spi_dev_s *dev, uint32_t devid)
 {
   uint8_t status = 0;
 
@@ -677,6 +690,11 @@ static uint8_t bl602_spi_status(FAR struct spi_dev_s *dev, uint32_t devid)
  *   method is required if CONFIG_SPI_CMDDATA is selected in the NuttX
  *   configuration
  *
+ *   This function reconfigures MISO from SPI Pin to GPIO Pin, and sets
+ *   MISO to high (data) or low (command). bl602_spi_select() will revert
+ *   MISO back from GPIO Pin to SPI Pin.  We must revert because the SPI Bus
+ *   may be used by other drivers.
+ *
  * Input Parameters:
  *   dev - Device-specific state data
  *   cmd - TRUE: The following word is a command; FALSE: the following words
@@ -688,13 +706,41 @@ static uint8_t bl602_spi_status(FAR struct spi_dev_s *dev, uint32_t devid)
  ****************************************************************************/
 
 #ifdef CONFIG_SPI_CMDDATA
-static int bl602_spi_cmddata(FAR struct spi_dev_s *dev,
+static int bl602_spi_cmddata(struct spi_dev_s *dev,
                               uint32_t devid, bool cmd)
 {
+  spiinfo("devid: %" PRIu32 " CMD: %s\n", devid, cmd ? "command" :
+          "data");
+
+  if (devid == SPIDEV_DISPLAY(0))
+    {
+      gpio_pinset_t gpio;
+      int ret;
+
+      /* reconfigure MISO from SPI Pin to GPIO Pin */
+
+      gpio = (BOARD_SPI_MISO & GPIO_PIN_MASK)
+             | GPIO_OUTPUT | GPIO_PULLUP | GPIO_FUNC_SWGPIO;
+      ret = bl602_configgpio(gpio);
+      if (ret < 0)
+        {
+          spierr("Failed to configure MISO as GPIO\n");
+          DEBUGPANIC();
+
+          return ret;
+        }
+
+      /* set MISO to high (data) or low (command) */
+
+      bl602_gpiowrite(gpio, !cmd);
+
+      return OK;
+    }
+
   spierr("SPI cmddata not supported\n");
   DEBUGPANIC();
 
-  return -1;
+  return -ENODEV;
 }
 #endif
 
@@ -715,7 +761,7 @@ static int bl602_spi_cmddata(FAR struct spi_dev_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_SPI_HWFEATURES
-static int bl602_spi_hwfeatures(FAR struct spi_dev_s *dev,
+static int bl602_spi_hwfeatures(struct spi_dev_s *dev,
                                 spi_hwfeatures_t features)
 {
   /* Other H/W features are not supported */
@@ -748,9 +794,9 @@ static int bl602_spi_hwfeatures(FAR struct spi_dev_s *dev,
  *
  ****************************************************************************/
 
-static void bl602_spi_dma_exchange(FAR struct bl602_spi_priv_s *priv,
-                                   FAR const void *txbuffer,
-                                   FAR void *rxbuffer, uint32_t nwords)
+static void bl602_spi_dma_exchange(struct bl602_spi_priv_s *priv,
+                                   const void *txbuffer,
+                                   void *rxbuffer, uint32_t nwords)
 {
   spierr("SPI dma not supported\n");
   DEBUGPANIC();
@@ -772,11 +818,20 @@ static void bl602_spi_dma_exchange(FAR struct bl602_spi_priv_s *priv,
  *
  ****************************************************************************/
 
-static uint32_t bl602_spi_poll_send(FAR struct bl602_spi_priv_s *priv,
+static uint32_t bl602_spi_poll_send(struct bl602_spi_priv_s *priv,
                                     uint32_t wd)
 {
   uint32_t val;
   uint32_t tmp_val = 0;
+
+  /* spi enable master */
+
+  modifyreg32(BL602_SPI_CFG, SPI_CFG_CR_S_EN, SPI_CFG_CR_M_EN);
+
+  /* spi fifo clear  */
+
+  modifyreg32(BL602_SPI_FIFO_CFG_0, SPI_FIFO_CFG_0_RX_CLR
+              | SPI_FIFO_CFG_0_TX_CLR, 0);
 
   /* write data to tx fifo */
 
@@ -814,7 +869,7 @@ static uint32_t bl602_spi_poll_send(FAR struct bl602_spi_priv_s *priv,
  *
  ****************************************************************************/
 
-static uint32_t bl602_spi_dma_send(FAR struct bl602_spi_priv_s *priv,
+static uint32_t bl602_spi_dma_send(struct bl602_spi_priv_s *priv,
                                    uint32_t wd)
 {
   uint32_t rd = 0;
@@ -840,9 +895,9 @@ static uint32_t bl602_spi_dma_send(FAR struct bl602_spi_priv_s *priv,
  *
  ****************************************************************************/
 
-static uint32_t bl602_spi_send(FAR struct spi_dev_s *dev, uint32_t wd)
+static uint32_t bl602_spi_send(struct spi_dev_s *dev, uint32_t wd)
 {
-  FAR struct bl602_spi_priv_s *priv = (FAR struct bl602_spi_priv_s *)dev;
+  struct bl602_spi_priv_s *priv = (struct bl602_spi_priv_s *)dev;
   uint32_t rd;
 
   if (priv->dma_chan)
@@ -878,22 +933,13 @@ static uint32_t bl602_spi_send(FAR struct spi_dev_s *dev, uint32_t wd)
  *
  ****************************************************************************/
 
-static void bl602_spi_poll_exchange(FAR struct bl602_spi_priv_s *priv,
-                                    FAR const void *txbuffer,
-                                    FAR void *rxbuffer, size_t nwords)
+static void bl602_spi_poll_exchange(struct bl602_spi_priv_s *priv,
+                                    const void *txbuffer,
+                                    void *rxbuffer, size_t nwords)
 {
   int i;
   uint32_t w_wd = 0xffff;
   uint32_t r_wd;
-
-  /* spi enable master */
-
-  modifyreg32(BL602_SPI_CFG, SPI_CFG_CR_S_EN, SPI_CFG_CR_M_EN);
-
-  /* spi fifo clear  */
-
-  modifyreg32(BL602_SPI_FIFO_CFG_0, SPI_FIFO_CFG_0_RX_CLR
-              | SPI_FIFO_CFG_0_TX_CLR, 0);
 
   for (i = 0; i < nwords; i++)
     {
@@ -946,11 +992,11 @@ static void bl602_spi_poll_exchange(FAR struct bl602_spi_priv_s *priv,
  *
  ****************************************************************************/
 
-static void bl602_spi_exchange(FAR struct spi_dev_s *dev,
-                               FAR const void *txbuffer, FAR void *rxbuffer,
+static void bl602_spi_exchange(struct spi_dev_s *dev,
+                               const void *txbuffer, void *rxbuffer,
                                size_t nwords)
 {
-  FAR struct bl602_spi_priv_s *priv = (FAR struct bl602_spi_priv_s *)dev;
+  struct bl602_spi_priv_s *priv = (struct bl602_spi_priv_s *)dev;
 
   if (priv->dma_chan)
     {
@@ -984,8 +1030,8 @@ static void bl602_spi_exchange(FAR struct spi_dev_s *dev,
  *
  ****************************************************************************/
 
-static void bl602_spi_sndblock(FAR struct spi_dev_s *dev,
-                               FAR const void *txbuffer, size_t nwords)
+static void bl602_spi_sndblock(struct spi_dev_s *dev,
+                               const void *txbuffer, size_t nwords)
 {
   spiinfo("txbuffer=%p nwords=%d\n", txbuffer, nwords);
 
@@ -1012,8 +1058,8 @@ static void bl602_spi_sndblock(FAR struct spi_dev_s *dev,
  *
  ****************************************************************************/
 
-static void bl602_spi_recvblock(FAR struct spi_dev_s *dev,
-                                FAR void *rxbuffer, size_t nwords)
+static void bl602_spi_recvblock(struct spi_dev_s *dev,
+                                void *rxbuffer, size_t nwords)
 {
   spiinfo("rxbuffer=%p nwords=%d\n", rxbuffer, nwords);
 
@@ -1038,7 +1084,7 @@ static void bl602_spi_recvblock(FAR struct spi_dev_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_SPI_TRIGGER
-static int bl602_spi_trigger(FAR struct spi_dev_s *dev)
+static int bl602_spi_trigger(struct spi_dev_s *dev)
 {
   spierr("SPI trigger not supported\n");
   DEBUGPANIC();
@@ -1074,6 +1120,32 @@ static void bl602_set_spi_0_act_mode_sel(uint8_t mod)
 }
 
 /****************************************************************************
+ * Name: bl602_swap_spi_0_mosi_with_miso
+ *
+ * Description:
+ *   Swap SPI0 MOSI with MISO
+ *
+ * Input Parameters:
+ *   swap      - Non-zero to swap MOSI and MISO
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+static void bl602_swap_spi_0_mosi_with_miso(uint8_t swap)
+{
+  if (swap)
+    {
+      modifyreg32(BL602_GLB_GLB_PARM, 0, GLB_PARM_REG_SPI_0_SWAP);
+    }
+  else
+    {
+      modifyreg32(BL602_GLB_GLB_PARM, GLB_PARM_REG_SPI_0_SWAP, 0);
+    }
+}
+
+/****************************************************************************
  * Name: bl602_spi_init
  *
  * Description:
@@ -1087,9 +1159,9 @@ static void bl602_set_spi_0_act_mode_sel(uint8_t mod)
  *
  ****************************************************************************/
 
-static void bl602_spi_init(FAR struct spi_dev_s *dev)
+static void bl602_spi_init(struct spi_dev_s *dev)
 {
-  FAR struct bl602_spi_priv_s *priv = (FAR struct bl602_spi_priv_s *)dev;
+  struct bl602_spi_priv_s *priv = (struct bl602_spi_priv_s *)dev;
   const struct bl602_spi_config_s *config = priv->config;
 
   /* Initialize the SPI semaphore that enforces mutually exclusive access */
@@ -1104,6 +1176,10 @@ static void bl602_spi_init(FAR struct spi_dev_s *dev)
   /* set master mode */
 
   bl602_set_spi_0_act_mode_sel(1);
+
+  /* swap MOSI with MISO to be consistent with BL602 Reference Manual */
+
+  bl602_swap_spi_0_mosi_with_miso(1);
 
   /* spi cfg  reg:
    * cr_spi_deg_en 1
@@ -1144,9 +1220,9 @@ static void bl602_spi_init(FAR struct spi_dev_s *dev)
  *
  ****************************************************************************/
 
-static void bl602_spi_deinit(FAR struct spi_dev_s *dev)
+static void bl602_spi_deinit(struct spi_dev_s *dev)
 {
-  FAR struct bl602_spi_priv_s *priv = (FAR struct bl602_spi_priv_s *)dev;
+  struct bl602_spi_priv_s *priv = (struct bl602_spi_priv_s *)dev;
 
   bl602_swrst_ahb_slave1(AHB_SLAVE1_SPI);
 
@@ -1171,10 +1247,10 @@ static void bl602_spi_deinit(FAR struct spi_dev_s *dev)
  *
  ****************************************************************************/
 
-FAR struct spi_dev_s *bl602_spibus_initialize(int port)
+struct spi_dev_s *bl602_spibus_initialize(int port)
 {
-  FAR struct spi_dev_s *spi_dev;
-  FAR struct bl602_spi_priv_s *priv;
+  struct spi_dev_s *spi_dev;
+  struct bl602_spi_priv_s *priv;
   irqstate_t flags;
 
   switch (port)
@@ -1188,7 +1264,7 @@ FAR struct spi_dev_s *bl602_spibus_initialize(int port)
     return NULL;
     }
 
-  spi_dev = (FAR struct spi_dev_s *)priv;
+  spi_dev = (struct spi_dev_s *)priv;
 
   flags = enter_critical_section();
 
@@ -1216,10 +1292,10 @@ FAR struct spi_dev_s *bl602_spibus_initialize(int port)
  *
  ****************************************************************************/
 
-int bl602_spibus_uninitialize(FAR struct spi_dev_s *dev)
+int bl602_spibus_uninitialize(struct spi_dev_s *dev)
 {
   irqstate_t flags;
-  FAR struct bl602_spi_priv_s *priv = (FAR struct bl602_spi_priv_s *)dev;
+  struct bl602_spi_priv_s *priv = (struct bl602_spi_priv_s *)dev;
 
   DEBUGASSERT(dev);
 

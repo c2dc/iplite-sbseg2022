@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -34,9 +35,7 @@
 #include <arch/irq.h>
 #include <arch/pic32mx/cp0.h>
 
-#include "mips_arch.h"
 #include "mips_internal.h"
-
 #include "pic32mx_int.h"
 #include "pic32mx.h"
 
@@ -54,7 +53,7 @@
  * Public Data
  ****************************************************************************/
 
-volatile uint32_t *g_current_regs[1];
+volatile uint32_t *g_current_regs;
 
 /****************************************************************************
  * Private Data

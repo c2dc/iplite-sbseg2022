@@ -1,38 +1,20 @@
 /****************************************************************************
  * arch/arm/src/s32k1xx/s32k1xx_pwm.c
  *
- *   Copyright (C) 2013, 2016, 2017 Gregory Nutt. All rights reserved.
- *   Authors: Gregory Nutt <gnutt@nuttx.org>
- *            Alan Carvalho de Assis <acassis@gmail.com>
- *            Ken Fazzone <kfazz01@gmail.com>
- *            David Sidrane <david_s5@nscdg.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -54,8 +36,6 @@
 #include <arch/board/board.h>
 
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "chip.h"
 
 #include "s32k1xx_clockconfig.h"
@@ -96,12 +76,12 @@
 
 struct s32k1xx_pwmtimer_s
 {
-  FAR const struct pwm_ops_s *ops;     /* PWM operations */
-  uint8_t                     tpmid;   /* Timer/PWM Module ID {0,..,7} */
-  uint8_t                     channel; /* Timer/PWM Module channel: {0,...,7} */
-  uint32_t                    base;    /* The base address of the timer */
-  uint32_t                    pincfg;  /* Output pin configuration */
-  uint32_t                    pclk;    /* The frequency of the peripheral clock */
+  const struct pwm_ops_s *ops;     /* PWM operations */
+  uint8_t                 tpmid;   /* Timer/PWM Module ID {0,..,7} */
+  uint8_t                 channel; /* Timer/PWM Module channel: {0,...,7} */
+  uint32_t                base;    /* The base address of the timer */
+  uint32_t                pincfg;  /* Output pin configuration */
+  uint32_t                pclk;    /* The frequency of the peripheral clock */
 };
 
 /****************************************************************************
@@ -116,26 +96,26 @@ static void pwm_putreg(struct s32k1xx_pwmtimer_s *priv, int offset,
 
 #ifdef CONFIG_DEBUG_PWM_INFO
 static void pwm_dumpregs(struct s32k1xx_pwmtimer_s *priv,
-                         FAR const char *msg);
+                         const char *msg);
 #else
 #  define pwm_dumpregs(priv,msg)
 #endif
 
 /* Timer management */
 
-static int pwm_timer(FAR struct s32k1xx_pwmtimer_s *priv,
-                     FAR const struct pwm_info_s *info);
+static int pwm_timer(struct s32k1xx_pwmtimer_s *priv,
+                     const struct pwm_info_s *info);
 
 /* PWM driver methods */
 
-static int pwm_setup(FAR struct pwm_lowerhalf_s *dev);
-static int pwm_shutdown(FAR struct pwm_lowerhalf_s *dev);
+static int pwm_setup(struct pwm_lowerhalf_s *dev);
+static int pwm_shutdown(struct pwm_lowerhalf_s *dev);
 
-static int pwm_start(FAR struct pwm_lowerhalf_s *dev,
-                     FAR const struct pwm_info_s *info);
+static int pwm_start(struct pwm_lowerhalf_s *dev,
+                     const struct pwm_info_s *info);
 
-static int pwm_stop(FAR struct pwm_lowerhalf_s *dev);
-static int pwm_ioctl(FAR struct pwm_lowerhalf_s *dev, int cmd,
+static int pwm_stop(struct pwm_lowerhalf_s *dev);
+static int pwm_ioctl(struct pwm_lowerhalf_s *dev, int cmd,
                      unsigned long arg);
 
 /****************************************************************************
@@ -304,7 +284,7 @@ static void pwm_putreg(struct s32k1xx_pwmtimer_s *priv, int offset,
 
 #ifdef CONFIG_DEBUG_PWM_INFO
 static void pwm_dumpregs(struct s32k1xx_pwmtimer_s *priv,
-                         FAR const char *msg)
+                         const char *msg)
 {
   pwminfo("%s:\n", msg);
   pwminfo("  FTM%d_SC:     %04x   FTM%d_CNT:  %04x     FTM%d_MOD:  %04x\n",
@@ -356,8 +336,8 @@ static void pwm_dumpregs(struct s32k1xx_pwmtimer_s *priv,
  *
  ****************************************************************************/
 
-static int pwm_timer(FAR struct s32k1xx_pwmtimer_s *priv,
-                     FAR const struct pwm_info_s *info)
+static int pwm_timer(struct s32k1xx_pwmtimer_s *priv,
+                     const struct pwm_info_s *info)
 {
   /* Calculated values */
 
@@ -566,9 +546,9 @@ static int pwm_timer(FAR struct s32k1xx_pwmtimer_s *priv,
  *
  ****************************************************************************/
 
-static int pwm_setup(FAR struct pwm_lowerhalf_s *dev)
+static int pwm_setup(struct pwm_lowerhalf_s *dev)
 {
-  FAR struct s32k1xx_pwmtimer_s *priv = (FAR struct s32k1xx_pwmtimer_s *)dev;
+  struct s32k1xx_pwmtimer_s *priv = (struct s32k1xx_pwmtimer_s *)dev;
 
   /* Note: The appropriate clock should for the right FTM device should
    * already be enabled in the board-specific s32k1xx_periphclocks.c file.
@@ -600,9 +580,9 @@ static int pwm_setup(FAR struct pwm_lowerhalf_s *dev)
  *
  ****************************************************************************/
 
-static int pwm_shutdown(FAR struct pwm_lowerhalf_s *dev)
+static int pwm_shutdown(struct pwm_lowerhalf_s *dev)
 {
-  FAR struct s32k1xx_pwmtimer_s *priv = (FAR struct s32k1xx_pwmtimer_s *)dev;
+  struct s32k1xx_pwmtimer_s *priv = (struct s32k1xx_pwmtimer_s *)dev;
   uint32_t pincfg;
 
   pwminfo("FTM%d pincfg: %08x\n", priv->tpmid, priv->pincfg);
@@ -634,10 +614,10 @@ static int pwm_shutdown(FAR struct pwm_lowerhalf_s *dev)
  *
  ****************************************************************************/
 
-static int pwm_start(FAR struct pwm_lowerhalf_s *dev,
-                     FAR const struct pwm_info_s *info)
+static int pwm_start(struct pwm_lowerhalf_s *dev,
+                     const struct pwm_info_s *info)
 {
-  FAR struct s32k1xx_pwmtimer_s *priv = (FAR struct s32k1xx_pwmtimer_s *)dev;
+  struct s32k1xx_pwmtimer_s *priv = (struct s32k1xx_pwmtimer_s *)dev;
   return pwm_timer(priv, info);
 }
 
@@ -660,9 +640,9 @@ static int pwm_start(FAR struct pwm_lowerhalf_s *dev,
  *
  ****************************************************************************/
 
-static int pwm_stop(FAR struct pwm_lowerhalf_s *dev)
+static int pwm_stop(struct pwm_lowerhalf_s *dev)
 {
-  FAR struct s32k1xx_pwmtimer_s *priv = (FAR struct s32k1xx_pwmtimer_s *)dev;
+  struct s32k1xx_pwmtimer_s *priv = (struct s32k1xx_pwmtimer_s *)dev;
   irqstate_t flags;
 
   pwminfo("FTM%d\n", priv->tpmid);
@@ -716,6 +696,7 @@ static int pwm_stop(FAR struct pwm_lowerhalf_s *dev)
 
       default:
         pwmerr("ERROR: No such channel: %d\n", priv->channel);
+        leave_critical_section(flags);
         return -EINVAL;
     }
 
@@ -741,11 +722,11 @@ static int pwm_stop(FAR struct pwm_lowerhalf_s *dev)
  *
  ****************************************************************************/
 
-static int pwm_ioctl(FAR struct pwm_lowerhalf_s *dev, int cmd,
+static int pwm_ioctl(struct pwm_lowerhalf_s *dev, int cmd,
                      unsigned long arg)
 {
 #ifdef CONFIG_DEBUG_PWM_INFO
-  FAR struct s32k1xx_pwmtimer_s *priv = (FAR struct s32k1xx_pwmtimer_s *)dev;
+  struct s32k1xx_pwmtimer_s *priv = (struct s32k1xx_pwmtimer_s *)dev;
 
   /* There are no platform-specific ioctl commands */
 
@@ -773,9 +754,9 @@ static int pwm_ioctl(FAR struct pwm_lowerhalf_s *dev, int cmd,
  *
  ****************************************************************************/
 
-FAR struct pwm_lowerhalf_s *s32k1xx_pwminitialize(int timer)
+struct pwm_lowerhalf_s *s32k1xx_pwminitialize(int timer)
 {
-  FAR struct s32k1xx_pwmtimer_s *lower;
+  struct s32k1xx_pwmtimer_s *lower;
   int ret;
   uint32_t sysclk;
 
@@ -845,7 +826,7 @@ FAR struct pwm_lowerhalf_s *s32k1xx_pwminitialize(int timer)
         return NULL;
       }
 
-  return (FAR struct pwm_lowerhalf_s *)lower;
+  return (struct pwm_lowerhalf_s *)lower;
 }
 
 #endif /* CONFIG_S32K1XX_FTMn_PWM, n = 0,...,7 */

@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 
 #include <nuttx/irq.h>
@@ -97,7 +98,6 @@ static inline void timer_restart(FAR struct posix_timer_s *timer,
 
   if (timer->pt_delay)
     {
-      timer->pt_last = timer->pt_delay;
       wd_start(&timer->pt_wdog, timer->pt_delay, timer_timeout, itimer);
     }
 }
@@ -287,7 +287,7 @@ int timer_settime(timer_t timerid, int flags,
     {
       /* Calculate a delay corresponding to the absolute time in 'value' */
 
-      clock_abstime2ticks(timer->pt_clock, &value->it_value, &delay);
+      ret = clock_abstime2ticks(timer->pt_clock, &value->it_value, &delay);
     }
   else
     {
@@ -296,29 +296,30 @@ int timer_settime(timer_t timerid, int flags,
        * returns success.
        */
 
-      clock_time2ticks(&value->it_value, &delay);
+      ret = clock_time2ticks(&value->it_value, &delay);
     }
 
-  /* If the time is in the past or now, then set up the next interval
-   * instead (assuming a repetitive timer).
+  if (ret < 0)
+    {
+      set_errno(-ret);
+      ret = ERROR;
+      goto errout;
+    }
+
+  /* If the specified time has already passed, the function shall succeed
+   * and the expiration notification shall be made.
    */
 
-  if (delay <= 0)
+  if (delay < 0)
     {
-      delay = timer->pt_delay;
+      delay = 0;
     }
 
   /* Then start the watchdog */
 
-  if (delay > 0)
+  if (delay >= 0)
     {
-      /* REVISIT: Should pt_last be sclock_t? Should wd_start delay be
-       *          sclock_t?
-       */
-
-      timer->pt_last = delay;
-      ret = wd_start(&timer->pt_wdog, delay,
-                     timer_timeout, (wdparm_t)timer);
+      ret = wd_start(&timer->pt_wdog, delay, timer_timeout, (wdparm_t)timer);
       if (ret < 0)
         {
           set_errno(-ret);
@@ -330,6 +331,7 @@ int timer_settime(timer_t timerid, int flags,
         }
     }
 
+errout:
   leave_critical_section(intflags);
   return ret;
 }

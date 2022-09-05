@@ -88,7 +88,7 @@ static struct usbhost_connection_s *g_ehciconn;
 
 static int ehci_waiter(int argc, char *argv[])
 {
-  FAR struct usbhost_hubport_s *hport;
+  struct usbhost_hubport_s *hport;
 
   uinfo("ehci_waiter:  Running\n");
   for (; ; )
@@ -131,7 +131,6 @@ static int ehci_waiter(int argc, char *argv[])
 
 int imxrt_usbhost_initialize(void)
 {
-  pid_t pid;
   int ret;
 
   imxrt_clockall_usboh3();
@@ -205,10 +204,10 @@ int imxrt_usbhost_initialize(void)
 
   /* Start a thread to handle device connection. */
 
-  pid = kthread_create("EHCI Monitor", CONFIG_USBHOST_DEFPRIO,
+  ret = kthread_create("EHCI Monitor", CONFIG_USBHOST_DEFPRIO,
                        CONFIG_USBHOST_STACKSIZE,
-                       (main_t)ehci_waiter, (FAR char * const *)NULL);
-  if (pid < 0)
+                       (main_t)ehci_waiter, (char * const *)NULL);
+  if (ret < 0)
     {
       uerr("ERROR: Failed to create ehci_waiter task: %d\n", ret);
       return -ENODEV;

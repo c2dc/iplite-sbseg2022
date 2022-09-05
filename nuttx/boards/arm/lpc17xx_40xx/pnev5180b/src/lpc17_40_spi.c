@@ -31,7 +31,7 @@
 #include <nuttx/spi/spi.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include "lpc17_40_spi.h"
 #include "lpc17_40_gpio.h"
@@ -83,14 +83,14 @@ void weak_function pnev5180b_spidev_initialize(void)
  *
  ****************************************************************************/
 
-void lpc17_40_spiselect(FAR struct spi_dev_s *dev, uint32_t devid,
+void lpc17_40_spiselect(struct spi_dev_s *dev, uint32_t devid,
                         bool selected)
 {
   spiinfo("devid: %d CS: %s\n",
           (int)devid, selected ? "assert" : "de-assert");
 }
 
-uint8_t lpc17_40_spistatus(FAR struct spi_dev_s *dev, uint32_t devid)
+uint8_t lpc17_40_spistatus(struct spi_dev_s *dev, uint32_t devid)
 {
   spiinfo("devid: %d\n", (int)devid);
   return 0;

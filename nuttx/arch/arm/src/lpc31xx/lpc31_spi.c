@@ -1,36 +1,20 @@
 /****************************************************************************
  * arch/arm/src/lpc31xx/lpc31_spi.c
  *
- *   Copyright (C) 2009-2017 Gregory Nutt. All rights reserved.
- *   Author: David Hewson, deriving in part from other SPI drivers
- *           originally by Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -43,6 +27,7 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -110,32 +95,32 @@ static uint32_t    spi_getreg(uint32_t address);
 #  define spi_getreg(a)   getreg32(a)
 #endif
 
-static inline void spi_drive_cs(FAR struct lpc31_spidev_s *priv,
+static inline void spi_drive_cs(struct lpc31_spidev_s *priv,
                                 uint8_t slave, uint8_t val);
-static inline void spi_select_slave(FAR struct lpc31_spidev_s *priv,
+static inline void spi_select_slave(struct lpc31_spidev_s *priv,
                                     uint8_t slave);
-static inline uint32_t spi_readword(FAR struct lpc31_spidev_s *priv);
-static inline void spi_writeword(FAR struct lpc31_spidev_s *priv,
+static inline uint32_t spi_readword(struct lpc31_spidev_s *priv);
+static inline void spi_writeword(struct lpc31_spidev_s *priv,
                                  uint32_t word);
 
-static int         spi_lock(FAR struct spi_dev_s *dev, bool lock);
-static void        spi_select(FAR struct spi_dev_s *dev, uint32_t devid,
+static int         spi_lock(struct spi_dev_s *dev, bool lock);
+static void        spi_select(struct spi_dev_s *dev, uint32_t devid,
                               bool selected);
-static uint32_t    spi_setfrequency(FAR struct spi_dev_s *dev,
+static uint32_t    spi_setfrequency(struct spi_dev_s *dev,
                                     uint32_t frequency);
-static void        spi_setmode(FAR struct spi_dev_s *dev,
+static void        spi_setmode(struct spi_dev_s *dev,
                                enum spi_mode_e mode);
-static void        spi_setbits(FAR struct spi_dev_s *dev, int nbits);
-static uint8_t     spi_status(FAR struct spi_dev_s *dev, uint32_t devid);
-static uint32_t    spi_send(FAR struct spi_dev_s *dev, uint32_t word);
-static void        spi_exchange(FAR struct spi_dev_s *dev,
-                                FAR const void *txbuffer, FAR void *rxbuffer,
+static void        spi_setbits(struct spi_dev_s *dev, int nbits);
+static uint8_t     spi_status(struct spi_dev_s *dev, uint32_t devid);
+static uint32_t    spi_send(struct spi_dev_s *dev, uint32_t word);
+static void        spi_exchange(struct spi_dev_s *dev,
+                                const void *txbuffer, void *rxbuffer,
                                 size_t nwords);
 #ifndef CONFIG_SPI_EXCHANGE
-static void        spi_sndblock(FAR struct spi_dev_s *dev,
-                                FAR const void *txbuffer, size_t nwords);
-static void        spi_recvblock(FAR struct spi_dev_s *dev,
-                                 FAR void *rxbuffer, size_t nwords);
+static void        spi_sndblock(struct spi_dev_s *dev,
+                                const void *txbuffer, size_t nwords);
+static void        spi_recvblock(struct spi_dev_s *dev,
+                                 void *rxbuffer, size_t nwords);
 #endif
 
 /****************************************************************************
@@ -300,7 +285,7 @@ static uint32_t spi_getreg(uint32_t address)
  *
  ****************************************************************************/
 
-static inline void spi_drive_cs(FAR struct lpc31_spidev_s *priv,
+static inline void spi_drive_cs(struct lpc31_spidev_s *priv,
                                 uint8_t slave, uint8_t val)
 {
   switch (slave)
@@ -367,7 +352,7 @@ static inline void spi_drive_cs(FAR struct lpc31_spidev_s *priv,
  *
  ****************************************************************************/
 
-static inline void spi_select_slave(FAR struct lpc31_spidev_s *priv,
+static inline void spi_select_slave(struct lpc31_spidev_s *priv,
                                     uint8_t slave)
 {
   switch (slave)
@@ -406,7 +391,7 @@ static inline void spi_select_slave(FAR struct lpc31_spidev_s *priv,
  *
  ****************************************************************************/
 
-static inline uint32_t spi_readword(FAR struct lpc31_spidev_s *priv)
+static inline uint32_t spi_readword(struct lpc31_spidev_s *priv)
 {
   /* Wait until the RX FIFO is not empty */
 
@@ -432,7 +417,7 @@ static inline uint32_t spi_readword(FAR struct lpc31_spidev_s *priv)
  *
  ****************************************************************************/
 
-static inline void spi_writeword(FAR struct lpc31_spidev_s *priv,
+static inline void spi_writeword(struct lpc31_spidev_s *priv,
                                  uint32_t word)
 {
   /* Wait until the TX FIFO is not full */
@@ -465,9 +450,9 @@ static inline void spi_writeword(FAR struct lpc31_spidev_s *priv,
  *
  ****************************************************************************/
 
-static int spi_lock(FAR struct spi_dev_s *dev, bool lock)
+static int spi_lock(struct spi_dev_s *dev, bool lock)
 {
-  FAR struct lpc31_spidev_s *priv = (FAR struct lpc31_spidev_s *)dev;
+  struct lpc31_spidev_s *priv = (struct lpc31_spidev_s *)dev;
   int ret;
 
   if (lock)
@@ -500,7 +485,7 @@ static int spi_lock(FAR struct spi_dev_s *dev, bool lock)
  *
  ****************************************************************************/
 
-static void spi_select(FAR struct spi_dev_s *dev, uint32_t devid,
+static void spi_select(struct spi_dev_s *dev, uint32_t devid,
                        bool selected)
 {
   struct lpc31_spidev_s *priv = (struct lpc31_spidev_s *) dev;
@@ -574,10 +559,10 @@ static void spi_select(FAR struct spi_dev_s *dev, uint32_t devid,
  *
  ****************************************************************************/
 
-static uint32_t spi_setfrequency(FAR struct spi_dev_s *dev,
+static uint32_t spi_setfrequency(struct spi_dev_s *dev,
                                  uint32_t frequency)
 {
-  FAR struct lpc31_spidev_s *priv = (FAR struct lpc31_spidev_s *)dev;
+  struct lpc31_spidev_s *priv = (struct lpc31_spidev_s *)dev;
   uint32_t spi_clk;
   uint32_t div;
   uint32_t div1;
@@ -634,9 +619,9 @@ static uint32_t spi_setfrequency(FAR struct spi_dev_s *dev,
  *
  ****************************************************************************/
 
-static void spi_setmode(FAR struct spi_dev_s *dev, enum spi_mode_e mode)
+static void spi_setmode(struct spi_dev_s *dev, enum spi_mode_e mode)
 {
-  FAR struct lpc31_spidev_s *priv = (FAR struct lpc31_spidev_s *)dev;
+  struct lpc31_spidev_s *priv = (struct lpc31_spidev_s *)dev;
   uint16_t setbits;
   uint16_t clrbits;
 
@@ -692,9 +677,9 @@ static void spi_setmode(FAR struct spi_dev_s *dev, enum spi_mode_e mode)
  *
  ****************************************************************************/
 
-static void spi_setbits(FAR struct spi_dev_s *dev, int nbits)
+static void spi_setbits(struct spi_dev_s *dev, int nbits)
 {
-  FAR struct lpc31_spidev_s *priv = (FAR struct lpc31_spidev_s *)dev;
+  struct lpc31_spidev_s *priv = (struct lpc31_spidev_s *)dev;
 
   /* Has the number of bits changed? */
 
@@ -721,7 +706,7 @@ static void spi_setbits(FAR struct spi_dev_s *dev, int nbits)
  *
  ****************************************************************************/
 
-static uint8_t spi_status(FAR struct spi_dev_s *dev, uint32_t devid)
+static uint8_t spi_status(struct spi_dev_s *dev, uint32_t devid)
 {
   /* FIXME: is there anyway to determine this
    *        it should probably be board dependent anyway
@@ -746,9 +731,9 @@ static uint8_t spi_status(FAR struct spi_dev_s *dev, uint32_t devid)
  *
  ****************************************************************************/
 
-static uint32_t spi_send(FAR struct spi_dev_s *dev, uint32_t word)
+static uint32_t spi_send(struct spi_dev_s *dev, uint32_t word)
 {
-  FAR struct lpc31_spidev_s *priv = (FAR struct lpc31_spidev_s *)dev;
+  struct lpc31_spidev_s *priv = (struct lpc31_spidev_s *)dev;
   DEBUGASSERT(priv);
 
   spi_writeword(priv, word);
@@ -765,7 +750,7 @@ static uint32_t spi_send(FAR struct spi_dev_s *dev, uint32_t word)
  *   dev      - Device-specific state data
  *   txbuffer - A pointer to the buffer of data to be sent
  *   rxbuffer - A pointer to a buffer in which to receive data
- *   nwords   - the length of data to be exchaned in units of words.
+ *   nwords   - the length of data to be exchanged in units of words.
  *              The wordsize is determined by the number of bits-per-word
  *              selected for the SPI interface.  If nbits <= 8, the data is
  *              packed into uint8_t's; if nbits >8, the data is packed into
@@ -776,10 +761,10 @@ static uint32_t spi_send(FAR struct spi_dev_s *dev, uint32_t word)
  *
  ****************************************************************************/
 
-static void spi_exchange(FAR struct spi_dev_s *dev, FAR const void *txbuffer,
-                         FAR void *rxbuffer, size_t nwords)
+static void spi_exchange(struct spi_dev_s *dev, const void *txbuffer,
+                         void *rxbuffer, size_t nwords)
 {
-  FAR struct lpc31_spidev_s *priv = (FAR struct lpc31_spidev_s *)dev;
+  struct lpc31_spidev_s *priv = (struct lpc31_spidev_s *)dev;
   unsigned int maxtx;
   unsigned int ntx;
 
@@ -892,8 +877,8 @@ static void spi_exchange(FAR struct spi_dev_s *dev, FAR const void *txbuffer,
  ****************************************************************************/
 
 #ifndef CONFIG_SPI_EXCHANGE
-static void spi_sndblock(FAR struct spi_dev_s *dev,
-                         FAR const void *txbuffer, size_t nwords)
+static void spi_sndblock(struct spi_dev_s *dev,
+                         const void *txbuffer, size_t nwords)
 {
   return spi_exchange(dev, txbuffer, NULL, nwords);
 }
@@ -920,7 +905,7 @@ static void spi_sndblock(FAR struct spi_dev_s *dev,
  ****************************************************************************/
 
 #ifndef CONFIG_SPI_EXCHANGE
-static void spi_recvblock(FAR struct spi_dev_s *dev, FAR void *rxbuffer,
+static void spi_recvblock(struct spi_dev_s *dev, void *rxbuffer,
                           size_t nwords)
 {
   return spi_exchange(dev, NULL, rxbuffer, nwords);
@@ -945,9 +930,9 @@ static void spi_recvblock(FAR struct spi_dev_s *dev, FAR void *rxbuffer,
  *
  ****************************************************************************/
 
-FAR struct spi_dev_s *lpc31_spibus_initialize(int port)
+struct spi_dev_s *lpc31_spibus_initialize(int port)
 {
-  FAR struct lpc31_spidev_s *priv = &g_spidev;
+  struct lpc31_spidev_s *priv = &g_spidev;
 
   /* Only the SPI0 interface is supported */
 
@@ -1007,5 +992,5 @@ FAR struct spi_dev_s *lpc31_spibus_initialize(int port)
   priv->frequency = 0;
   spi_setfrequency(&priv->spidev, 400000);
 
-  return (FAR struct spi_dev_s *)priv;
+  return (struct spi_dev_s *)priv;
 }

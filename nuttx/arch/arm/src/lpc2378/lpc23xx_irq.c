@@ -47,13 +47,11 @@
 #include <stdint.h>
 #include <errno.h>
 #include <debug.h>
-#include <nuttx/irq.h>
+#include <nuttx/arch.h>
 
 #include "arm.h"
 #include "chip.h"
 #include "arm_internal.h"
-#include "arm_arch.h"
-
 #include "lpc2378.h"
 #include "lpc23xx_vic.h"
 
@@ -119,7 +117,7 @@ void up_irqinitialize(void)
   /* Enable global ARM interrupts */
 
 #ifndef CONFIG_SUPPRESS_INTERRUPTS
-  up_irq_restore(PSR_MODE_SVC | PSR_F_BIT);
+  up_irq_restore(PSR_MODE_SYS | PSR_F_BIT);
 #endif
 }
 

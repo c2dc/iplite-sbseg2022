@@ -132,16 +132,6 @@ EXTERN uint8_t g_dns_nservers;
  ****************************************************************************/
 
 /****************************************************************************
- * Name: dns_initialize
- *
- * Description:
- *   Make sure that the DNS client has been properly initialized for use.
- *
- ****************************************************************************/
-
-bool dns_initialize(void);
-
-/****************************************************************************
  * Name: dns_semtake
  *
  * Description:
@@ -177,7 +167,7 @@ void dns_semgive(void);
  *
  ****************************************************************************/
 
-int dns_bind(void);
+int dns_bind(sa_family_t family);
 
 /****************************************************************************
  * Name: dns_query
@@ -187,7 +177,6 @@ int dns_bind(void);
  *   return its IP address in 'ipaddr'
  *
  * Input Parameters:
- *   sd       - The socket descriptor previously initialized by dsn_bind().
  *   hostname - The hostname string to be resolved.
  *   addr     - The location to return the IP addresses associated with the
  *     hostname.
@@ -200,7 +189,7 @@ int dns_bind(void);
  *
  ****************************************************************************/
 
-int dns_query(int sd, FAR const char *hostname, FAR union dns_addr_u *addr,
+int dns_query(FAR const char *hostname, FAR union dns_addr_u *addr,
               FAR int *naddr);
 
 /****************************************************************************
@@ -222,6 +211,21 @@ int dns_query(int sd, FAR const char *hostname, FAR union dns_addr_u *addr,
 #if CONFIG_NETDB_DNSCLIENT_ENTRIES > 0
 void dns_save_answer(FAR const char *hostname,
                      FAR const union dns_addr_u *addr, int naddr);
+#endif
+
+/****************************************************************************
+ * Name: dns_clear_answer
+ *
+ * Description:
+ *   Clear the resolved hostname in the DNS cache
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+#if CONFIG_NETDB_DNSCLIENT_ENTRIES > 0
+void dns_clear_answer(void);
 #endif
 
 /****************************************************************************

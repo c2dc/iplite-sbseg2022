@@ -131,8 +131,7 @@ GNU Toolchain Options
   configuration options to your .config (or defconfig) file:
 
     CONFIG_ARMV7A_TOOLCHAIN_BUILDROOT=y  : NuttX buildroot under Linux or Cygwin (default)
-    CONFIG_ARMV7A_TOOLCHAIN_GNU_EABIL=y  : Generic GCC ARM EABI toolchain for Linux
-    CONFIG_ARMV7A_TOOLCHAIN_GNU_EABIW=y  : Generic GCC ARM EABI toolchain for Windows
+    CONFIG_ARMV7A_TOOLCHAIN_GNU_EABI=y   : Generic GCC ARM EABI toolchain
 
 IDEs
 ====
@@ -1267,8 +1266,8 @@ HSMCI Card Slots
     Device Drivers -> MMC/SD Driver Support
       CONFIG_MMCSD=y                        : Enable MMC/SD support
       CONFIG_MMSCD_NSLOTS=1                 : One slot per driver instance
-      CONFIG_MMCSD_MULTIBLOCK_DISABLE=y     : (REVISIT)
-      CONFIG_MMCSD_HAVE_CARDDETECT=y         : Supports card-detect PIOs
+      CONFIG_MMCSD_MULTIBLOCK_LIMIT=1       : (REVISIT)
+      CONFIG_MMCSD_HAVE_CARDDETECT=y        : Supports card-detect PIOs
       CONFIG_MMCSD_MMCSUPPORT=n             : Interferes with some SD cards
       CONFIG_MMCSD_SPI=n                    : No SPI-based MMC/SD support
       CONFIG_MMCSD_SDIO=y                   : SDIO-based MMC/SD support
@@ -2384,7 +2383,7 @@ CAN Usage
 
   Only messages that have IDs that match the CONFIG_SAMA5_CANn_ADDRn when both
   the received and the configured address are masked by CONFIG_SAMA5_CANn_MASKn
-  will be accepted.  For example, if the mask is all ones, then only messasges
+  will be accepted.  For example, if the mask is all ones, then only messages
   with exact address matches will be accepted; if the mask is all zeroes than
   any address will be accepted.
 
@@ -3294,7 +3293,7 @@ Configurations
        CONFIG_WINDOWS_CYGWIN=y             : Using Cygwin or other POSIX environment
 
      System Type -> Toolchain:
-       CONFIG_ARMV7A_TOOLCHAIN_GNU_EABIW=y : GNU EABI toolchain for windows
+       CONFIG_ARMV7A_TOOLCHAIN_GNU_EABI=y  : GNU EABI toolchain
 
   4. The SAMA5Dx is running at 396MHz by default in these configurations.
      This is because the original timing for the PLLs, NOR FLASH, and SDRAM
@@ -3390,7 +3389,7 @@ Configurations
 
        CONFIG_HOST_WINDOWS=y                   : Windows operating system
        CONFIG_WINDOWS_CYGWIN=y                 : POSIX environment under Windows
-       CONFIG_ARMV7A_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7A_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain
 
        If you are running on Linux, make *certain* that you have
        CONFIG_HOST_LINUX=y *before* the first make or you will create a
@@ -3468,7 +3467,7 @@ Configurations
 
        CONFIG_HOST_WINDOWS=y                   : Windows operating system
        CONFIG_WINDOWS_CYGWIN=y                 : POSIX environment under Windows
-       CONFIG_ARMV7A_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7A_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain
 
        If you are running on Linux, make *certain* that you have
        CONFIG_HOST_LINUX=y *before* the first make or you will create a
@@ -3541,7 +3540,7 @@ Configurations
 
        CONFIG_HOST_WINDOWS=y                   : Windows operating system
        CONFIG_WINDOWS_CYGWIN=y                 : POSIX environment under Windows
-       CONFIG_ARMV7A_TOOLCHAIN_GNU_EABIW=y     : GNU EABI toolchain for Windows
+       CONFIG_ARMV7A_TOOLCHAIN_GNU_EABI=y      : GNU EABI toolchain
 
        If you are running on Linux, make *certain* that you have
        CONFIG_HOST_LINUX=y *before* the first make or you will create a
@@ -3775,7 +3774,7 @@ To-Do List
    endpoint support in the EHCI driver is untested (but works in similar
    EHCI drivers).
 
-3) HSCMI. CONFIG_MMCSD_MULTIBLOCK_DISABLE=y is set to disable multi-block
+3) HSCMI. CONFIG_MMCSD_MULTIBLOCK_LIMIT=1 is set to disable multi-block
    transfers because of some issues that I saw during testing.  The is very
    low priority to me but might be important to you if you are need very
    high performance SD card accesses.

@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __UP_INTERNAL_H
-#define __UP_INTERNAL_H
+#ifndef __ARCH_HC_SRC_COMMON_UP_INTERNAL_H
+#define __ARCH_HC_SRC_COMMON_UP_INTERNAL_H
 
 /****************************************************************************
  * Included Files
@@ -29,6 +29,7 @@
 
 #ifndef __ASSEMBLY__
 #  include <nuttx/compiler.h>
+#  include <nuttx/irq.h>
 #  include <stdint.h>
 #endif
 
@@ -70,6 +71,25 @@
 #  define CONFIG_ARCH_INTERRUPTSTACK 0
 #endif
 
+/* The CPU12 stack should be aligned at half-word (2 byte) boundaries. If
+ * necessary frame_size must be rounded up to the next boundary
+ */
+
+#define STACK_ALIGNMENT     2
+
+/* Stack alignment macros */
+
+#define STACK_ALIGN_MASK    (STACK_ALIGNMENT - 1)
+#define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
+#define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
+
+#define getreg8(a)          (*(volatile uint8_t *)(a))
+#define putreg8(v,a)        (*(volatile uint8_t *)(a) = (v))
+#define getreg16(a)         (*(volatile uint16_t *)(a))
+#define putreg16(v,a)       (*(volatile uint16_t *)(a) = (v))
+#define getreg32(a)         (*(volatile uint32_t *)(a))
+#define putreg32(v,a)       (*(volatile uint32_t *)(a) = (v))
+
 /* Macros to handle saving and restore interrupt state.  In the current CPU12
  * model, the state is copied from the stack to the TCB, but only
  * a referenced is passed to get the state from the TCB.
@@ -91,12 +111,6 @@ typedef void (*up_vector_t)(void);
  ****************************************************************************/
 
 #ifndef __ASSEMBLY__
-/* This holds a references to the current interrupt level register storage
- * structure.  If is non-NULL only during interrupt processing.
- */
-
-extern volatile uint8_t *g_current_regs;
-
 /* This is the beginning of heap as provided from processor-specific logic.
  * This is the first address in RAM after the loaded program+bss+idle stack.
  * The end of the heap is CONFIG_RAM_END
@@ -107,7 +121,8 @@ extern uint16_t g_idle_topstack;
 /* Address of the saved user stack pointer */
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 1
-extern uint32_t g_intstackbase;
+extern uint32_t g_intstackalloc;
+extern uint32_t g_intstacktop;
 #endif
 
 /****************************************************************************
@@ -118,11 +133,16 @@ extern uint32_t g_intstackbase;
  * Public Functions Prototypes
  ****************************************************************************/
 
+/* Atomic modification of registers */
+
+void modifyreg8(unsigned int addr, uint8_t clearbits, uint8_t setbits);
+void modifyreg16(unsigned int addr, uint16_t clearbits, uint16_t setbits);
+void modifyreg32(unsigned int addr, uint32_t clearbits, uint32_t setbits);
+
 /* Context switching functions */
 
 void up_copystate(uint8_t *dest, uint8_t *src);
 void up_decodeirq(uint8_t *regs);
-int  up_saveusercontext(uint8_t *saveregs);
 void up_fullcontextrestore(uint8_t *restoreregs) noreturn_function;
 void up_switchcontext(uint8_t *saveregs, uint8_t *restoreregs);
 
@@ -144,12 +164,7 @@ void up_earlyserialinit(void);
 void up_serialinit(void);
 #endif
 
-#ifdef CONFIG_RPMSG_UART
-void rpmsg_serialinit(void);
-#endif
-
 void up_lowputc(char ch);
-void up_puts(const char *str);
 void up_lowputs(const char *str);
 
 /* Memory configuration */
@@ -165,8 +180,6 @@ void up_addregion(void);
 #ifdef CONFIG_ARCH_DMA
 void weak_function up_dma_initialize(void);
 #endif
-
-void up_wdtinit(void);
 
 #if defined(CONFIG_NET) && !defined(CONFIG_NETDEV_LATEINIT)
 void up_netinitialize(void);
@@ -184,4 +197,4 @@ void up_usbuninitialize(void);
 
 #endif /* __ASSEMBLY__ */
 
-#endif /* __UP_INTERNAL_H */
+#endif /* __ARCH_HC_SRC_COMMON_UP_INTERNAL_H */

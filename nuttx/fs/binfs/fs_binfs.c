@@ -38,11 +38,22 @@
 
 #include <nuttx/fs/fs.h>
 #include <nuttx/fs/binfs.h>
-#include <nuttx/fs/dirent.h>
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/lib/builtin.h>
 
+#include "inode/inode.h"
+
 #if !defined(CONFIG_DISABLE_MOUNTPOINT) && defined(CONFIG_FS_BINFS)
+
+/****************************************************************************
+ * Private Type
+ ****************************************************************************/
+
+struct binfs_dir_s
+{
+  struct fs_dirent_s base; /* VFS directory structure */
+  unsigned int index;      /* Index to the next named entry point */
+};
 
 /****************************************************************************
  * Private Function Prototypes
@@ -60,10 +71,14 @@ static int     binfs_dup(FAR const struct file *oldp, FAR struct file *newp);
 static int     binfs_fstat(FAR const struct file *filep,
                            FAR struct stat *buf);
 
-static int     binfs_opendir(struct inode *mountpt, const char *relpath,
-                             struct fs_dirent_s *dir);
+static int     binfs_opendir(FAR struct inode *mountpt,
+                             FAR const char *relpath,
+                             FAR struct fs_dirent_s **dir);
+static int     binfs_closedir(FAR struct inode *mountpt,
+                              FAR struct fs_dirent_s *dir);
 static int     binfs_readdir(FAR struct inode *mountpt,
-                             FAR struct fs_dirent_s *dir);
+                             FAR struct fs_dirent_s *dir,
+                             FAR struct dirent *entry);
 static int     binfs_rewinddir(FAR struct inode *mountpt,
                                FAR struct fs_dirent_s *dir);
 
@@ -98,10 +113,11 @@ const struct mountpt_operations binfs_operations =
   NULL,              /* sync */
   binfs_dup,         /* dup */
   binfs_fstat,       /* fstat */
+  NULL,              /* fchstat */
   NULL,              /* truncate */
 
   binfs_opendir,     /* opendir */
-  NULL,              /* closedir */
+  binfs_closedir,    /* closedir */
   binfs_readdir,     /* readdir */
   binfs_rewinddir,   /* rewinddir */
 
@@ -113,7 +129,8 @@ const struct mountpt_operations binfs_operations =
   NULL,              /* mkdir */
   NULL,              /* rmdir */
   NULL,              /* rename */
-  binfs_stat         /* stat */
+  binfs_stat,        /* stat */
+  NULL               /* chstat */
 };
 
 /****************************************************************************
@@ -194,22 +211,26 @@ static int binfs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 
   /* Only one IOCTL command is supported */
 
-  if (cmd == FIOC_FILENAME)
+  if (cmd == FIOC_FILEPATH)
     {
-      /* IN:  FAR char const ** pointer
-       * OUT: Pointer to a persistent file name (Guaranteed to persist while
-       *      the file is open).
+      /* IN:  FAR char *(length >= PATH_MAX)
+       * OUT: The full file path
        */
 
-      FAR const char **ptr = (FAR const char **)((uintptr_t)arg);
+      FAR char *ptr = (FAR char *)((uintptr_t)arg);
       if (ptr == NULL)
         {
           ret = -EINVAL;
         }
       else
         {
-          *ptr = builtin_getname((int)((uintptr_t)filep->f_priv));
-          ret = OK;
+          ret = inode_getpath(filep->f_inode, ptr);
+          if (ret < 0)
+            {
+              return ret;
+            }
+
+          strcat(ptr, builtin_getname((int)((uintptr_t)filep->f_priv)));
         }
     }
   else
@@ -268,9 +289,11 @@ static int binfs_fstat(FAR const struct file *filep, FAR struct stat *buf)
  *
  ****************************************************************************/
 
-static int binfs_opendir(struct inode *mountpt, const char *relpath,
-                         struct fs_dirent_s *dir)
+static int binfs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
+                         FAR struct fs_dirent_s **dir)
 {
+  FAR struct binfs_dir_s *bdir;
+
   finfo("relpath: \"%s\"\n", relpath ? relpath : "NULL");
 
   /* The requested directory must be the volume-relative "root" directory */
@@ -280,10 +303,33 @@ static int binfs_opendir(struct inode *mountpt, const char *relpath,
       return -ENOENT;
     }
 
+  bdir = kmm_zalloc(sizeof(*bdir));
+  if (bdir == NULL)
+    {
+      return -ENOMEM;
+    }
+
   /* Set the index to the first entry */
 
-  dir->u.binfs.fb_index = 0;
+  bdir->index = 0;
+  *dir = (FAR struct fs_dirent_s *)bdir;
   return OK;
+}
+
+/****************************************************************************
+ * Name: binfs_closedir
+ *
+ * Description:
+ *   Close a directory
+ *
+ ****************************************************************************/
+
+static int binfs_closedir(FAR struct inode *mountpt,
+                          FAR struct fs_dirent_s *dir)
+{
+  DEBUGASSERT(dir);
+  kmm_free(dir);
+  return 0;
 }
 
 /****************************************************************************
@@ -293,15 +339,19 @@ static int binfs_opendir(struct inode *mountpt, const char *relpath,
  *
  ****************************************************************************/
 
-static int binfs_readdir(struct inode *mountpt, struct fs_dirent_s *dir)
+static int binfs_readdir(FAR struct inode *mountpt,
+                         FAR struct fs_dirent_s *dir,
+                         FAR struct dirent *entry)
 {
+  FAR struct binfs_dir_s *bdir;
   FAR const char *name;
   unsigned int index;
   int ret;
 
   /* Have we reached the end of the directory */
 
-  index = dir->u.binfs.fb_index;
+  bdir = (FAR struct binfs_dir_s *)dir;
+  index = bdir->index;
   name = builtin_getname(index);
   if (name == NULL)
     {
@@ -317,8 +367,8 @@ static int binfs_readdir(struct inode *mountpt, struct fs_dirent_s *dir)
       /* Save the filename and file type */
 
       finfo("Entry %d: \"%s\"\n", index, name);
-      dir->fd_dir.d_type = DTYPE_FILE;
-      strncpy(dir->fd_dir.d_name, name, NAME_MAX);
+      entry->d_type = DTYPE_FILE;
+      strlcpy(entry->d_name, name, sizeof(entry->d_name));
 
       /* The application list is terminated by an entry with a NULL name.
        * Therefore, there is at least one more entry in the list.
@@ -327,10 +377,10 @@ static int binfs_readdir(struct inode *mountpt, struct fs_dirent_s *dir)
       index++;
 
       /* Set up the next directory entry offset.  NOTE that we could use the
-       * standard f_pos instead of our own private fb_index.
+       * standard f_pos instead of our own private index.
        */
 
-      dir->u.binfs.fb_index = index;
+      bdir->index = index;
       ret = OK;
     }
 
@@ -348,7 +398,7 @@ static int binfs_rewinddir(struct inode *mountpt, struct fs_dirent_s *dir)
 {
   finfo("Entry\n");
 
-  dir->u.binfs.fb_index = 0;
+  ((FAR struct binfs_dir_s *)dir)->index = 0;
   return OK;
 }
 

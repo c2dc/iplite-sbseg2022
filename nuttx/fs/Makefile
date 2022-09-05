@@ -25,7 +25,6 @@ CSRCS = fs_initialize.c
 include inode/Make.defs
 include vfs/Make.defs
 include driver/Make.defs
-include dirent/Make.defs
 include aio/Make.defs
 include mmap/Make.defs
 
@@ -56,10 +55,12 @@ include unionfs/Make.defs
 include userfs/Make.defs
 include hostfs/Make.defs
 include littlefs/Make.defs
+include rpmsgfs/Make.defs
 
 endif
 
 CFLAGS += ${shell $(INCDIR) "$(CC)" $(TOPDIR)$(DELIM)fs}
+CFLAGS += ${shell $(INCDIR) "$(CC)" $(TOPDIR)$(DELIM)sched}
 
 AOBJS = $(ASRCS:.S=$(OBJEXT))
 COBJS = $(CSRCS:.c=$(OBJEXT))

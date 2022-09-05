@@ -28,6 +28,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <assert.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/arch.h>
@@ -37,8 +39,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "riscv_arch.h"
-
+#include "riscv_internal.h"
 #include "hardware/bl602_glb.h"
 #include "hardware/bl602_hbn.h"
 #include "hardware/bl602_i2c.h"
@@ -112,12 +113,12 @@ struct bl602_i2c_priv_s
  * Private Function Prototypes
  ****************************************************************************/
 
-static int bl602_i2c_transfer(FAR struct i2c_master_s *dev,
-                              FAR struct i2c_msg_s *   msgs,
+static int bl602_i2c_transfer(struct i2c_master_s *dev,
+                              struct i2c_msg_s *   msgs,
                               int                      count);
 
 #ifdef CONFIG_I2C_RESET
-static int bl602_i2c_reset(FAR struct i2c_master_s *dev);
+static int bl602_i2c_reset(struct i2c_master_s *dev);
 #endif
 
 /****************************************************************************
@@ -169,7 +170,7 @@ static struct bl602_i2c_priv_s bl602_i2c0_priv =
  *
  ****************************************************************************/
 
-static void bl602_i2c_send_data(FAR struct bl602_i2c_priv_s *priv)
+static void bl602_i2c_send_data(struct bl602_i2c_priv_s *priv)
 {
   uint32_t          temp = 0;
   uint32_t          val  = 0;
@@ -235,7 +236,7 @@ static void bl602_i2c_recvdata(struct bl602_i2c_priv_s *priv)
  *
  ****************************************************************************/
 
-static void bl602_i2c_sem_init(FAR struct bl602_i2c_priv_s *priv)
+static void bl602_i2c_sem_init(struct bl602_i2c_priv_s *priv)
 {
   nxsem_init(&priv->sem_excl, 0, 1);
 
@@ -510,7 +511,7 @@ static void bl602_i2c_transfer_enable(struct bl602_i2c_priv_s *priv)
  *
  ****************************************************************************/
 
-static void bl602_i2c_start_transfer(FAR struct bl602_i2c_priv_s *priv)
+static void bl602_i2c_start_transfer(struct bl602_i2c_priv_s *priv)
 {
   bl602_i2c_clear_status(I2C0);
   bl602_i2c_config_para(priv);
@@ -673,14 +674,14 @@ static void bl602_i2c_set_freq(int freq)
  *
  ****************************************************************************/
 
-static int bl602_i2c_transfer(FAR struct i2c_master_s *dev,
-                              FAR struct i2c_msg_s *   msgs,
+static int bl602_i2c_transfer(struct i2c_master_s *dev,
+                              struct i2c_msg_s *   msgs,
                               int                      count)
 {
   int                          i;
   int                          j;
   int                          ret  = OK;
-  FAR struct bl602_i2c_priv_s *priv = (FAR struct bl602_i2c_priv_s *)dev;
+  struct bl602_i2c_priv_s *priv = (struct bl602_i2c_priv_s *)dev;
 
   if (count <= 0)
     {
@@ -752,7 +753,7 @@ static int bl602_i2c_transfer(FAR struct i2c_master_s *dev,
         }
       else
         {
-          i2cerr("i2c transfer error, event = %d \n", priv->i2cstate);
+          i2cerr("i2c transfer error, event = %d\n", priv->i2cstate);
         }
 
       nxsem_post(&priv->sem_isr);
@@ -778,9 +779,9 @@ static int bl602_i2c_transfer(FAR struct i2c_master_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_I2C_RESET
-static int bl602_i2c_reset(FAR struct i2c_master_s *dev)
+static int bl602_i2c_reset(struct i2c_master_s *dev)
 {
-  FAR struct bl602_i2c_priv_s *priv = (FAR struct bl602_i2c_priv_s *)dev;
+  struct bl602_i2c_priv_s *priv = (struct bl602_i2c_priv_s *)dev;
 
   bl602_swrst_ahb_slave1(AHB_SLAVE1_I2C);
   bl602_i2c_set_freq(priv->config->clk_freq);
@@ -894,7 +895,7 @@ static void bl602_i2c_callback(struct bl602_i2c_priv_s *priv)
  *
  ****************************************************************************/
 
-static int bl602_i2c_irq(int cpuint, void *context, FAR void *arg)
+static int bl602_i2c_irq(int cpuint, void *context, void *arg)
 {
   uint32_t tmp_val;
 
@@ -936,7 +937,7 @@ static int bl602_i2c_irq(int cpuint, void *context, FAR void *arg)
     }
   else
     {
-      i2cerr("other interrupt \n");
+      i2cerr("other interrupt\n");
       priv->i2cstate = EV_I2C_UNKNOW_INT;
       bl602_i2c_callback(priv);
       return -1;
@@ -1010,10 +1011,10 @@ struct i2c_master_s *bl602_i2cbus_initialize(int port)
  *
  ****************************************************************************/
 
-int bl602_i2cbus_uninitialize(FAR struct i2c_master_s *dev)
+int bl602_i2cbus_uninitialize(struct i2c_master_s *dev)
 {
   irqstate_t flags;
-  FAR struct bl602_i2c_priv_s *priv = (FAR struct bl602_i2c_priv_s *)dev;
+  struct bl602_i2c_priv_s *priv = (struct bl602_i2c_priv_s *)dev;
 
   DEBUGASSERT(dev);
 

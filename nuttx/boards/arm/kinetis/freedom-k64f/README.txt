@@ -448,8 +448,8 @@ SD Card Support
     Device Drivers -> MMC/SD Driver Support
       CONFIG_MMCSD=y                        : Enable MMC/SD support
       CONFIG_MMSCD_NSLOTS=1                 : One slot per driver instance
-      CONFIG_MMCSD_MULTIBLOCK_DISABLE=y     : (REVISIT)
-      CONFIG_MMCSD_HAVE_CARDDETECT=y         : Supports card-detect PIOs
+      CONFIG_MMCSD_MULTIBLOCK_LIMIT=1       : (REVISIT)
+      CONFIG_MMCSD_HAVE_CARDDETECT=y        : Supports card-detect PIOs
       CONFIG_MMCSD_MMCSUPPORT=n             : Interferes with some SD cards
       CONFIG_MMCSD_SPI=n                    : No SPI-based MMC/SD support
       CONFIG_MMCSD_SDIO=y                   : SDIO-based MMC/SD support
@@ -461,7 +461,7 @@ SD Card Support
 
     Application Configuration -> NSH Library
       CONFIG_NSH_ARCHINIT=y                 : NSH board-initialization, and
-      CONFIG_LIB_BOARDCTL=y                 : Or
+      CONFIG_BOARDCTL=y                 : Or
       CONFIG_BOARD_LATE_INITIALIZE=y
 
   Using the SD card
@@ -810,7 +810,7 @@ Where <subdir> is one of the following:
 
        CONFIG_HOST_WINDOWS=y               : Cygwin under Windows
        CONFIG_WINDOWS_CYGWIN=y
-       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y : ARM/mbed toolcahin (arm-none-elf-gcc)
+       CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : ARM/mbed toolcahin (arm-none-elf-gcc)
        CONFIG_INTELHEX_BINARY=y            : Output formats: Intel hex binary
 
     3. The Serial Console is provided on UART3 with the correct pin
@@ -860,7 +860,7 @@ Where <subdir> is one of the following:
 
          CONFIG_HOST_WINDOWS=y               : Cygwin under Windows
          CONFIG_WINDOWS_CYGWIN=y
-         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y : ARM/mbed toolcahin (arm-none-elf-gcc)
+         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : ARM/mbed toolcahin (arm-none-elf-gcc)
          CONFIG_INTELHEX_BINARY=y            : Output formats: Intel hex binary
 
     3. The Serial Console is provided on UART0 with the correct pin

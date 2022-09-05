@@ -1,5 +1,5 @@
 /************************************************************************************
- * system/note/note_main.c
+ * apps/system/sched_note/note_main.c
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -60,6 +60,7 @@ static uint8_t g_note_buffer[CONFIG_SYSTEM_NOTE_BUFFERSIZE];
 
 /* Names of task/thread states */
 
+#ifdef CONFIG_SCHED_INSTRUMENTATION_SWITCH
 static FAR const char *g_statenames[] =
 {
   "Invalid",
@@ -76,10 +77,29 @@ static FAR const char *g_statenames[] =
 };
 
 #define NSTATES (sizeof(g_statenames)/sizeof(FAR const char *))
+#endif
 
 /************************************************************************************
  * Private Functions
  ************************************************************************************/
+
+/************************************************************************************
+ * Name: trace_dump_unflatten
+ ************************************************************************************/
+
+static void trace_dump_unflatten(FAR void *dst,
+                                 FAR uint8_t *src, size_t len)
+{
+#ifdef CONFIG_ENDIAN_BIG
+  FAR uint8_t *end = (FAR uint8_t *)dst + len - 1;
+  while (len-- > 0)
+    {
+      *end-- = *src++;
+    }
+#else
+  memcpy(dst, src, len);
+#endif
+}
 
 /************************************************************************************
  * Name: dump_notes
@@ -101,22 +121,14 @@ static void dump_notes(size_t nread)
   while (offset < nread)
     {
       note    = (FAR struct note_common_s *)&g_note_buffer[offset];
-      pid     =  (pid_t)note->nc_pid[0] +
-                ((pid_t)note->nc_pid[1] << 8);
+      trace_dump_unflatten(&pid, note->nc_pid, sizeof(pid));
 #ifdef CONFIG_SCHED_INSTRUMENTATION_HIRES
-      systime_nsec = (uint32_t)note->nc_systime_nsec[0] +
-                     (uint32_t)(note->nc_systime_nsec[1] << 8) +
-                     (uint32_t)(note->nc_systime_nsec[2] << 16) +
-                     (uint32_t)(note->nc_systime_nsec[3] << 24);
-      systime_sec = (uint32_t)note->nc_systime_sec[0] +
-                    (uint32_t)(note->nc_systime_sec[1] << 8) +
-                    (uint32_t)(note->nc_systime_sec[2] << 16) +
-                    (uint32_t)(note->nc_systime_sec[3] << 24);
+      trace_dump_unflatten(&systime_nsec,
+                           note->nc_systime_nsec, sizeof(systime_nsec));
+      trace_dump_unflatten(&systime_sec,
+                           note->nc_systime_sec, sizeof(systime_sec));
 #else
-      systime = (uint32_t) note->nc_systime[0]        +
-                (uint32_t)(note->nc_systime[1] << 8)  +
-                (uint32_t)(note->nc_systime[2] << 16) +
-                (uint32_t)(note->nc_systime[3] << 24);
+      trace_dump_unflatten(&systime, note->nc_systime, sizeof(systime));
 #endif
 
       switch (note->nc_type)
@@ -128,8 +140,8 @@ static void dump_notes(size_t nread)
 
               if (note->nc_length < sizeof(struct note_start_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: note too small for start note: %d\n",
+                  syslog(LOG_ERR,
+                         "Note too small for \"Start\" note: %d\n",
                          note->nc_length);
                   return;
                 }
@@ -168,8 +180,8 @@ static void dump_notes(size_t nread)
             {
               if (note->nc_length != sizeof(struct note_stop_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for stop note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"Stop\" note: %d\n",
                          note->nc_length);
                   return;
                 }
@@ -188,6 +200,7 @@ static void dump_notes(size_t nread)
             }
             break;
 
+#ifdef CONFIG_SCHED_INSTRUMENTATION_SWITCH
           case NOTE_SUSPEND:
             {
               FAR struct note_suspend_s *note_suspend =
@@ -196,8 +209,8 @@ static void dump_notes(size_t nread)
 
               if (note->nc_length != sizeof(struct note_suspend_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for suspend note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"Suspend\" note: %d\n",
                          note->nc_length);
                   return;
                 }
@@ -230,8 +243,8 @@ static void dump_notes(size_t nread)
             {
               if (note->nc_length != sizeof(struct note_resume_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for resume note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"Resume\" note: %d\n",
                          note->nc_length);
                   return;
                 }
@@ -250,6 +263,7 @@ static void dump_notes(size_t nread)
 #endif
             }
             break;
+#endif
 
 #ifdef CONFIG_SMP
           case NOTE_CPU_START:
@@ -259,8 +273,8 @@ static void dump_notes(size_t nread)
 
               if (note->nc_length != sizeof(struct note_cpu_start_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for CPU start note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"CPU Start\" note: %d\n",
                          note->nc_length);
                   return;
                 }
@@ -278,8 +292,8 @@ static void dump_notes(size_t nread)
             {
               if (note->nc_length != sizeof(struct note_cpu_started_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for CPU started note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"CPU started\" note: %d\n",
                          note->nc_length);
                   return;
                 }
@@ -292,6 +306,7 @@ static void dump_notes(size_t nread)
             }
             break;
 
+#ifdef CONFIG_SCHED_INSTRUMENTATION_SWITCH
           case NOTE_CPU_PAUSE:
             {
               FAR struct note_cpu_pause_s *note_pause =
@@ -299,8 +314,8 @@ static void dump_notes(size_t nread)
 
               if (note->nc_length != sizeof(struct note_cpu_pause_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for CPU pause note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"CPU pause\" note: %d\n",
                          note->nc_length);
                   return;
                 }
@@ -318,8 +333,8 @@ static void dump_notes(size_t nread)
             {
               if (note->nc_length != sizeof(struct note_cpu_paused_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for CPU paused note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"CPU paused\" note: %d\n",
                          note->nc_length);
                   return;
                 }
@@ -339,8 +354,8 @@ static void dump_notes(size_t nread)
 
               if (note->nc_length != sizeof(struct note_cpu_resume_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for CPU resume note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"CPU resume\" note: %d\n",
                          note->nc_length);
                   return;
                 }
@@ -358,8 +373,8 @@ static void dump_notes(size_t nread)
             {
               if (note->nc_length != sizeof(struct note_cpu_resumed_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for CPU resumed note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"CPU resumed\" note: %d\n",
                          note->nc_length);
                   return;
                 }
@@ -372,6 +387,7 @@ static void dump_notes(size_t nread)
             }
             break;
 #endif
+#endif
 
 #ifdef CONFIG_SCHED_INSTRUMENTATION_PREEMPTION
           case NOTE_PREEMPT_LOCK:
@@ -383,14 +399,13 @@ static void dump_notes(size_t nread)
 
               if (note->nc_length != sizeof(struct note_preempt_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for preemption note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"Preemption\" note: %d\n",
                          note->nc_length);
                   return;
                 }
 
-              count = (uint16_t) note_preempt->npr_count[0] +
-                      (uint16_t)(note_preempt->npr_count[1] << 8);
+              trace_dump_unflatten(&count, note_preempt->npr_count, sizeof(count));
 
               if (note->nc_type == NOTE_PREEMPT_LOCK)
                 {
@@ -439,15 +454,14 @@ static void dump_notes(size_t nread)
 
               if (note->nc_length != sizeof(struct note_csection_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for csection note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"csection\" note: %d\n",
                          note->nc_length);
                   return;
                 }
 
 #ifdef CONFIG_SMP
-              count = (uint16_t) note_csection->ncs_count[0] +
-                      (uint16_t)(note_csection->ncs_count[1] << 8);
+              trace_dump_unflatten(&count, note_csection->ncs_count, sizeof(count));
 
               if (note->nc_type == NOTE_CSECTION_ENTER)
                 {
@@ -497,26 +511,15 @@ static void dump_notes(size_t nread)
 
               if (note->nc_length != sizeof(struct note_spinlock_s))
                 {
-                  syslog(LOG_INFO,
-                         "ERROR: Size incorrect for spinlock note: %d\n",
+                  syslog(LOG_ERR,
+                         "Size incorrect for \"Spinlock\" note: %d\n",
                          note->nc_length);
                   return;
                 }
 
-              spinlock = (FAR void *)
-                            ((uintptr_t)note_spinlock->nsp_spinlock[0]
-                             + ((uintptr_t)note_spinlock->nsp_spinlock[1] << 8)
-#if UINTPTR_MAX > UINT16_MAX
-                             + ((uintptr_t)note_spinlock->nsp_spinlock[2] << 16)
-                             + ((uintptr_t)note_spinlock->nsp_spinlock[3] << 24)
-#if UINTPTR_MAX > UINT32_MAX
-                             + ((uintptr_t)note_spinlock->nsp_spinlock[4] << 32)
-                             + ((uintptr_t)note_spinlock->nsp_spinlock[5] << 40)
-                             + ((uintptr_t)note_spinlock->nsp_spinlock[6] << 48)
-                             + ((uintptr_t)note_spinlock->nsp_spinlock[7] << 56)
-#endif
-#endif
-                            );
+              trace_dump_unflatten(&spinlock,
+                                   note_spinlock->nsp_spinlock,
+                                   sizeof(spinlock));
 
              switch (note->nc_type)
                {
@@ -633,8 +636,8 @@ static void dump_notes(size_t nread)
 
                     if (note->nc_length < SIZEOF_NOTE_SYSCALL_ENTER(0))
                       {
-                        syslog(LOG_INFO,
-                               "ERROR: Size incorrect for SYSCALL enter note: %d\n",
+                        syslog(LOG_ERR,
+                               "Size incorrect for \"SYSCALL enter\" note: %d\n",
                                note->nc_length);
                         return;
                       }
@@ -654,25 +657,15 @@ static void dump_notes(size_t nread)
 
                     if (note->nc_length != sizeof(struct note_syscall_leave_s))
                       {
-                        syslog(LOG_INFO,
-                               "ERROR: Size incorrect for SYSCALL leave note: %d\n",
+                        syslog(LOG_ERR,
+                               "Size incorrect for \"SYSCALL leave\" note: %d\n",
                                note->nc_length);
                         return;
                       }
 
-                    result =    (uintptr_t)note_sysleave->nsc_result[0]
-                             + ((uintptr_t)note_sysleave->nsc_result[1] << 8)
-#if UINTPTR_MAX > UINT16_MAX
-                             + ((uintptr_t)note_sysleave->nsc_result[2] << 16)
-                             + ((uintptr_t)note_sysleave->nsc_result[3] << 24)
-#if UINTPTR_MAX > UINT32_MAX
-                             + ((uintptr_t)note_sysleave->nsc_result[4] << 32)
-                             + ((uintptr_t)note_sysleave->nsc_result[5] << 40)
-                             + ((uintptr_t)note_sysleave->nsc_result[6] << 48)
-                             + ((uintptr_t)note_sysleave->nsc_result[7] << 56)
-#endif
-#endif
-                    ;
+                    trace_dump_unflatten(&result,
+                                         note_sysleave->nsc_result,
+                                         sizeof(result));
 
                     syslog_time(LOG_INFO,
                            "Task %u Leave SYSCALL %d: %" PRIdPTR "\n",
@@ -691,8 +684,8 @@ static void dump_notes(size_t nread)
 
                     if (note->nc_length != sizeof(struct note_irqhandler_s))
                       {
-                        syslog(LOG_INFO,
-                               "ERROR: Size incorrect for IRQ note: %d\n",
+                        syslog(LOG_ERR,
+                               "Size incorrect for \"IRQ\" note: %d\n",
                                note->nc_length);
                         return;
                       }
@@ -702,6 +695,69 @@ static void dump_notes(size_t nread)
                            (unsigned int)pid,
                            note->nc_type == NOTE_IRQ_ENTER ? "Enter" : "Leave",
                            note_irq->nih_irq);
+                  }
+                  break;
+#endif
+
+#ifdef CONFIG_SCHED_INSTRUMENTATION_DUMP
+                case NOTE_DUMP_STRING:
+                  {
+                    FAR struct note_string_s *note_string =
+                      (FAR struct note_string_s *)note;
+
+                    if (note->nc_length < sizeof(struct note_string_s))
+                      {
+                        syslog(LOG_INFO,
+                               "ERROR: note too small for string note: %d\n",
+                               note->nc_length);
+                        return;
+                      }
+
+                    syslog_time(LOG_INFO,
+                           "Task %u priority %u, string:%s\n",
+                           (unsigned int)pid,
+                           (unsigned int)note->nc_priority,
+                           note_string->nst_data);
+                  }
+                  break;
+
+                case NOTE_DUMP_BINARY:
+                  {
+                    FAR struct note_binary_s *note_binary =
+                      (FAR struct note_binary_s *)note;
+                    uintptr_t ip;
+                    char out[1280];
+                    int count;
+                    int ret = 0;
+                    int i;
+
+                    count = note->nc_length - sizeof(struct note_binary_s) + 1;
+
+                    if (count < 0)
+                      {
+                        syslog(LOG_INFO,
+                               "ERROR: note too small for binary note: %d\n",
+                               note->nc_length);
+                        return;
+                      }
+
+                    for (i = 0; i < count; i++)
+                      {
+                        ret += sprintf(&out[ret], " 0x%x", note_binary->nbi_data[i]);
+                      }
+
+                    trace_dump_unflatten(&ip, note_binary->nbi_ip,
+                                         sizeof(ip));
+
+                    syslog_time(LOG_INFO,
+                           "Task %u priority %u, ip=0x%" PRIdPTR
+                            " event=%u count=%u%s\n",
+                           (unsigned int)pid,
+                           (unsigned int)note->nc_priority,
+                           note_binary->nbi_ip,
+                           note_binary->nbi_event,
+                           count,
+                           out);
                   }
                   break;
 #endif
@@ -736,7 +792,7 @@ static int note_daemon(int argc, char *argv[])
   if (fd < 0)
     {
       int errcode = errno;
-      syslog(LOG_INFO, "note_daemon: ERROR: Failed to open /dev/note: %d\n",
+      syslog(LOG_ERR, "note_daemon: ERROR: Failed to open /dev/note: %d\n",
              errcode);
       goto errout;
     }

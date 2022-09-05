@@ -30,7 +30,7 @@
 
 #include <nuttx/i2c/i2c_master.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "chip.h"
 #include "kinetis.h"
 #include "kinetis_i2c.h"
@@ -45,10 +45,10 @@
  ****************************************************************************/
 
 #ifdef CONFIG_KINETIS_I2C0
-FAR struct i2c_master_s *g_i2c0_dev;
+struct i2c_master_s *g_i2c0_dev;
 #endif
 #ifdef CONFIG_KINETIS_I2C1
-FAR struct i2c_master_s *g_i2c1_dev;
+struct i2c_master_s *g_i2c1_dev;
 #endif
 
 /****************************************************************************

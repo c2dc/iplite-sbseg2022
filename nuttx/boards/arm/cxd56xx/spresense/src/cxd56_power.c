@@ -35,7 +35,7 @@
 #include <nuttx/semaphore.h>
 
 #include "chip.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 
 #include <arch/chip/pm.h>
 #include <arch/board/board.h>
@@ -59,7 +59,8 @@ static bool g_used_lna = false;
 static bool g_used_tcxo = true;
 #ifdef CONFIG_BOARDCTL_RESET
 static struct pm_cpu_freqlock_s g_hv_lock =
-  PM_CPUFREQLOCK_INIT(PM_CPUFREQLOCK_TAG('B','P',0), PM_CPUFREQLOCK_FLAG_HV);
+  PM_CPUFREQLOCK_INIT(PM_CPUFREQLOCK_TAG('B', 'P', 0),
+                      PM_CPUFREQLOCK_FLAG_HV);
 #endif
 
 /****************************************************************************
@@ -127,7 +128,8 @@ int board_pmic_write(uint8_t addr, void *buf, uint32_t size)
 int board_power_setup(int status)
 {
 #ifdef CONFIG_BOARD_USB_DISABLE_IN_DEEP_SLEEPING
-  uint8_t val;
+  int      ret;
+  uint8_t  val = 0;
   uint32_t bootcause;
 
   /* Enable USB after wakeup from deep sleeping */
@@ -140,8 +142,8 @@ int board_power_setup(int status)
       case PM_BOOT_DEEP_WKUPS:
       case PM_BOOT_DEEP_RTC:
       case PM_BOOT_DEEP_OTHERS:
-        cxd56_pmic_read(PMIC_REG_CNT_USB2, &val, sizeof(val));
-        if (val & PMIC_SET_CHGOFF)
+        ret = cxd56_pmic_read(PMIC_REG_CNT_USB2, &val, sizeof(val));
+        if ((ret == 0) && (val & PMIC_SET_CHGOFF))
           {
             val &= ~PMIC_SET_CHGOFF;
             cxd56_pmic_write(PMIC_REG_CNT_USB2, &val, sizeof(val));
@@ -205,6 +207,13 @@ int board_power_control(int target, bool en)
   if (pfunc)
     {
       ret = pfunc(PMIC_GET_CH(target), en);
+
+      /* If RTC clock is unstable, delay 1 tick for PMIC GPO setting. */
+
+      if (!g_rtc_enabled && (PMIC_GET_TYPE(target) == PMIC_TYPE_GPO))
+        {
+          usleep(1);
+        }
     }
 
   return ret;
@@ -236,6 +245,13 @@ int board_power_control_tristate(int target, int value)
       /* set HiZ to PMIC GPO channel */
 
       ret = cxd56_pmic_set_gpo_hiz(PMIC_GET_CH(target));
+
+      /* If RTC clock is unstable, delay 1 tick for PMIC setting. */
+
+      if (!g_rtc_enabled)
+        {
+          usleep(1);
+        }
     }
   else
     {
@@ -495,9 +511,12 @@ int board_reset(int status)
 {
   /* Restore the original state for bootup after power cycle  */
 
-  board_xtal_power_control(true);
-  board_flash_power_control(true);
-  up_pm_acquire_freqlock(&g_hv_lock);
+  if (!up_interrupt_context())
+    {
+      board_xtal_power_control(true);
+      board_flash_power_control(true);
+      up_pm_acquire_freqlock(&g_hv_lock);
+    }
 
   /* System reboot */
 

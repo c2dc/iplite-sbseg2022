@@ -31,31 +31,23 @@
 #include <debug.h>
 
 #include <nuttx/arch.h>
-#include <nuttx/tls.h>
 #include <nuttx/board.h>
 
 #include "xtensa.h"
 #include "sched/sched.h"
-#include "chip_macros.h"
 
 #ifdef CONFIG_STACK_COLORATION
-
-#define STACK_ALIGNMENT     16
-
-/* Stack alignment macros */
-
-#define STACK_ALIGN_MASK    (STACK_ALIGNMENT - 1)
-#define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
-#define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
 
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
 
-static size_t do_stackcheck(uintptr_t alloc, size_t size);
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
 
 /****************************************************************************
- * Name: do_stackcheck
+ * Name: xtensa_stack_check
  *
  * Description:
  *   Determine (approximately) how much stack has been used be searching the
@@ -71,11 +63,11 @@ static size_t do_stackcheck(uintptr_t alloc, size_t size);
  *
  ****************************************************************************/
 
-static size_t do_stackcheck(uintptr_t alloc, size_t size)
+size_t xtensa_stack_check(uintptr_t alloc, size_t size)
 {
-  FAR uintptr_t start;
-  FAR uintptr_t end;
-  FAR uint32_t *ptr;
+  uintptr_t start;
+  uintptr_t end;
+  uint32_t *ptr;
   size_t mark;
 
   if (size == 0)
@@ -87,10 +79,7 @@ static size_t do_stackcheck(uintptr_t alloc, size_t size)
    * Skip over the TLS data structure at the bottom of the stack
    */
 
-#ifdef CONFIG_TLS_ALIGNED
-  DEBUGASSERT((alloc & TLS_STACK_MASK) == 0);
-#endif
-  start = STACK_ALIGN_UP(alloc + sizeof(struct tls_info_s));
+  start = STACK_ALIGN_UP(alloc);
   end   = STACK_ALIGN_DOWN(alloc + size);
 
   /* Get the adjusted size based on the top and bottom of the stack */
@@ -103,7 +92,7 @@ static size_t do_stackcheck(uintptr_t alloc, size_t size)
    * we encounter that does not have the magic value is the high water mark.
    */
 
-  for (ptr = (FAR uint32_t *)start, mark = (size >> 2);
+  for (ptr = (uint32_t *)start, mark = (size >> 2);
        *ptr == STACK_COLOR && mark > 0;
        ptr++, mark--);
 
@@ -123,7 +112,7 @@ static size_t do_stackcheck(uintptr_t alloc, size_t size)
       int i;
       int j;
 
-      ptr = (FAR uint32_t *)start;
+      ptr = (uint32_t *)start;
       for (i = 0; i < size; i += 4 * 64)
         {
           for (j = 0; j < 64; j++)
@@ -152,10 +141,6 @@ static size_t do_stackcheck(uintptr_t alloc, size_t size)
 }
 
 /****************************************************************************
- * Public Functions
- ****************************************************************************/
-
-/****************************************************************************
  * Name: up_check_stack and friends
  *
  * Description:
@@ -171,33 +156,34 @@ static size_t do_stackcheck(uintptr_t alloc, size_t size)
  *
  ****************************************************************************/
 
-size_t up_check_tcbstack(FAR struct tcb_s *tcb)
+size_t up_check_tcbstack(struct tcb_s *tcb)
 {
-  return do_stackcheck((uintptr_t)tcb->stack_alloc_ptr, tcb->adj_stack_size);
+  return xtensa_stack_check((uintptr_t)tcb->stack_base_ptr,
+                            tcb->adj_stack_size);
 }
 
-ssize_t up_check_tcbstack_remain(FAR struct tcb_s *tcb)
+ssize_t up_check_tcbstack_remain(struct tcb_s *tcb)
 {
-  return (ssize_t)tcb->adj_stack_size - (ssize_t)up_check_tcbstack(tcb);
+  return tcb->adj_stack_size - up_check_tcbstack(tcb);
 }
 
 size_t up_check_stack(void)
 {
-  return up_check_tcbstack(this_task());
+  return up_check_tcbstack(running_task());
 }
 
 ssize_t up_check_stack_remain(void)
 {
-  return up_check_tcbstack_remain(this_task());
+  return up_check_tcbstack_remain(running_task());
 }
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 15
 size_t up_check_intstack(void)
 {
 #ifdef CONFIG_SMP
-  return do_stackcheck(xtensa_intstack_alloc(), INTSTACK_SIZE);
+  return xtensa_stack_check(xtensa_intstack_alloc(), INTSTACK_SIZE);
 #else
-  return do_stackcheck((uintptr_t)&g_intstackalloc, INTSTACK_SIZE);
+  return xtensa_stack_check((uintptr_t)&g_intstackalloc, INTSTACK_SIZE);
 #endif
 }
 

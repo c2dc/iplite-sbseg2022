@@ -26,15 +26,17 @@
 
 #include <stdint.h>
 #include <sched.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 
-#include "sched/sched.h"
-#include "xtensa.h"
-
 #include "irq/irq.h"
+#include "sched/sched.h"
+
+#include "chip.h"
+#include "xtensa.h"
 
 /****************************************************************************
  * Public Functions
@@ -79,17 +81,18 @@
 #ifndef CONFIG_SMP
 void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
 {
-  sinfo("tcb=0x%p sigdeliver=0x%p\n", tcb, sigdeliver);
+  sinfo("tcb=%p sigdeliver=%p\n", tcb, sigdeliver);
+  DEBUGASSERT(tcb != NULL && sigdeliver != NULL);
 
   /* Refuse to handle nested signal actions */
 
   if (!tcb->xcp.sigdeliver)
     {
+      sinfo("rtcb=%p CURRENT_REGS=%p\n", this_task(), CURRENT_REGS);
+
       /* First, handle some special cases when the signal is being delivered
        * to the currently executing task.
        */
-
-      sinfo("rtcb=0x%p CURRENT_REGS=0x%p\n", this_task(), CURRENT_REGS);
 
       if (tcb == this_task())
         {
@@ -120,34 +123,45 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
 
           else
             {
-              /* Save the return pc and ps.  These will be restored by the
+              /* Save the context registers.  These will be restored by the
                * signal trampoline after the signals have been delivered.
                *
                * NOTE: that hi-priority interrupts are not disabled.
                */
 
-              tcb->xcp.sigdeliver  = sigdeliver;
-              tcb->xcp.saved_pc    = CURRENT_REGS[REG_PC];
-              tcb->xcp.saved_ps    = CURRENT_REGS[REG_PS];
+              xtensa_savestate(tcb->xcp.saved_regs);
+
+              /* Duplicate the register context.  These will be
+               * restored by the signal trampoline after the signal has
+               * been delivered.
+               */
+
+              CURRENT_REGS = (void *)((uint32_t)CURRENT_REGS -
+                                            XCPTCONTEXT_SIZE);
+
+              memcpy((uint32_t *)CURRENT_REGS, tcb->xcp.saved_regs,
+                     XCPTCONTEXT_SIZE);
 
               /* Then set up to vector to the trampoline with interrupts
                * disabled
                */
 
-              CURRENT_REGS[REG_PC] = (uint32_t)_xtensa_sig_trampoline;
+              tcb->xcp.sigdeliver  = sigdeliver;
+              CURRENT_REGS[REG_PC] = (uint32_t)xtensa_sig_deliver;
 #ifdef __XTENSA_CALL0_ABI__
               CURRENT_REGS[REG_PS] = (uint32_t)
                   (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM);
 #else
               CURRENT_REGS[REG_PS] = (uint32_t)
-                  (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM | PS_WOE);
+                  (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM |
+                   PS_WOE | PS_CALLINC(1));
+#endif
+#ifndef CONFIG_BUILD_FLAT
+              xtensa_raiseprivilege(CURRENT_REGS);
 #endif
 
-              /* And make sure that the saved context in the TCB is the same
-               * as the interrupt return context.
-               */
-
-              xtensa_savestate(tcb->xcp.regs);
+              CURRENT_REGS[REG_A1] = (uint32_t)CURRENT_REGS +
+                                      XCPTCONTEXT_SIZE;
             }
         }
 
@@ -158,27 +172,41 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
 
       else
         {
-          /* Save the return pc and ps.  These will be restored by the
+          /* Save the context registers.  These will be restored by the
            * signal trampoline after the signals have been delivered.
            *
            * NOTE: that hi-priority interrupts are not disabled.
            */
 
           tcb->xcp.sigdeliver   = sigdeliver;
-          tcb->xcp.saved_pc     = tcb->xcp.regs[REG_PC];
-          tcb->xcp.saved_ps     = tcb->xcp.regs[REG_PS];
+          tcb->xcp.saved_regs   = tcb->xcp.regs;
 
+          /* Duplicate the register context.  These will be
+           * restored by the signal trampoline after the signal has been
+           * delivered.
+           */
+
+          tcb->xcp.regs = (void *)((uint32_t)tcb->xcp.regs -
+                                         XCPTCONTEXT_SIZE);
+          memcpy(tcb->xcp.regs, tcb->xcp.saved_regs, XCPTCONTEXT_SIZE);
+
+          tcb->xcp.regs[REG_A1]       = (uint32_t)tcb->xcp.regs +
+                                          XCPTCONTEXT_SIZE;
           /* Then set up to vector to the trampoline with interrupts
            * disabled
            */
 
-          tcb->xcp.regs[REG_PC] = (uint32_t)_xtensa_sig_trampoline;
+          tcb->xcp.regs[REG_PC] = (uint32_t)xtensa_sig_deliver;
 #ifdef __XTENSA_CALL0_ABI__
           tcb->xcp.regs[REG_PS] = (uint32_t)
               (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM);
 #else
           tcb->xcp.regs[REG_PS] = (uint32_t)
-              (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM | PS_WOE);
+              (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM |
+               PS_WOE | PS_CALLINC(1));
+#endif
+#ifndef CONFIG_BUILD_FLAT
+          xtensa_raiseprivilege(tcb->xcp.regs);
 #endif
         }
     }
@@ -191,7 +219,7 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
   int cpu;
   int me;
 
-  sinfo("tcb=0x%p sigdeliver=0x%p\n", tcb, sigdeliver);
+  sinfo("tcb=%p sigdeliver=%p\n", tcb, sigdeliver);
 
   /* Refuse to handle nested signal actions */
 
@@ -201,7 +229,7 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
        * to task that is currently executing on any CPU.
        */
 
-      sinfo("rtcb=0x%p CURRENT_REGS=0x%p\n", this_task(), CURRENT_REGS);
+      sinfo("rtcb=%p CURRENT_REGS=%p\n", this_task(), CURRENT_REGS);
 
       if (tcb->task_state == TSTATE_TASK_RUNNING)
         {
@@ -249,7 +277,7 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
 
                   /* Now tcb on the other CPU can be accessed safely */
 
-                  /* Copy tcb->xcp.regs to tcp.xcp.saved. These will be
+                  /* Copy tcb->xcp.regs to tcp.xcp.saved_regs. These will be
                    * restored by the signal trampoline after the signal has
                    * been delivered.
                    *
@@ -257,27 +285,44 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
                    */
 
                   tcb->xcp.sigdeliver  = sigdeliver;
-                  tcb->xcp.saved_pc    = tcb->xcp.regs[REG_PC];
-                  tcb->xcp.saved_ps    = tcb->xcp.regs[REG_PS];
+                  tcb->xcp.saved_regs  = tcb->xcp.regs;
+
+                  /* Duplicate the register context.  These will be
+                   * restored by the signal trampoline after the signal has
+                   * been delivered.
+                   */
+
+                  tcb->xcp.regs          = (void *)
+                                            ((uint32_t)tcb->xcp.regs -
+                                            (uint32_t)XCPTCONTEXT_SIZE);
+                  memcpy(tcb->xcp.regs, tcb->xcp.saved_regs,
+                         XCPTCONTEXT_SIZE);
+
+                  tcb->xcp.regs[REG_A1]  = (uint32_t)tcb->xcp.regs +
+                                               (uint32_t)XCPTCONTEXT_SIZE;
 
                   /* Then set up to vector to the trampoline with interrupts
                    * disabled
                    */
 
-                  tcb->xcp.regs[REG_PC] = (uint32_t)_xtensa_sig_trampoline;
+                  tcb->xcp.regs[REG_PC] = (uint32_t)xtensa_sig_deliver;
 #ifdef __XTENSA_CALL0_ABI__
                   tcb->xcp.regs[REG_PS] = (uint32_t)
                       (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM);
 #else
                   tcb->xcp.regs[REG_PS] = (uint32_t)
-                      (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM | PS_WOE);
+                      (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM |
+                       PS_WOE | PS_CALLINC(1));
+#endif
+#ifndef CONFIG_BUILD_FLAT
+                  xtensa_raiseprivilege(tcb->xcp.regs);
 #endif
                 }
               else
                 {
                   /* tcb is running on the same CPU */
 
-                  /* Copy tcb->xcp.regs to tcp.xcp.saved. These will be
+                  /* Copy tcb->xcp.regs to tcp.xcp.saved_regs. These will be
                    * restored by the signal trampoline after the signal has
                    * been delivered.
                    *
@@ -285,26 +330,38 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
                    */
 
                   tcb->xcp.sigdeliver  = sigdeliver;
-                  tcb->xcp.saved_pc    = CURRENT_REGS[REG_PC];
-                  tcb->xcp.saved_ps    = CURRENT_REGS[REG_PS];
+                  xtensa_savestate(tcb->xcp.saved_regs);
+
+                  /* Duplicate the register context.  These will be
+                   * restored by the signal trampoline after the signal has
+                   * been delivered.
+                   */
+
+                  CURRENT_REGS          = (void *)
+                                           ((uint32_t)CURRENT_REGS -
+                                           (uint32_t)XCPTCONTEXT_SIZE);
+                  memcpy((uint32_t *)CURRENT_REGS, tcb->xcp.saved_regs,
+                         XCPTCONTEXT_SIZE);
+
+                  CURRENT_REGS[REG_A1]  = (uint32_t)CURRENT_REGS +
+                                          (uint32_t)XCPTCONTEXT_SIZE;
 
                   /* Then set up to vector to the trampoline with interrupts
                    * disabled
                    */
 
-                  CURRENT_REGS[REG_PC] = (uint32_t)_xtensa_sig_trampoline;
+                  CURRENT_REGS[REG_PC] = (uint32_t)xtensa_sig_deliver;
 #ifdef __XTENSA_CALL0_ABI__
                   CURRENT_REGS[REG_PS] = (uint32_t)
                       (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM);
 #else
                   CURRENT_REGS[REG_PS] = (uint32_t)
-                      (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM | PS_WOE);
+                      (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM |
+                       PS_WOE | PS_CALLINC(1));
 #endif
-                  /* And make sure that the saved context in the TCB is the
-                   * same as the interrupt return context.
-                   */
-
-                  xtensa_savestate(tcb->xcp.regs);
+#ifndef CONFIG_BUILD_FLAT
+                  xtensa_raiseprivilege(CURRENT_REGS);
+#endif
                 }
 
               /* Increment the IRQ lock count so that when the task is
@@ -337,15 +394,27 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
 
       else
         {
-          /* Save the return pc and ps.  These will be restored by the
+          /* Save the context registers.  These will be restored by the
            * signal trampoline after the signals have been delivered.
            *
            * NOTE: that hi-priority interrupts are not disabled.
            */
 
-          tcb->xcp.sigdeliver   = sigdeliver;
-          tcb->xcp.saved_pc     = tcb->xcp.regs[REG_PC];
-          tcb->xcp.saved_ps     = tcb->xcp.regs[REG_PS];
+          tcb->xcp.sigdeliver    = sigdeliver;
+          tcb->xcp.saved_regs    = tcb->xcp.regs;
+
+          /* Duplicate the register context.  These will be
+           * restored by the signal trampoline after the signal has been
+           * delivered.
+           */
+
+          tcb->xcp.regs          = (void *)
+                                    ((uint32_t)tcb->xcp.regs -
+                                    (uint32_t)XCPTCONTEXT_SIZE);
+          memcpy(tcb->xcp.regs, tcb->xcp.saved_regs, XCPTCONTEXT_SIZE);
+
+          tcb->xcp.regs[REG_A1]  = (uint32_t)tcb->xcp.regs +
+                                   (uint32_t)XCPTCONTEXT_SIZE;
 
           /* Increment the IRQ lock count so that when the task is restarted,
            * it will hold the IRQ spinlock.
@@ -358,13 +427,17 @@ void up_schedule_sigaction(struct tcb_s *tcb, sig_deliver_t sigdeliver)
            * disabled
            */
 
-          tcb->xcp.regs[REG_PC] = (uint32_t)_xtensa_sig_trampoline;
+          tcb->xcp.regs[REG_PC] = (uint32_t)xtensa_sig_deliver;
 #ifdef __XTENSA_CALL0_ABI__
           tcb->xcp.regs[REG_PS] = (uint32_t)
               (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM);
 #else
           tcb->xcp.regs[REG_PS] = (uint32_t)
-              (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM | PS_WOE);
+              (PS_INTLEVEL(XCHAL_EXCM_LEVEL) | PS_UM |
+               PS_WOE | PS_CALLINC(1));
+#endif
+#ifndef CONFIG_BUILD_FLAT
+          xtensa_raiseprivilege(tcb->xcp.regs);
 #endif
         }
     }

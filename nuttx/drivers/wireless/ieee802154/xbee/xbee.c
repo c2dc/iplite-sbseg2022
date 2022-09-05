@@ -1,35 +1,20 @@
 /****************************************************************************
  * drivers/wireless/ieee802154/xbee/xbee.c
  *
- *   Copyright (C) 2017 Verge Inc. All rights reserved.
- *   Author:  Anthony Merlino <anthony@vergeaero.com>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -178,7 +163,7 @@ static void xbee_attnworker(FAR void *arg)
 
   /* Allocate an IOB for the incoming data. */
 
-  iob             = iob_alloc(false, IOBUSER_WIRELESS_RAD802154);
+  iob             = iob_alloc(false);
   iob->io_flink   = NULL;
   iob->io_len     = 0;
   iob->io_offset  = 0;
@@ -278,11 +263,9 @@ static void xbee_attnworker(FAR void *arg)
                            * processing.
                            */
 
-                          iob->io_flink =
-                            iob_tryalloc(false, IOBUSER_WIRELESS_RAD802154);
+                          iob->io_flink = iob_tryalloc(false);
 
                           iob = iob->io_flink;
-
                           if (iob != NULL)
                             {
                               iob->io_flink  = NULL;
@@ -345,7 +328,7 @@ static void xbee_attnworker(FAR void *arg)
               wlwarn("Partial API frame clocked in. Dropping!\n");
             }
 
-          iob_free(iob, IOBUSER_WIRELESS_RAD802154);
+          iob_free(iob);
         }
     }
 
@@ -819,7 +802,7 @@ static void xbee_process_apiframes(FAR struct xbee_priv_s *priv,
 
       nextframe = frame->io_flink;
       frame->io_flink = NULL;
-      iob_free(frame, IOBUSER_WIRELESS_RAD802154);
+      iob_free(frame);
       frame = nextframe;
     }
 }
@@ -1047,8 +1030,7 @@ static void xbee_notify_worker(FAR void *arg)
 
           if (dispose)
             {
-              iob_free(primitive->u.dataind.frame,
-                       IOBUSER_WIRELESS_RAD802154);
+              iob_free(primitive->u.dataind.frame);
               ieee802154_primitive_free(primitive);
             }
         }
@@ -1343,7 +1325,7 @@ void xbee_send_apiframe(FAR struct xbee_priv_s *priv,
    * data.
    */
 
-  iob             = iob_tryalloc(false, IOBUSER_WIRELESS_RAD802154);
+  iob             = iob_tryalloc(false);
   iob->io_flink   = NULL;
   iob->io_len     = 0;
   iob->io_offset  = 0;
@@ -1437,8 +1419,7 @@ void xbee_send_apiframe(FAR struct xbee_priv_s *priv,
                            * processing.
                            */
 
-                          iob->io_flink =
-                            iob_tryalloc(false, IOBUSER_WIRELESS_RAD802154);
+                          iob->io_flink = iob_tryalloc(false);
                           iob = iob->io_flink;
 
                           if (iob != NULL)
@@ -1498,7 +1479,7 @@ void xbee_send_apiframe(FAR struct xbee_priv_s *priv,
               wlwarn("Partial API frame clocked in. Dropping!\n");
             }
 
-          iob_free(iob, IOBUSER_WIRELESS_RAD802154);
+          iob_free(iob);
         }
     }
 

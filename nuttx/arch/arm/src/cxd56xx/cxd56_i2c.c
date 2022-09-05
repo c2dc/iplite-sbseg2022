@@ -40,9 +40,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "cxd56_clock.h"
 #include "cxd56_i2c.h"
 #include "hardware/cxd56_i2c.h"
@@ -131,8 +129,8 @@ static struct cxd56_i2cdev_s g_i2c2dev =
  * Private Functions
  ****************************************************************************/
 
-static inline int i2c_takesem(FAR sem_t *sem);
-static inline int i2c_givesem(FAR sem_t *sem);
+static inline int i2c_takesem(sem_t *sem);
+static inline int i2c_givesem(sem_t *sem);
 
 static inline uint32_t i2c_reg_read(struct cxd56_i2cdev_s *priv,
                                     uint32_t offset);
@@ -146,25 +144,25 @@ static inline void i2c_reg_rmw(struct cxd56_i2cdev_s *dev,
 static int cxd56_i2c_disable(struct cxd56_i2cdev_s *priv);
 static void cxd56_i2c_enable(struct cxd56_i2cdev_s *priv);
 
-static int  cxd56_i2c_interrupt(int irq, FAR void *context, FAR void *arg);
+static int  cxd56_i2c_interrupt(int irq, void *context, void *arg);
 static void cxd56_i2c_timeout(wdparm_t arg);
 static void cxd56_i2c_setfrequency(struct cxd56_i2cdev_s *priv,
                                    uint32_t frequency);
-static int  cxd56_i2c_transfer(FAR struct i2c_master_s *dev,
-                               FAR struct i2c_msg_s *msgs, int count);
+static int  cxd56_i2c_transfer(struct i2c_master_s *dev,
+                               struct i2c_msg_s *msgs, int count);
 #ifdef CONFIG_I2C_RESET
-static int cxd56_i2c_reset(FAR struct i2c_master_s *dev);
+static int cxd56_i2c_reset(struct i2c_master_s *dev);
 #endif
 #if defined(CONFIG_CXD56_I2C0_SCUSEQ) || defined(CONFIG_CXD56_I2C1_SCUSEQ)
-static int  cxd56_i2c_transfer_scu(FAR struct i2c_master_s *dev,
-                                   FAR struct i2c_msg_s *msgs, int count);
+static int  cxd56_i2c_transfer_scu(struct i2c_master_s *dev,
+                                   struct i2c_msg_s *msgs, int count);
 #endif
 
 /****************************************************************************
  * Name: i2c_takesem
  ****************************************************************************/
 
-static inline int i2c_takesem(FAR sem_t *sem)
+static inline int i2c_takesem(sem_t *sem)
 {
   return nxsem_wait_uninterruptible(sem);
 }
@@ -173,7 +171,7 @@ static inline int i2c_takesem(FAR sem_t *sem)
  * Name: i2c_givesem
  ****************************************************************************/
 
-static inline int i2c_givesem(FAR sem_t *sem)
+static inline int i2c_givesem(sem_t *sem)
 {
   return nxsem_post(sem);
 }
@@ -415,9 +413,9 @@ static void cxd56_i2c_drainrxfifo(struct cxd56_i2cdev_s *priv)
  *
  ****************************************************************************/
 
-static int cxd56_i2c_interrupt(int irq, FAR void *context, FAR void *arg)
+static int cxd56_i2c_interrupt(int irq, void *context, void *arg)
 {
-  FAR struct cxd56_i2cdev_s *priv = (FAR struct cxd56_i2cdev_s *)arg;
+  struct cxd56_i2cdev_s *priv = (struct cxd56_i2cdev_s *)arg;
   uint32_t state;
   int ret;
 
@@ -606,8 +604,8 @@ static int cxd56_i2c_send(struct cxd56_i2cdev_s *priv, int last)
  * currently guaranteed.
  ****************************************************************************/
 
-static int cxd56_i2c_transfer(FAR struct i2c_master_s *dev,
-                              FAR struct i2c_msg_s *msgs, int count)
+static int cxd56_i2c_transfer(struct i2c_master_s *dev,
+                              struct i2c_msg_s *msgs, int count)
 {
   struct cxd56_i2cdev_s *priv = (struct cxd56_i2cdev_s *)dev;
   int i;
@@ -718,7 +716,7 @@ static int cxd56_i2c_transfer(FAR struct i2c_master_s *dev,
  ****************************************************************************/
 
 #ifdef CONFIG_I2C_RESET
-static int cxd56_i2c_reset(FAR struct i2c_master_s *dev)
+static int cxd56_i2c_reset(struct i2c_master_s *dev)
 {
   return OK;
 }
@@ -823,10 +821,10 @@ static int cxd56_i2c_scusend(int port, int addr,
   return ret;
 }
 
-static int cxd56_i2c_transfer_scu(FAR struct i2c_master_s *dev,
-                                  FAR struct i2c_msg_s *msgs, int count)
+static int cxd56_i2c_transfer_scu(struct i2c_master_s *dev,
+                                  struct i2c_msg_s *msgs, int count)
 {
-  FAR struct cxd56_i2cdev_s *priv = (FAR struct cxd56_i2cdev_s *)dev;
+  struct cxd56_i2cdev_s *priv = (struct cxd56_i2cdev_s *)dev;
   ssize_t  len  = 0;
   uint8_t *buf  = NULL;
   uint8_t  addr = msgs->addr;
@@ -846,9 +844,6 @@ static int cxd56_i2c_transfer_scu(FAR struct i2c_master_s *dev,
       cxd56_i2c_clock_gate_disable(priv->port);
       cxd56_i2c_disable(priv);
       cxd56_i2c_setfrequency(priv, msgs->frequency);
-      i2c_reg_rmw(priv, CXD56_IC_CON, IC_RESTART_EN, IC_RESTART_EN);
-      i2c_reg_write(priv, CXD56_IC_TAR, msgs->addr & 0x7f);
-      cxd56_i2c_enable(priv);
       cxd56_i2c_clock_gate_enable(priv->port);
 
       priv->frequency = msgs->frequency;
@@ -1028,7 +1023,9 @@ struct i2c_master_s *cxd56_i2cbus_initialize(int port)
   i2c_reg_write(priv, CXD56_IC_SDA_HOLD, 1);
 
   i2c_reg_write(priv, CXD56_IC_CON,
-                (IC_SLAVE_DISABLE | IC_MASTER_MODE | IC_TX_EMPTY_CTRL));
+                (IC_RX_FIFO_FULL_HLD_CTRL | IC_RESTART_EN |
+                 IC_SLAVE_DISABLE | IC_MASTER_MODE | IC_TX_EMPTY_CTRL));
+
   cxd56_i2c_setfrequency(priv, I2C_DEFAULT_FREQUENCY);
 
   leave_critical_section(flags);
@@ -1072,7 +1069,7 @@ struct i2c_master_s *cxd56_i2cbus_initialize(int port)
  *
  ****************************************************************************/
 
-int cxd56_i2cbus_uninitialize(FAR struct i2c_master_s *dev)
+int cxd56_i2cbus_uninitialize(struct i2c_master_s *dev)
 {
   struct cxd56_i2cdev_s *priv = (struct cxd56_i2cdev_s *)dev;
 

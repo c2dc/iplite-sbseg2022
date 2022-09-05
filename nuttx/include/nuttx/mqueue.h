@@ -29,6 +29,7 @@
 #include <nuttx/compiler.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/signal.h>
+#include <nuttx/list.h>
 
 #include <sys/types.h>
 #include <stdint.h>
@@ -87,7 +88,7 @@
 struct mqueue_inode_s
 {
   FAR struct inode *inode;    /* Containing inode */
-  sq_queue_t msglist;         /* Prioritized message list */
+  struct list_node msglist;   /* Prioritized message list */
   int16_t maxmsgs;            /* Maximum number of messages in the queue */
   int16_t nmsgs;              /* Number of message in the queue */
   int16_t nwaitnotfull;       /* Number tasks waiting for not full */
@@ -97,9 +98,11 @@ struct mqueue_inode_s
 #else
   uint16_t maxmsgsize;        /* Max size of message in message queue */
 #endif
+#ifndef CONFIG_DISABLE_MQUEUE_NOTIFICATION
   pid_t ntpid;                /* Notification: Receiving Task's PID */
   struct sigevent ntevent;    /* Notification description */
   struct sigwork_s ntwork;    /* Notification work */
+#endif
   FAR struct pollfd *fds[CONFIG_FS_MQUEUE_NPOLLWAITERS];
 };
 
@@ -144,7 +147,7 @@ struct task_group_s;  /* Forward reference */
  *   Optional parameters.  When the O_CREAT flag is specified, two optional
  *   parameters are expected:
  *
- *     1. mode_t mode (ignored), and
+ *     1. mode_t mode, and
  *     2. struct mq_attr *attr.  The mq_maxmsg attribute
  *        is used at the time that the message queue is
  *        created to determine the maximum number of
@@ -360,12 +363,12 @@ ssize_t nxmq_timedreceive(mqd_t mqdes, FAR char *msg, size_t msglen,
  * Description:
  *   This function deallocates an initialized message queue structure.
  *   First, it deallocates all of the queued messages in the message
- *   queue.  It is assumed that this message is fully unlinked and
- *   closed so that no thread will attempt access it while it is being
- *   deleted.
+ *   queue.  It is assumed that this message queue is fully unlinked
+ *   and closed so that no thread will attempt to access it while it
+ *   is being deleted.
  *
  * Input Parameters:
- *   msgq - Named essage queue to be freed
+ *   msgq - Named message queue to be freed
  *
  * Returned Value:
  *   None
@@ -382,28 +385,33 @@ void nxmq_free_msgq(FAR struct mqueue_inode_s *msgq);
  *   It allocates and initializes a struct mqueue_inode_s structure.
  *
  * Input Parameters:
- *   mode   - mode_t value is ignored
  *   attr   - The mq_maxmsg attribute is used at the time that the message
  *            queue is created to determine the maximum number of
  *            messages that may be placed in the message queue.
+ *   pmsgq  - This parameter is a address of a pointer
  *
  * Returned Value:
- *   The allocated and initialized message queue structure or NULL in the
- *   event of a failure.
+ *   Zero (OK) is returned on success. Otherwise, a negated errno value is
+ *   returned to indicate the nature of the failure.
+ *
+ *   EINVAL    attr is NULL or either attr->mq_mqssize or attr->mq_maxmsg
+ *             have an invalid value
+ *   ENOSPC    There is insufficient space for the creation of the new
+ *             message queue
  *
  ****************************************************************************/
 
-FAR struct mqueue_inode_s *nxmq_alloc_msgq(mode_t mode,
-                                           FAR struct mq_attr *attr);
+int nxmq_alloc_msgq(FAR struct mq_attr *attr,
+                    FAR struct mqueue_inode_s **pmsgq);
 
 /****************************************************************************
  * Name: nxmq_pollnotify
  *
  * Description:
- *   pollnotify, used for notify the poll
+ *   pollnotify, used for notifying the poll
  *
  * Input Parameters:
- *   msgq     - Named essage queue
+ *   msgq     - Named message queue
  *   eventset - evnet
  *
  * Returned Value:
@@ -412,7 +420,11 @@ FAR struct mqueue_inode_s *nxmq_alloc_msgq(mode_t mode,
  *
  ****************************************************************************/
 
+#if CONFIG_FS_MQUEUE_NPOLLWAITERS > 0
 void nxmq_pollnotify(FAR struct mqueue_inode_s *msgq, pollevent_t eventset);
+#else
+# define nxmq_pollnotify(msgq, eventset)
+#endif
 
 /****************************************************************************
  * Name: file_mq_open
@@ -434,7 +446,7 @@ void nxmq_pollnotify(FAR struct mqueue_inode_s *msgq, pollevent_t eventset);
  *   Optional parameters.  When the O_CREAT flag is specified, two optional
  *   parameters are expected:
  *
- *     1. mode_t mode (ignored), and
+ *     1. mode_t mode, and
  *     2. struct mq_attr *attr.  The mq_maxmsg attribute
  *        is used at the time that the message queue is
  *        created to determine the maximum number of

@@ -29,6 +29,8 @@
 #include <nuttx/binfmt/nxflat.h>
 #include <nuttx/lib/builtin.h>
 
+#include <debug.h>
+
 #include "binfmt.h"
 
 #ifndef CONFIG_BINFMT_DISABLE
@@ -49,7 +51,7 @@ void binfmt_initialize(void)
 {
   int ret;
 
-#ifdef CONFIG_FS_BINFS
+#ifdef CONFIG_BUILTIN
   ret = builtin_initialize();
   if (ret < 0)
     {

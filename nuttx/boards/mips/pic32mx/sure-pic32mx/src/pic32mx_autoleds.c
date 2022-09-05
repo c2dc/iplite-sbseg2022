@@ -32,9 +32,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "mips_arch.h"
 #include "mips_internal.h"
-
 #include "pic32mx.h"
 #include "pic32mx_ioport.h"
 #include "sure-pic32mx.h"
@@ -117,7 +115,7 @@ static const struct led_setting_s g_ledoffvalues[LED_NVALUES] =
  * Name: pic32mx_setleds
  ****************************************************************************/
 
-static void pic32mx_setleds(FAR const struct led_setting_s *setting)
+static void pic32mx_setleds(const struct led_setting_s *setting)
 {
   if (setting->usb != LED_NC)
     {

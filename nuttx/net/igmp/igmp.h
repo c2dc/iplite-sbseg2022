@@ -51,8 +51,8 @@
  *   +-------------------+
  */
 
-#ifndef _NET_IGMP_IGMP_H
-#define _NET_IGMP_IGMP_H
+#ifndef __NET_IGMP_IGMP_H
+#define __NET_IGMP_IGMP_H
 
 /****************************************************************************
  * Included Files
@@ -131,8 +131,8 @@ extern "C"
 #  define EXTERN extern
 #endif
 
-EXTERN in_addr_t g_ipv4_allsystems;
-EXTERN in_addr_t g_ipv4_allrouters;
+EXTERN const in_addr_t g_ipv4_allsystems;
+EXTERN const in_addr_t g_ipv4_allrouters;
 
 /****************************************************************************
  * Public Function Prototypes
@@ -272,7 +272,7 @@ void igmp_poll(FAR struct net_driver_s *dev);
  ****************************************************************************/
 
 void igmp_send(FAR struct net_driver_s *dev, FAR struct igmp_group_s *group,
-               FAR in_addr_t *destipaddr, uint8_t msgid);
+               FAR const in_addr_t *destipaddr, uint8_t msgid);
 
 /****************************************************************************
  * Name:  igmp_joingroup
@@ -359,7 +359,7 @@ bool igmp_cmptimer(FAR struct igmp_group_s *group, int maxticks);
  *
  ****************************************************************************/
 
-void igmp_addmcastmac(FAR struct net_driver_s *dev, FAR in_addr_t *ip);
+void igmp_addmcastmac(FAR struct net_driver_s *dev, FAR const in_addr_t *ip);
 
 /****************************************************************************
  * Name:  igmp_removemcastmac
@@ -369,7 +369,8 @@ void igmp_addmcastmac(FAR struct net_driver_s *dev, FAR in_addr_t *ip);
  *
  ****************************************************************************/
 
-void igmp_removemcastmac(FAR struct net_driver_s *dev, FAR in_addr_t *ip);
+void igmp_removemcastmac(FAR struct net_driver_s *dev,
+                         FAR const in_addr_t *ip);
 
 #undef EXTERN
 #ifdef __cplusplus
@@ -377,4 +378,4 @@ void igmp_removemcastmac(FAR struct net_driver_s *dev, FAR in_addr_t *ip);
 #endif
 
 #endif /* CONFIG_NET_IGMP */
-#endif /* _NET_IGMP_IGMP_H */
+#endif /* __NET_IGMP_IGMP_H */

@@ -60,9 +60,9 @@
  ****************************************************************************/
 
 #define IPv4BUF \
-  ((struct ipv4_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
+  ((FAR struct ipv4_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)])
 #define ICMPBUF \
-  ((struct icmp_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev) + IPv4_HDRLEN])
+  ((FAR struct icmp_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev) + IPv4_HDRLEN])
 
 /****************************************************************************
  * Private Types
@@ -133,7 +133,7 @@ static void sendto_request(FAR struct net_driver_s *dev,
   ipv4->ipid[1]     = g_ipid & 0xff;
   ipv4->ipoffset[0] = IP_FLAG_DONTFRAG >> 8;
   ipv4->ipoffset[1] = IP_FLAG_DONTFRAG & 0xff;
-  ipv4->ttl         = IP_TTL;
+  ipv4->ttl         = IP_TTL_DEFAULT;
   ipv4->proto       = IP_PROTO_ICMP;
 
   net_ipv4addr_hdrcopy(ipv4->srcipaddr, &dev->d_ipaddr);
@@ -178,7 +178,6 @@ static void sendto_request(FAR struct net_driver_s *dev,
  * Input Parameters:
  *   dev        The structure of the network driver that generated the
  *              event.
- *   conn       The received packet, cast to (void *)
  *   pvpriv     An instance of struct icmp_sendto_s cast to (void *)
  *   flags      Set of events describing why the callback was invoked
  *
@@ -191,10 +190,9 @@ static void sendto_request(FAR struct net_driver_s *dev,
  ****************************************************************************/
 
 static uint16_t sendto_eventhandler(FAR struct net_driver_s *dev,
-                                  FAR void *conn,
-                                  FAR void *pvpriv, uint16_t flags)
+                                    FAR void *pvpriv, uint16_t flags)
 {
-  FAR struct icmp_sendto_s *pstate = (struct icmp_sendto_s *)pvpriv;
+  FAR struct icmp_sendto_s *pstate = pvpriv;
 
   ninfo("flags: %04x\n", flags);
 
@@ -358,7 +356,7 @@ ssize_t icmp_sendmsg(FAR struct socket *psock, FAR struct msghdr *msg,
       conn->nreqs = 0;
       conn->dev   = NULL;
 
-      iob_free_queue(&conn->readahead, IOBUSER_NET_SOCK_ICMP);
+      iob_free_queue(&conn->readahead);
     }
 
 #ifdef CONFIG_NET_ARP_SEND
@@ -418,7 +416,8 @@ ssize_t icmp_sendmsg(FAR struct socket *psock, FAR struct msghdr *msg,
        * net_timedwait will also terminate if a signal is received.
        */
 
-      ret = net_timedwait(&state.snd_sem, _SO_TIMEOUT(psock->s_sndtimeo));
+      ret = net_timedwait(&state.snd_sem,
+                          _SO_TIMEOUT(conn->sconn.s_sndtimeo));
       if (ret < 0)
         {
           if (ret == -ETIMEDOUT)
@@ -437,6 +436,10 @@ ssize_t icmp_sendmsg(FAR struct socket *psock, FAR struct msghdr *msg,
                    */
 
                   ret = -ENETUNREACH;
+                }
+              else
+                {
+                  ret = -EAGAIN;
                 }
             }
 
@@ -466,7 +469,7 @@ errout:
   conn->nreqs = 0;
   conn->dev   = NULL;
 
-  iob_free_queue(&conn->readahead, IOBUSER_NET_SOCK_ICMP);
+  iob_free_queue(&conn->readahead);
   return ret;
 }
 

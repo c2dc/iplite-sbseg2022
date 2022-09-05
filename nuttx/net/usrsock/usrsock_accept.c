@@ -38,11 +38,11 @@
  * Private Functions
  ****************************************************************************/
 
-static uint16_t accept_event(FAR struct net_driver_s *dev, FAR void *pvconn,
+static uint16_t accept_event(FAR struct net_driver_s *dev,
                              FAR void *pvpriv, uint16_t flags)
 {
   FAR struct usrsock_data_reqstate_s *pstate = pvpriv;
-  FAR struct usrsock_conn_s *conn = pvconn;
+  FAR struct usrsock_conn_s *conn = pstate->reqstate.conn;
 
   if (flags & USRSOCK_EVENT_ABORT)
     {
@@ -304,7 +304,7 @@ int usrsock_accept(FAR struct socket *psock, FAR struct sockaddr *addr,
 
       if (!(conn->flags & USRSOCK_EVENT_RECVFROM_AVAIL))
         {
-          if (_SS_ISNONBLOCK(psock->s_flags))
+          if (_SS_ISNONBLOCK(conn->sconn.s_flags))
             {
               /* Nothing to receive from daemon side. */
 
@@ -327,7 +327,7 @@ int usrsock_accept(FAR struct socket *psock, FAR struct sockaddr *addr,
           /* Wait for receive-avail (or abort, or timeout, or signal). */
 
           ret = net_timedwait(&state.reqstate.recvsem,
-                              _SO_TIMEOUT(psock->s_rcvtimeo));
+                              _SO_TIMEOUT(conn->sconn.s_rcvtimeo));
           if (ret < 0)
             {
               if (ret == -ETIMEDOUT)
@@ -343,7 +343,7 @@ int usrsock_accept(FAR struct socket *psock, FAR struct sockaddr *addr,
               else
                 {
                   nerr("net_timedwait errno: %d\n", ret);
-                  DEBUGASSERT(false);
+                  DEBUGPANIC();
                 }
             }
 

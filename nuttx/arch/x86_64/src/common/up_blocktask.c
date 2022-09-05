@@ -26,6 +26,7 @@
 
 #include <stdbool.h>
 #include <sched.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/arch.h>
@@ -146,7 +147,7 @@ void up_block_task(struct tcb_s *tcb, tstate_t task_state)
            * thread at the head of the ready-to-run list.
            */
 
-          (void)group_addrenv(rtcb);
+          group_addrenv(rtcb);
 #endif
           /* Reset scheduler parameters */
 

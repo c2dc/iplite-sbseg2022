@@ -43,7 +43,6 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/fs/userfs.h>
-#include <nuttx/fs/dirent.h>
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/net/net.h>
 #include <nuttx/semaphore.h>
@@ -57,6 +56,12 @@
 /****************************************************************************
  * Private Types
  ****************************************************************************/
+
+struct userfs_dir_s
+{
+  struct fs_dirent_s base;
+  FAR void *dir;
+};
 
 /* This structure holds the internal state of the UserFS proxy */
 
@@ -106,11 +111,12 @@ static int     userfs_fstat(FAR const struct file *filep,
 static int     userfs_truncate(FAR struct file *filep, off_t length);
 
 static int     userfs_opendir(FAR struct inode *mountpt,
-                 FAR const char *relpath, FAR struct fs_dirent_s *dir);
+                 FAR const char *relpath, FAR struct fs_dirent_s **dir);
 static int     userfs_closedir(FAR struct inode *mountpt,
                  FAR struct fs_dirent_s *dir);
 static int     userfs_readdir(FAR struct inode *mountpt,
-                 FAR struct fs_dirent_s *dir);
+                 FAR struct fs_dirent_s *dir,
+                 FAR struct dirent *entry);
 static int     userfs_rewinddir(FAR struct inode *mountpt,
                  FAR struct fs_dirent_s *dir);
 
@@ -131,6 +137,11 @@ static int     userfs_rename(FAR struct inode *mountpt,
                  FAR const char *oldrelpath, FAR const char *newrelpath);
 static int     userfs_stat(FAR struct inode *mountpt,
                  FAR const char *relpath, FAR struct stat *buf);
+static int     userfs_fchstat(FAR const struct file *filep,
+                 FAR const struct stat *buf, int flags);
+static int     userfs_chstat(FAR struct inode *mountpt,
+                 FAR const char *relpath,
+                 FAR const struct stat *buf, int flags);
 
 /****************************************************************************
  * Public Data
@@ -153,6 +164,7 @@ const struct mountpt_operations userfs_operations =
   userfs_sync,       /* sync */
   userfs_dup,        /* dup */
   userfs_fstat,      /* fstat */
+  userfs_fchstat,    /* fchstat */
   userfs_truncate,   /* truncate */
 
   userfs_opendir,    /* opendir */
@@ -168,7 +180,8 @@ const struct mountpt_operations userfs_operations =
   userfs_mkdir,      /* mkdir */
   userfs_rmdir,      /* rmdir */
   userfs_rename,     /* rename */
-  userfs_stat        /* stat */
+  userfs_stat,       /* stat */
+  userfs_chstat      /* chstat */
 };
 
 /****************************************************************************
@@ -221,7 +234,7 @@ static int userfs_open(FAR struct file *filep, FAR const char *relpath,
   req->oflags = oflags;
   req->mode   = mode;
 
-  strncpy(req->relpath, relpath, priv->mxwrite);
+  strlcpy(req->relpath, relpath, priv->mxwrite);
 
   nsent = psock_sendto(&priv->psock, priv->iobuffer,
                        SIZEOF_USERFS_OPEN_REQUEST_S(pathlen + 1), 0,
@@ -898,6 +911,85 @@ static int userfs_fstat(FAR const struct file *filep, FAR struct stat *buf)
 }
 
 /****************************************************************************
+ * Name: userfs_fchstat
+ *
+ * Description:
+ *   Change information about an open file associated with the file
+ *   descriptor 'filep'.
+ *
+ ****************************************************************************/
+
+static int userfs_fchstat(FAR const struct file *filep,
+                          FAR const struct stat *buf, int flags)
+{
+  FAR struct userfs_state_s *priv;
+  FAR struct userfs_fchstat_request_s *req;
+  FAR struct userfs_fchstat_response_s *resp;
+  ssize_t nsent;
+  ssize_t nrecvd;
+  int ret;
+
+  DEBUGASSERT(filep != NULL &&
+              filep->f_inode != NULL &&
+              filep->f_inode->i_private != NULL);
+  priv = filep->f_inode->i_private;
+
+  /* Get exclusive access */
+
+  ret = nxsem_wait(&priv->exclsem);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  /* Construct and send the request to the server */
+
+  req           = (FAR struct userfs_fchstat_request_s *)priv->iobuffer;
+  req->req      = USERFS_REQ_FCHSTAT;
+  req->openinfo = filep->f_priv;
+  req->buf      = *buf;
+  req->flags    = flags;
+
+  nsent = psock_sendto(&priv->psock, priv->iobuffer,
+                       sizeof(struct userfs_fchstat_request_s), 0,
+                       (FAR struct sockaddr *)&priv->server,
+                       sizeof(struct sockaddr_in));
+  if (nsent < 0)
+    {
+      ferr("ERROR: psock_sendto failed: %zd\n", nsent);
+      nxsem_post(&priv->exclsem);
+      return (int)nsent;
+    }
+
+  /* Then get the response from the server */
+
+  nrecvd = psock_recvfrom(&priv->psock, priv->iobuffer, IOBUFFER_SIZE(priv),
+                          0, NULL, NULL);
+  nxsem_post(&priv->exclsem);
+
+  if (nrecvd < 0)
+    {
+      ferr("ERROR: psock_recvfrom failed: %zd\n", nrecvd);
+      return (int)nrecvd;
+    }
+
+  if (nrecvd != sizeof(struct userfs_fchstat_response_s))
+    {
+      ferr("ERROR: Response size incorrect: %zd\n", nrecvd);
+      return -EIO;
+    }
+
+  resp = (FAR struct userfs_fchstat_response_s *)priv->iobuffer;
+  if (resp->resp != USERFS_RESP_FCHSTAT)
+    {
+      ferr("ERROR: Incorrect response: %u\n", resp->resp);
+      return -EIO;
+    }
+
+  return resp->ret;
+}
+
+/****************************************************************************
  * Name: userfs_truncate
  *
  * Description:
@@ -984,8 +1076,9 @@ static int userfs_truncate(FAR struct file *filep, off_t length)
  ****************************************************************************/
 
 static int userfs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
-                          FAR struct fs_dirent_s *dir)
+                          FAR struct fs_dirent_s **dir)
 {
+  FAR struct userfs_dir_s *udir;
   FAR struct userfs_state_s *priv;
   FAR struct userfs_opendir_request_s *req;
   FAR struct userfs_opendir_response_s *resp;
@@ -1022,7 +1115,7 @@ static int userfs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
   req      = (FAR struct userfs_opendir_request_s *)priv->iobuffer;
   req->req = USERFS_REQ_OPENDIR;
 
-  strncpy(req->relpath, relpath, priv->mxwrite);
+  strlcpy(req->relpath, relpath, priv->mxwrite);
 
   nsent = psock_sendto(&priv->psock, priv->iobuffer,
                        SIZEOF_USERFS_OPENDIR_REQUEST_S(pathlen + 1), 0,
@@ -1063,7 +1156,14 @@ static int userfs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
   /* Save the opaque dir reference in struct fs_dirent_s */
 
   DEBUGASSERT(dir != NULL);
-  dir->u.userfs.fs_dir = resp->dir;
+  udir = kmm_zalloc(sizeof(struct userfs_dir_s));
+  if (udir == NULL)
+    {
+      return -ENOMEM;
+    }
+
+  udir->dir = resp->dir;
+  *dir = (FAR struct fs_dirent_s *)udir;
   return resp->ret;
 }
 
@@ -1078,6 +1178,7 @@ static int userfs_opendir(FAR struct inode *mountpt, FAR const char *relpath,
 static int userfs_closedir(FAR struct inode *mountpt,
                            FAR struct fs_dirent_s *dir)
 {
+  FAR struct userfs_dir_s *udir;
   FAR struct userfs_state_s *priv;
   FAR struct userfs_closedir_request_s *req;
   FAR struct userfs_closedir_response_s *resp;
@@ -1088,6 +1189,7 @@ static int userfs_closedir(FAR struct inode *mountpt,
   DEBUGASSERT(mountpt != NULL &&
               mountpt->i_private != NULL);
   priv = mountpt->i_private;
+  udir = (FAR struct userfs_dir_s *)dir;
 
   /* Get exclusive access */
 
@@ -1101,7 +1203,7 @@ static int userfs_closedir(FAR struct inode *mountpt,
 
   req      = (FAR struct userfs_closedir_request_s *)priv->iobuffer;
   req->req = USERFS_REQ_CLOSEDIR;
-  req->dir = dir->u.userfs.fs_dir;
+  req->dir = udir->dir;
 
   nsent = psock_sendto(&priv->psock, priv->iobuffer,
                        sizeof(struct userfs_closedir_request_s), 0,
@@ -1139,6 +1241,7 @@ static int userfs_closedir(FAR struct inode *mountpt,
       return -EIO;
     }
 
+  kmm_free(udir);
   return resp->ret;
 }
 
@@ -1150,8 +1253,10 @@ static int userfs_closedir(FAR struct inode *mountpt,
  ****************************************************************************/
 
 static int userfs_readdir(FAR struct inode *mountpt,
-                          FAR struct fs_dirent_s *dir)
+                          FAR struct fs_dirent_s *dir,
+                          FAR struct dirent *entry)
 {
+  FAR struct userfs_dir_s *udir;
   FAR struct userfs_state_s *priv;
   FAR struct userfs_readdir_request_s *req;
   FAR struct userfs_readdir_response_s *resp;
@@ -1162,6 +1267,7 @@ static int userfs_readdir(FAR struct inode *mountpt,
   DEBUGASSERT(mountpt != NULL &&
               mountpt->i_private != NULL);
   priv = mountpt->i_private;
+  udir = (FAR struct userfs_dir_s *)dir;
 
   /* Get exclusive access */
 
@@ -1175,7 +1281,7 @@ static int userfs_readdir(FAR struct inode *mountpt,
 
   req      = (FAR struct userfs_readdir_request_s *)priv->iobuffer;
   req->req = USERFS_REQ_READDIR;
-  req->dir = dir->u.userfs.fs_dir;
+  req->dir = udir->dir;
 
   nsent = psock_sendto(&priv->psock, priv->iobuffer,
                        sizeof(struct userfs_readdir_request_s), 0,
@@ -1216,7 +1322,7 @@ static int userfs_readdir(FAR struct inode *mountpt,
   /* Return the dirent */
 
   DEBUGASSERT(dir != NULL);
-  memcpy(&dir->fd_dir, &resp->entry, sizeof(struct dirent));
+  memcpy(entry, &resp->entry, sizeof(struct dirent));
   return resp->ret;
 }
 
@@ -1230,6 +1336,7 @@ static int userfs_readdir(FAR struct inode *mountpt,
 static int userfs_rewinddir(FAR struct inode *mountpt,
                             FAR struct fs_dirent_s *dir)
 {
+  FAR struct userfs_dir_s *udir;
   FAR struct userfs_state_s *priv;
   FAR struct userfs_rewinddir_request_s *req;
   FAR struct userfs_rewinddir_response_s *resp;
@@ -1240,6 +1347,7 @@ static int userfs_rewinddir(FAR struct inode *mountpt,
   DEBUGASSERT(mountpt != NULL &&
               mountpt->i_private != NULL);
   priv = mountpt->i_private;
+  udir = (FAR struct userfs_dir_s *)dir;
 
   /* Get exclusive access */
 
@@ -1253,7 +1361,7 @@ static int userfs_rewinddir(FAR struct inode *mountpt,
 
   req      = (FAR struct userfs_rewinddir_request_s *)priv->iobuffer;
   req->req = USERFS_REQ_REWINDDIR;
-  req->dir = dir->u.userfs.fs_dir;
+  req->dir = udir->dir;
 
   nsent = psock_sendto(&priv->psock, priv->iobuffer,
                        sizeof(struct userfs_rewinddir_request_s), 0,
@@ -1344,7 +1452,7 @@ static int userfs_bind(FAR struct inode *blkdriver, FAR const void *data,
   /* Preset the server address */
 
   priv->server.sin_family      = AF_INET;
-  priv->server.sin_port        = htons(config->portno);
+  priv->server.sin_port        = HTONS(config->portno);
   priv->server.sin_addr.s_addr = HTONL(INADDR_LOOPBACK);
 
   /* Create a LocalHost UDP client socket */
@@ -1588,7 +1696,7 @@ static int userfs_unlink(FAR struct inode *mountpt,
   req      = (FAR struct userfs_unlink_request_s *)priv->iobuffer;
   req->req = USERFS_REQ_UNLINK;
 
-  strncpy(req->relpath, relpath, priv->mxwrite);
+  strlcpy(req->relpath, relpath, priv->mxwrite);
 
   nsent = psock_sendto(&priv->psock, priv->iobuffer,
                        SIZEOF_USERFS_UNLINK_REQUEST_S(pathlen + 1), 0,
@@ -1675,7 +1783,7 @@ static int userfs_mkdir(FAR struct inode *mountpt,
   req->req  = USERFS_REQ_MKDIR;
   req->mode = mode;
 
-  strncpy(req->relpath, relpath, priv->mxwrite);
+  strlcpy(req->relpath, relpath, priv->mxwrite);
 
   nsent = psock_sendto(&priv->psock, priv->iobuffer,
                        SIZEOF_USERFS_MKDIR_REQUEST_S(pathlen + 1), 0,
@@ -1761,7 +1869,7 @@ static int userfs_rmdir(FAR struct inode *mountpt,
   req      = (FAR struct userfs_rmdir_request_s *)priv->iobuffer;
   req->req = USERFS_REQ_RMDIR;
 
-  strncpy(req->relpath, relpath, priv->mxwrite);
+  strlcpy(req->relpath, relpath, priv->mxwrite);
 
   nsent = psock_sendto(&priv->psock, priv->iobuffer,
                        SIZEOF_USERFS_RMDIR_REQUEST_S(pathlen + 1), 0,
@@ -1852,8 +1960,8 @@ static int userfs_rename(FAR struct inode *mountpt,
   req->req       = USERFS_REQ_RENAME;
   req->newoffset = oldpathlen;
 
-  strncpy(req->oldrelpath, oldrelpath, oldpathlen);
-  strncpy(&req->oldrelpath[oldpathlen], newrelpath, newpathlen);
+  strlcpy(req->oldrelpath, oldrelpath, oldpathlen);
+  strlcpy(&req->oldrelpath[oldpathlen], newrelpath, newpathlen);
 
   nsent = psock_sendto(&priv->psock, priv->iobuffer,
                       SIZEOF_USERFS_RENAME_REQUEST_S(oldpathlen, newpathlen),
@@ -1939,7 +2047,7 @@ static int userfs_stat(FAR struct inode *mountpt, FAR const char *relpath,
   req      = (FAR struct userfs_stat_request_s *)priv->iobuffer;
   req->req = USERFS_REQ_STAT;
 
-  strncpy(req->relpath, relpath, priv->mxwrite);
+  strlcpy(req->relpath, relpath, priv->mxwrite);
 
   nsent = psock_sendto(&priv->psock, priv->iobuffer,
                        SIZEOF_USERFS_STAT_REQUEST_S(pathlen + 1), 0,
@@ -1981,6 +2089,94 @@ static int userfs_stat(FAR struct inode *mountpt, FAR const char *relpath,
 
   DEBUGASSERT(buf != NULL);
   memcpy(buf, &resp->buf, sizeof(struct stat));
+  return resp->ret;
+}
+
+/****************************************************************************
+ * Name: userfs_chstat
+ *
+ * Description:
+ *   Change information about a file or directory
+ *
+ ****************************************************************************/
+
+static int userfs_chstat(FAR struct inode *mountpt, FAR const char *relpath,
+                         FAR const struct stat *buf, int flags)
+{
+  FAR struct userfs_state_s *priv;
+  FAR struct userfs_chstat_request_s *req;
+  FAR struct userfs_chstat_response_s *resp;
+  ssize_t nsent;
+  ssize_t nrecvd;
+  int pathlen;
+  int ret;
+
+  DEBUGASSERT(mountpt != NULL &&
+              mountpt->i_private != NULL);
+  priv = mountpt->i_private;
+
+  /* Check the path length */
+
+  DEBUGASSERT(relpath != NULL);
+  pathlen = strlen(relpath);
+  if (pathlen > priv->mxwrite)
+    {
+      return -E2BIG;
+    }
+
+  /* Get exclusive access */
+
+  ret = nxsem_wait(&priv->exclsem);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
+  /* Construct and send the request to the server */
+
+  req        = (FAR struct userfs_chstat_request_s *)priv->iobuffer;
+  req->req   = USERFS_REQ_CHSTAT;
+  req->buf   = *buf;
+  req->flags = flags;
+
+  strlcpy(req->relpath, relpath, priv->mxwrite);
+
+  nsent = psock_sendto(&priv->psock, priv->iobuffer,
+                       SIZEOF_USERFS_CHSTAT_REQUEST_S(pathlen + 1), 0,
+                       (FAR struct sockaddr *)&priv->server,
+                       sizeof(struct sockaddr_in));
+  if (nsent < 0)
+    {
+      ferr("ERROR: psock_sendto failed: %zd\n", nsent);
+      nxsem_post(&priv->exclsem);
+      return (int)nsent;
+    }
+
+  /* Then get the response from the server */
+
+  nrecvd = psock_recvfrom(&priv->psock, priv->iobuffer, IOBUFFER_SIZE(priv),
+                          0, NULL, NULL);
+  nxsem_post(&priv->exclsem);
+
+  if (nrecvd < 0)
+    {
+      ferr("ERROR: psock_recvfrom failed: %zd\n", nrecvd);
+      return (int)nrecvd;
+    }
+
+  if (nrecvd != sizeof(struct userfs_chstat_response_s))
+    {
+      ferr("ERROR: Response size incorrect: %zd\n", nrecvd);
+      return -EIO;
+    }
+
+  resp = (FAR struct userfs_chstat_response_s *)priv->iobuffer;
+  if (resp->resp != USERFS_RESP_STAT)
+    {
+      ferr("ERROR: Incorrect response: %u\n", resp->resp);
+      return -EIO;
+    }
+
   return resp->ret;
 }
 

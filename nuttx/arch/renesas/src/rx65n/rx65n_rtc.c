@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <time.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -34,8 +35,7 @@
 #include <nuttx/compiler.h>
 #include <arch/board/board.h>
 #include <rx65n_rtc.h>
-#include "up_arch.h"
-
+#include "up_internal.h"
 #include "nuttx/compiler.h"
 #ifdef CONFIG_RX65N_RTC
 
@@ -531,7 +531,7 @@ int up_rtc_gettime(FAR struct timespec *tp)
 
       t.tm_year = rtc_bcd2dec((uint8_t) (bcd_years & 0xff)) + 100;
 
-          tp->tv_sec = mktime(&t);
+          tp->tv_sec = timegm(&t);
           tp->tv_nsec = 0;
     }
 
@@ -553,7 +553,7 @@ int rx65n_rtc_setdatetime(FAR const struct tm *tp)
    * seconds)
    */
 
-  /* (void)gmtime_r(&tp->tv_sec, &tp); */
+  /* gmtime_r(&tp->tv_sec, &tp); */
 
   rtc_dumptime(&tp, "Setting time");
 
@@ -706,7 +706,7 @@ int up_rtc_settime(FAR const struct timespec *tp)
    * seconds)
    */
 
-  (void)gmtime_r(&tp->tv_sec, &newtime);
+  gmtime_r(&tp->tv_sec, &newtime);
   rtc_dumptime(&newtime, "Setting time");
 
   /* Then write the broken out values to the RTC */
@@ -911,7 +911,6 @@ int rx65n_rtc_setalarm(FAR struct alm_setalarm_s *alminfo)
   uint8_t dummy_byte;
   uint8_t dummy_word;
   uint8_t i;
-  int ret = -EBUSY;
 
   /* Is there already something waiting on the ALARM? */
 
@@ -1067,11 +1066,10 @@ int rx65n_rtc_setalarm(FAR struct alm_setalarm_s *alminfo)
   /* Set Priority of ALM interrupt */
 
   IPR(RTC, ALM) = _0F_RTC_PRIORITY_LEVEL15;
-  ret = OK;
   leave_critical_section(flags);
   UNUSED(dummy_byte);
   UNUSED(dummy_word);
-  return ret;
+  return OK;
 }
 #endif
 
@@ -1116,8 +1114,8 @@ int rx65n_rtc_setperiodic(FAR const struct timespec *period,
   /* Set PRD priority level */
 
   IPR(RTC, PRD) = _0F_RTC_PRIORITY_LEVEL15;
-  return OK;
   leave_critical_section(flags);
+  return OK;
 }
 #endif
 

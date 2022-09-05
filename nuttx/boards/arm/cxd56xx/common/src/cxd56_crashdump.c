@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 #include <time.h>
@@ -36,8 +37,6 @@
 #include <arch/chip/backuplog.h>
 #include <arch/chip/crashdump.h>
 #include "cxd56_wdt.h"
-
-#include "arm_arch.h"
 #include "arm_internal.h"
 
 /****************************************************************************
@@ -53,7 +52,7 @@
  ****************************************************************************/
 
 #if defined(CONFIG_CXD56_RESET_ON_CRASH)
-static int nmi_handler(int irq, FAR void *context, FAR void *arg)
+static int nmi_handler(int irq, void *context, void *arg)
 {
   return 0;
 }
@@ -99,15 +98,15 @@ static void copy_reverse(stack_word_t *dest, stack_word_t *src, int size)
  * Name: board_crashdump
  ****************************************************************************/
 
-void board_crashdump(uintptr_t currentsp, FAR void *tcb,
-                     FAR const char *filename, int lineno)
+void board_crashdump(uintptr_t currentsp, void *tcb,
+                     const char *filename, int lineno)
 {
-  FAR struct tcb_s *rtcb;
+  struct tcb_s *rtcb;
   fullcontext_t *pdump;
 
   enter_critical_section();
 
-  rtcb = (FAR struct tcb_s *)tcb;
+  rtcb = (struct tcb_s *)tcb;
 #ifdef CONFIG_CXD56_BACKUPLOG
   pdump = up_backuplog_alloc("crash", sizeof(fullcontext_t));
 #else
@@ -137,7 +136,7 @@ void board_crashdump(uintptr_t currentsp, FAR void *tcb,
           offset = len - sizeof(pdump->info.filename);
         }
 
-      strncpy(pdump->info.filename, (char *)&filename[offset],
+      strlcpy(pdump->info.filename, (char *)&filename[offset],
               sizeof(pdump->info.filename));
     }
 
@@ -152,7 +151,7 @@ void board_crashdump(uintptr_t currentsp, FAR void *tcb,
   /* Save Context */
 
 #if CONFIG_TASK_NAME_SIZE > 0
-  strncpy(pdump->info.name, rtcb->name, CONFIG_TASK_NAME_SIZE);
+  strlcpy(pdump->info.name, rtcb->name, sizeof(pdump->info.name));
 #endif
 
   pdump->info.pid = rtcb->pid;
@@ -181,14 +180,19 @@ void board_crashdump(uintptr_t currentsp, FAR void *tcb,
       pdump->info.stacks.user.sp = currentsp;
     }
 
-  pdump->info.stacks.user.top = (uint32_t)rtcb->adj_stack_ptr;
+  pdump->info.stacks.user.top = (uint32_t)rtcb->stack_base_ptr +
+                                          rtcb->adj_stack_size;
   pdump->info.stacks.user.size = (uint32_t)rtcb->adj_stack_size;
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
   /* Get the limits on the interrupt stack memory */
 
-  pdump->info.stacks.interrupt.top = (uint32_t)&g_intstackbase;
-  pdump->info.stacks.interrupt.size  = (CONFIG_ARCH_INTERRUPTSTACK & ~3);
+#ifdef CONFIG_SMP
+  pdump->info.stacks.interrupt.top = (uint32_t)arm_intstack_top();
+#else
+  pdump->info.stacks.interrupt.top = (uint32_t)&g_intstacktop;
+#endif
+  pdump->info.stacks.interrupt.size = (CONFIG_ARCH_INTERRUPTSTACK & ~3);
 
   /* If In interrupt Context save the interrupt stack data centered
    * about the interrupt stack pointer

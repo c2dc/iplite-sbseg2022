@@ -85,10 +85,10 @@
  *    This assures that the scheduler does enforce the critical section.
  *    NOTE: Because of this spinlock, there should never be more than one
  *    bit set in 'g_cpu_lockset'; attempts to set additional bits should
- *    be cause the CPU to block on the spinlock.  However, additional bits
+ *    cause the CPU to block on the spinlock.  However, additional bits
  *    could get set in 'g_cpu_lockset' due to the context switches on the
  *    various CPUs.
- * 5. Each the time the head of a g_assignedtasks[] list changes and the
+ * 5. Each time the head of a g_assignedtasks[] list changes and the
  *    scheduler modifies 'g_cpu_lockset', it must also set 'g_cpu_schedlock'
  *    depending on the new state of 'g_cpu_lockset'.
  * 5. Logic that currently uses the currently running tasks lockcount
@@ -97,12 +97,12 @@
  *    least one CPU has pre-emption disabled.
  */
 
-volatile spinlock_t g_cpu_schedlock SP_SECTION = SP_UNLOCKED;
+volatile spinlock_t g_cpu_schedlock = SP_UNLOCKED;
 
 /* Used to keep track of which CPU(s) hold the IRQ lock. */
 
-volatile spinlock_t g_cpu_locksetlock SP_SECTION;
-volatile cpu_set_t g_cpu_lockset SP_SECTION;
+volatile spinlock_t g_cpu_locksetlock;
+volatile cpu_set_t g_cpu_lockset;
 
 #endif /* CONFIG_SMP */
 
@@ -211,8 +211,8 @@ int sched_lock(void)
        * unlocked and nxsched_merge_pending() is called.
        */
 
-      nxsched_merge_prioritized((FAR dq_queue_t *)&g_readytorun,
-                                (FAR dq_queue_t *)&g_pendingtasks,
+      nxsched_merge_prioritized(&g_readytorun,
+                                &g_pendingtasks,
                                 TSTATE_TASK_PENDING);
 
       leave_critical_section(flags);

@@ -54,6 +54,10 @@
 #  include <nuttx/usb/rndis.h>
 #endif
 
+#ifdef CONFIG_SENSORS_APDS9960
+#include "stm32_apds9960.h"
+#endif
+
 #include "stm32f4discovery.h"
 
 /* Conditional logic in stm32f4discovery.h will determine if certain features
@@ -70,6 +74,10 @@
 
 #ifdef CONFIG_SENSORS_BMP180
 #include "stm32_bmp180.h"
+#endif
+
+#ifdef CONFIG_SENSORS_MS5611
+#include "stm32_ms5611.h"
 #endif
 
 #ifdef CONFIG_SENSORS_MAX6675
@@ -131,7 +139,7 @@
 #if defined(CONFIG_I2C) && defined(CONFIG_SYSTEM_I2CTOOL)
 static void stm32_i2c_register(int bus)
 {
-  FAR struct i2c_master_s *i2c;
+  struct i2c_master_s *i2c;
   int ret;
 
   i2c = stm32_i2cbus_initialize(bus);
@@ -182,7 +190,7 @@ static void stm32_i2ctool(void)
  *   CONFIG_BOARD_LATE_INITIALIZE=y :
  *     Called from board_late_initialize().
  *
- *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_LIB_BOARDCTL=y :
+ *   CONFIG_BOARD_LATE_INITIALIZE=n && CONFIG_BOARDCTL=y :
  *     Called from the NSH library
  *
  ****************************************************************************/
@@ -190,7 +198,7 @@ static void stm32_i2ctool(void)
 int stm32_bringup(void)
 {
 #ifdef HAVE_RTC_DRIVER
-  FAR struct rtc_lowerhalf_s *lower;
+  struct rtc_lowerhalf_s *lower;
 #endif
   int ret = OK;
 
@@ -205,6 +213,17 @@ int stm32_bringup(void)
   if (ret < 0)
     {
       syslog(LOG_ERR, "Failed to initialize BMP180, error %d\n", ret);
+      return ret;
+    }
+#endif
+
+#ifdef CONFIG_SENSORS_MS5611
+  /* Initialize the MS5611 pressure sensor. */
+
+  ret = board_ms5611_initialize(0, 1);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "Failed to initialize MS5611, error %d\n", ret);
       return ret;
     }
 #endif
@@ -332,7 +351,18 @@ int stm32_bringup(void)
     }
 #endif
 
-#ifdef CONFIG_CAN
+#ifdef CONFIG_CAPTURE
+  /* Initialize Capture and register the Capture driver. */
+
+  ret = stm32_capture_setup("/dev/capture0");
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: stm32_capture_setup failed: %d\n", ret);
+      return ret;
+    }
+#endif
+
+#ifdef CONFIG_STM32_CAN_CHARDRIVER
   /* Initialize CAN and register the CAN driver. */
 
   ret = stm32_can_setup();
@@ -349,6 +379,14 @@ int stm32_bringup(void)
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: btn_lower_initialize() failed: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_INPUT_DJOYSTICK
+  ret = stm32_djoy_initialize();
+  if (ret != OK)
+    {
+      syslog(LOG_ERR, "Failed to register djoystick driver: %d\n", ret);
     }
 #endif
 
@@ -391,6 +429,17 @@ int stm32_bringup(void)
   if (ret < 0)
     {
       syslog(LOG_ERR, "ERROR: userled_lower_initialize() failed: %d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_SENSORS_APDS9960
+  /* Register the APDS-9960 gesture sensor */
+
+  ret = board_apds9960_initialize(0, 1);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "ERROR: board_apds9960_initialize() failed: %d\n",
+             ret);
     }
 #endif
 
@@ -518,7 +567,7 @@ int stm32_bringup(void)
   ret = stm32_gs2200m_initialize("/dev/gs2200m", 3);
   if (ret < 0)
     {
-      serr("ERROR: Failed to initialize GS2200M: %d \n", ret);
+      serr("ERROR: Failed to initialize GS2200M: %d\n", ret);
     }
 #endif
 

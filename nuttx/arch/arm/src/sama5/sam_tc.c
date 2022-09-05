@@ -62,7 +62,7 @@
 #include <nuttx/semaphore.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "sam_periphclks.h"
 #include "hardware/sam_pinmap.h"
 #include "hardware/sam_pmc.h"
@@ -177,13 +177,13 @@ static inline void sam_chan_putreg(struct sam_chan_s *chan,
 
 static int sam_tc_interrupt(struct sam_tc_s *tc);
 #ifdef CONFIG_SAMA5_TC0
-static int sam_tc012_interrupt(int irq, void *context, FAR void *arg);
+static int sam_tc012_interrupt(int irq, void *context, void *arg);
 #endif
 #ifdef CONFIG_SAMA5_TC1
-static int sam_tc345_interrupt(int irq, void *context, FAR void *arg);
+static int sam_tc345_interrupt(int irq, void *context, void *arg);
 #endif
 #ifdef CONFIG_SAMA5_TC2
-static int sam_tc678_interrupt(int irq, void *context, FAR void *arg);
+static int sam_tc678_interrupt(int irq, void *context, void *arg);
 #endif
 
 /* Initialization ***********************************************************/
@@ -587,7 +587,7 @@ static bool sam_checkreg(struct sam_tc_s *tc, bool wr, uint32_t regaddr,
  * Name: sam_tc_getreg
  *
  * Description:
- *  Read an SPI register
+ *  Read an TC register
  *
  ****************************************************************************/
 
@@ -612,7 +612,7 @@ static inline uint32_t sam_tc_getreg(struct sam_chan_s *chan,
  * Name: sam_tc_putreg
  *
  * Description:
- *  Write a value to an SPI register
+ *  Write a value to an TC register
  *
  ****************************************************************************/
 
@@ -636,7 +636,7 @@ static inline void sam_tc_putreg(struct sam_chan_s *chan, uint32_t regval,
  * Name: sam_chan_getreg
  *
  * Description:
- *  Read an SPI register
+ *  Read an TC channel register
  *
  ****************************************************************************/
 
@@ -660,7 +660,7 @@ static inline uint32_t sam_chan_getreg(struct sam_chan_s *chan,
  * Name: sam_chan_putreg
  *
  * Description:
- *  Write a value to an SPI register
+ *  Write a value to an TC channel register
  *
  ****************************************************************************/
 
@@ -777,14 +777,14 @@ static int sam_tc012_interrupt(int irq, void *context, void *arg)
 #endif
 
 #ifdef CONFIG_SAMA5_TC1
-static int sam_tc345_interrupt(int irq, void *context, FAR void *arg)
+static int sam_tc345_interrupt(int irq, void *context, void *arg)
 {
   return sam_tc_interrupt(&g_tc345);
 }
 #endif
 
 #ifdef CONFIG_SAMA5_TC2
-static int sam_tc678_interrupt(int irq, void *context, FAR void *arg)
+static int sam_tc678_interrupt(int irq, void *context, void *arg)
 {
   return sam_tc_interrupt(&g_tc678);
 }
@@ -1177,7 +1177,7 @@ void sam_tc_free(TC_HANDLE handle)
    * is stopped and disabled.
    */
 
-  sam_tc_attach(handle, NULL, NULL, 0);
+  sam_tc_detach(handle);
   sam_tc_stop(handle);
 
   /* Mark the channel as available */

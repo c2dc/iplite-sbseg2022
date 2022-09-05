@@ -35,28 +35,6 @@
 #include "up_internal.h"
 
 /****************************************************************************
- * Pre-processor Macros
- ****************************************************************************/
-
-/* Stack can be aligned to 1 byte */
-
-#define CONFIG_STACK_ALIGNMENT 1
-
-/* Stack alignment macros */
-
-#define STACK_ALIGN_MASK    (CONFIG_STACK_ALIGNMENT-1)
-#define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
-#define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
-
-/****************************************************************************
- * Private Types
- ****************************************************************************/
-
-/****************************************************************************
- * Private Function Prototypes
- ****************************************************************************/
-
-/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -77,9 +55,8 @@
  *
  *   - adj_stack_size: Stack size after removal of the stack frame from
  *     the stack
- *   - adj_stack_ptr: Adjusted initial stack pointer after the frame has
- *     been removed from the stack.  This will still be the initial value
- *     of the stack pointer when the task is started.
+ *   - stack_base_ptr: Adjusted stack base pointer after the TLS Data and
+ *     Arguments has been removed from the stack allocation.
  *
  * Input Parameters:
  *   - tcb:  The TCB of new task
@@ -94,9 +71,7 @@
 
 FAR void *up_stack_frame(FAR struct tcb_s *tcb, size_t frame_size)
 {
-  /* Align the frame_size */
-
-  frame_size = STACK_ALIGN_UP(frame_size);
+  FAR void *ret;
 
   /* Is there already a stack allocated? Is it big enough? */
 
@@ -105,17 +80,15 @@ FAR void *up_stack_frame(FAR struct tcb_s *tcb, size_t frame_size)
       return NULL;
     }
 
+  ret = tcb->stack_base_ptr;
+  memset(ret, 0, frame_size);
+
   /* Save the adjusted stack values in the struct tcb_s */
 
-  tcb->adj_stack_ptr     = (uint8_t *)tcb->adj_stack_ptr - frame_size;
-  tcb->adj_stack_size   -= frame_size;
-
-  /* Set the initial stack pointer to the "base" of the allocated stack */
-
-  tcb->xcp.regs[REG_SPH] = (uint8_t)((uint16_t)tcb->adj_stack_ptr >> 8);
-  tcb->xcp.regs[REG_SPL] = (uint8_t)((uint16_t)tcb->adj_stack_ptr & 0xff);
+  tcb->stack_base_ptr  = (FAR uint8_t *)tcb->stack_base_ptr + frame_size;
+  tcb->adj_stack_size -= frame_size;
 
   /* And return the pointer to the allocated region */
 
-  return tcb->adj_stack_ptr;
+  return ret;
 }

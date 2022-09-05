@@ -18,14 +18,15 @@
  *
  ****************************************************************************/
 
-#ifndef __ARCH_MIPS_SRC_COMMON_UP_INTERNAL_H
-#define __ARCH_MIPS_SRC_COMMON_UP_INTERNAL_H
+#ifndef __ARCH_MIPS_SRC_COMMON_MIPS_INTERNAL_H
+#define __ARCH_MIPS_SRC_COMMON_MIPS_INTERNAL_H
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
 #ifndef __ASSEMBLY__
+#  include <nuttx/arch.h>
 #  include <stdint.h>
 #  include <stdbool.h>
 #endif
@@ -68,6 +69,29 @@
 #  define CONFIG_ARCH_INTERRUPTSTACK 0
 #endif
 
+/* MIPS requires at least a 4-byte stack alignment.  For floating point use,
+ * however, the stack must be aligned to 8-byte addresses.
+ */
+
+#ifdef CONFIG_LIBC_FLOATINGPOINT
+#  define STACK_ALIGNMENT   8
+#else
+#  define STACK_ALIGNMENT   4
+#endif
+
+/* Stack alignment macros */
+
+#define STACK_ALIGN_MASK    (STACK_ALIGNMENT - 1)
+#define STACK_ALIGN_DOWN(a) ((a) & ~STACK_ALIGN_MASK)
+#define STACK_ALIGN_UP(a)   (((a) + STACK_ALIGN_MASK) & ~STACK_ALIGN_MASK)
+
+#define getreg8(a)          (*(volatile uint8_t *)(a))
+#define putreg8(v,a)        (*(volatile uint8_t *)(a) = (v))
+#define getreg16(a)         (*(volatile uint16_t *)(a))
+#define putreg16(v,a)       (*(volatile uint16_t *)(a) = (v))
+#define getreg32(a)         (*(volatile uint32_t *)(a))
+#define putreg32(v,a)       (*(volatile uint32_t *)(a) = (v))
+
 /* In the MIPS model, the state is copied from the stack to the TCB, but
  * only a referenced is passed to get the state from the TCB.
  */
@@ -88,28 +112,6 @@ typedef void (*up_vector_t)(void);
  ****************************************************************************/
 
 #ifndef __ASSEMBLY__
-/* g_current_regs holds a references to the current interrupt level
- * register storage structure.  It is non-NULL only during interrupt
- * processing.  Access to g_current_regs must be through the macro
- * CURRENT_REGS for portability.
- */
-
-#ifdef CONFIG_SMP
-/* For the case of architectures with multiple CPUs, then there must be one
- * such value for each processor that can receive an interrupt.
- */
-
-int up_cpu_index(void); /* See include/nuttx/arch.h */
-extern volatile uint32_t *g_current_regs[CONFIG_SMP_NCPUS];
-#  define CURRENT_REGS (g_current_regs[up_cpu_index()])
-
-#else
-
-extern volatile uint32_t *g_current_regs[1];
-#  define CURRENT_REGS (g_current_regs[0])
-
-#endif
-
 /* This is the beginning of heap as provided from up_head.S. This is the
  * first address in DRAM after the loaded program+bss+idle stack.  The end
  * of the heap is CONFIG_RAM_END
@@ -120,7 +122,8 @@ extern uint32_t g_idle_topstack;
 /* Address of the saved user stack pointer */
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
-extern void g_intstackbase;
+extern void g_intstackalloc;
+extern void g_intstacktop;
 #endif
 
 /* These 'addresses' of these values are setup by the linker script. They are
@@ -131,7 +134,7 @@ extern void g_intstackbase;
  *  - The declaration extern uint32_t _sdata; makes C happy.  C will believe
  *    that the value _sdata is the address of a uint32_t variable _data (it
  *    is not!).
- *  - We can recoved the linker value then by simply taking the address of
+ *  - We can recover the linker value then by simply taking the address of
  *    of _data.  like:  uint32_t *pdata = &_sdata;
  */
 
@@ -169,13 +172,18 @@ extern uint32_t _bmxdupba_address;  /* BMX register setting */
  * functions prototyped in include/nuttx/arch.h.
  */
 
+/* Atomic modification of registers */
+
+void modifyreg8(unsigned int addr, uint8_t clearbits, uint8_t setbits);
+void modifyreg16(unsigned int addr, uint16_t clearbits, uint16_t setbits);
+void modifyreg32(unsigned int addr, uint32_t clearbits, uint32_t setbits);
+
 /* Context switching */
 
 void up_copystate(uint32_t *dest, uint32_t *src);
 
 /* Serial output */
 
-void up_puts(const char *str);
 void up_lowputs(const char *str);
 
 /* Debug */
@@ -194,7 +202,7 @@ uint32_t *up_doirq(int irq, uint32_t *regs);
 
 /* Software interrupt 0 handler */
 
-int up_swint0(int irq, FAR void *context, FAR void *arg);
+int up_swint0(int irq, void *context, void *arg);
 
 /* Signals */
 
@@ -236,10 +244,6 @@ void up_earlyserialinit(void);
 void up_serialinit(void);
 #endif
 
-#ifdef CONFIG_RPMSG_UART
-void rpmsg_serialinit(void);
-#endif
-
 /* Network */
 
 #if defined(CONFIG_NET) && !defined(CONFIG_NETDEV_LATEINIT)
@@ -259,4 +263,4 @@ void up_usbuninitialize(void);
 #endif
 
 #endif /* __ASSEMBLY__ */
-#endif /* __ARCH_MIPS_SRC_COMMON_UP_INTERNAL_H */
+#endif /* __ARCH_MIPS_SRC_COMMON_MIPS_INTERNAL_H */

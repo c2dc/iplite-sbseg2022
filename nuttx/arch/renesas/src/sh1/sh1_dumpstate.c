@@ -29,8 +29,8 @@
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/syslog/syslog.h>
 
-#include "up_arch.h"
 #include "up_internal.h"
 #include "sched/sched.h"
 
@@ -50,11 +50,15 @@ static uint32_t s_last_regs[XCPTCONTEXT_REGS];
  * Name: sh1_stackdump
  ****************************************************************************/
 
-static void sh1_stackdump(uint32_t sp, uint32_t stack_base)
+static void sh1_stackdump(uint32_t sp, uint32_t stack_top)
 {
-  uint32_t stack ;
+  uint32_t stack;
 
-  for (stack = sp & ~0x1f; stack < stack_base; stack += 32)
+  /* Flush any buffered SYSLOG data to avoid overwrite */
+
+  syslog_flush();
+
+  for (stack = sp & ~0x1f; stack < (stack_top & ~0x1f); stack += 32)
     {
       uint32_t *ptr = (uint32_t *)stack;
       _alert("%08x: %08x %08x %08x %08x %08x %08x %08x %08x\n",
@@ -69,7 +73,7 @@ static void sh1_stackdump(uint32_t sp, uint32_t stack_base)
 
 static inline void sh1_registerdump(void)
 {
-  uint32_t *ptr = (uint32_t *)g_current_regs;
+  volatile uint32_t *ptr = g_current_regs;
 
   /* Are user registers available from interrupt processing? */
 
@@ -84,18 +88,18 @@ static inline void sh1_registerdump(void)
   /* Dump the interrupt registers */
 
   _alert("PC: %08x SR=%08x\n",
-        ptr[REG_PC], ptr[REG_SR]);
+         ptr[REG_PC], ptr[REG_SR]);
 
   _alert("PR: %08x GBR: %08x MACH: %08x MACL: %08x\n",
-        ptr[REG_PR], ptr[REG_GBR], ptr[REG_MACH], ptr[REG_MACL]);
+         ptr[REG_PR], ptr[REG_GBR], ptr[REG_MACH], ptr[REG_MACL]);
 
   _alert("R%d: %08x %08x %08x %08x %08x %08x %08x %08x\n", 0,
-        ptr[REG_R0], ptr[REG_R1], ptr[REG_R2], ptr[REG_R3],
-        ptr[REG_R4], ptr[REG_R5], ptr[REG_R6], ptr[REG_R7]);
+         ptr[REG_R0], ptr[REG_R1], ptr[REG_R2], ptr[REG_R3],
+         ptr[REG_R4], ptr[REG_R5], ptr[REG_R6], ptr[REG_R7]);
 
   _alert("R%d: %08x %08x %08x %08x %08x %08x %08x %08x\n", 8,
-        ptr[REG_R8], ptr[REG_R9], ptr[REG_R10], ptr[REG_R11],
-        ptr[REG_R12], ptr[REG_R13], ptr[REG_R14], ptr[REG_R15]);
+         ptr[REG_R8], ptr[REG_R9], ptr[REG_R10], ptr[REG_R11],
+         ptr[REG_R12], ptr[REG_R13], ptr[REG_R14], ptr[REG_R15]);
 }
 
 /****************************************************************************
@@ -108,8 +112,8 @@ static inline void sh1_registerdump(void)
 
 void up_dumpstate(void)
 {
-  struct tcb_s *rtcb = running_task();
-  uint32_t sp = renesas_getsp();
+  FAR struct tcb_s *rtcb = running_task();
+  uint32_t sp = up_getsp();
   uint32_t ustackbase;
   uint32_t ustacksize;
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
@@ -123,14 +127,14 @@ void up_dumpstate(void)
 
   /* Get the limits on the user stack memory */
 
-  ustackbase = (uint32_t)rtcb->adj_stack_ptr;
+  ustackbase = (uint32_t)rtcb->stack_base_ptr;
   ustacksize = (uint32_t)rtcb->adj_stack_size;
 
   /* Get the limits on the interrupt stack memory */
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 3
-  istackbase = (uint32_t)&g_intstackbase;
-  istacksize = (CONFIG_ARCH_INTERRUPTSTACK & ~3) - 4;
+  istackbase = (uint32_t)&g_intstackalloc;
+  istacksize = (CONFIG_ARCH_INTERRUPTSTACK & ~3);
 
   /* Show interrupt stack info */
 
@@ -143,23 +147,23 @@ void up_dumpstate(void)
    * stack?
    */
 
-  if (sp <= istackbase && sp > istackbase - istacksize)
+  if (sp >= istackbase && sp < istackbase + istacksize)
     {
       /* Yes.. dump the interrupt stack */
 
-      sh1_stackdump(sp, istackbase);
+      sh1_stackdump(sp, istackbase + istacksize);
 
       /* Extract the user stack pointer which should lie
        * at the base of the interrupt stack.
        */
 
-      sp = g_intstackbase;
+      sp = g_intstacktop;
       _alert("sp:     %08x\n", sp);
     }
   else if (g_current_regs)
     {
       _alert("ERROR: Stack pointer is not within the interrupt stack\n");
-      sh1_stackdump(istackbase - istacksize, istackbase);
+      sh1_stackdump(istackbase, istackbase + istacksize);
     }
 
   /* Show user stack info */
@@ -177,14 +181,14 @@ void up_dumpstate(void)
    * stack memory.
    */
 
-  if (sp > ustackbase || sp <= ustackbase - ustacksize)
+  if (sp >= ustackbase && sp < ustackbase + ustacksize)
     {
-      _alert("ERROR: Stack pointer is not within allocated stack\n");
-      sh1_stackdump(ustackbase - ustacksize, ustackbase);
+      sh1_stackdump(sp, ustackbase + ustacksize);
     }
   else
     {
-      sh1_stackdump(sp, ustackbase);
+      _alert("ERROR: Stack pointer is not within allocated stack\n");
+      sh1_stackdump(ustackbase, ustackbase + ustacksize);
     }
 }
 

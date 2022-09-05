@@ -29,12 +29,12 @@
 #include <string.h>
 #include <assert.h>
 #include <debug.h>
+#include <syscall.h>
 
 #include <arch/irq.h>
 #include <nuttx/sched.h>
 
 #include "signal/signal.h"
-#include "svcall.h"
 #include "exc_return.h"
 #include "arm_internal.h"
 
@@ -95,8 +95,9 @@ static void dispatch_syscall(void)
     " add sp, sp, #12\n"          /* Destroy the stack frame */
     " pop {r4, r5}\n"             /* Recover R4 and R5 */
     " mov r2, r0\n"               /* R2=Save return value in R2 */
-    " mov r0, #3\n"               /* R0=SYS_syscall_return */
-    " svc %0\n"::"i"(SYS_syscall) /* Return from the SYSCALL */
+    " mov r0, %0\n"               /* R0=SYS_syscall_return */
+    " svc %1\n"::"i"(SYS_syscall_return),
+                 "i"(SYS_syscall) /* Return from the SYSCALL */
   );
 }
 #endif
@@ -113,7 +114,7 @@ static void dispatch_syscall(void)
  *
  ****************************************************************************/
 
-int arm_svcall(int irq, FAR void *context, FAR void *arg)
+int arm_svcall(int irq, void *context, void *arg)
 {
   uint32_t *regs = (uint32_t *)context;
   uint32_t cmd;
@@ -153,7 +154,7 @@ int arm_svcall(int irq, FAR void *context, FAR void *arg)
     {
       /* R0=SYS_save_context:  This is a save context command:
        *
-       *   int arm_saveusercontext(uint32_t *saveregs);
+       *   int up_saveusercontext(void *saveregs);
        *
        * At this point, the following values are saved in context:
        *
@@ -196,7 +197,8 @@ int arm_svcall(int irq, FAR void *context, FAR void *arg)
 
       /* R0=SYS_switch_context:  This a switch context command:
        *
-       *   void arm_switchcontext(uint32_t *saveregs, uint32_t *restoreregs);
+       *   void arm_switchcontext(uint32_t **saveregs,
+       *                          uint32_t *restoreregs);
        *
        * At this point, the following values are saved in context:
        *
@@ -213,7 +215,7 @@ int arm_svcall(int irq, FAR void *context, FAR void *arg)
       case SYS_switch_context:
         {
           DEBUGASSERT(regs[REG_R1] != 0 && regs[REG_R2] != 0);
-          memcpy((uint32_t *)regs[REG_R1], regs, XCPTCONTEXT_SIZE);
+          *(uint32_t **)regs[REG_R1] = regs;
           CURRENT_REGS = (uint32_t *)regs[REG_R2];
         }
         break;
@@ -259,14 +261,14 @@ int arm_svcall(int irq, FAR void *context, FAR void *arg)
            */
 
           rtcb->flags          &= ~TCB_FLAG_SYSCALL;
-          (void)nxsig_unmask_pendingsignal();
+          nxsig_unmask_pendingsignal();
         }
         break;
 #endif
 
       /* R0=SYS_task_start:  This a user task start
        *
-       *   void up_task_start(main_t taskentry, int argc, FAR char *argv[])
+       *   void up_task_start(main_t taskentry, int argc, char *argv[])
        *     noreturn_function;
        *
        * At this point, the following values are saved in context:
@@ -310,22 +312,22 @@ int arm_svcall(int irq, FAR void *context, FAR void *arg)
        *   R2 = arg
        */
 
-#if defined(CONFIG_BUILD_PROTECTED) && !defined(CONFIG_DISABLE_PTHREAD)
+#if !defined(CONFIG_BUILD_FLAT) && !defined(CONFIG_DISABLE_PTHREAD)
       case SYS_pthread_start:
         {
           /* Set up to return to the user-space pthread start-up function in
            * unprivileged mode.
            */
 
-          regs[REG_PC]         = (uint32_t)USERSPACE->pthread_startup;
+          regs[REG_PC]         = (uint32_t)regs[REG_R1]; /* startup */
           regs[REG_EXC_RETURN] = EXC_RETURN_UNPRIVTHR;
 
-          /* Change the parameter ordering to match the expectation of struct
-           * userpace_s pthread_startup:
+          /* Change the parameter ordering to match the expectation of the
+           * user space pthread_startup:
            */
 
-          regs[REG_R0]         = regs[REG_R1]; /* pthread entry */
-          regs[REG_R1]         = regs[REG_R2]; /* arg */
+          regs[REG_R0]         = regs[REG_R2]; /* pthread entry */
+          regs[REG_R1]         = regs[REG_R3]; /* arg */
         }
         break;
 #endif
@@ -333,7 +335,7 @@ int arm_svcall(int irq, FAR void *context, FAR void *arg)
       /* R0=SYS_signal_handler:  This a user signal handler callback
        *
        * void signal_handler(_sa_sigaction_t sighand, int signo,
-       *                     FAR siginfo_t *info, FAR void *ucontext);
+       *                     siginfo_t *info, void *ucontext);
        *
        * At this point, the following values are saved in context:
        *
@@ -406,7 +408,7 @@ int arm_svcall(int irq, FAR void *context, FAR void *arg)
       default:
         {
 #ifdef CONFIG_LIB_SYSCALL
-          FAR struct tcb_s *rtcb = nxsched_self();
+          struct tcb_s *rtcb = nxsched_self();
           int index = rtcb->xcp.nsyscalls;
 
           /* Verify that the SYS call number is within range */

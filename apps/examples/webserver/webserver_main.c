@@ -1,5 +1,5 @@
 /****************************************************************************
- * examples/webserver/webserver_main.c
+ * apps/examples/webserver/webserver_main.c
  *
  *   Copyright (C) 2007, 2009-2012, 2015 Gregory Nutt. All rights reserved.
  *   Author: Gregory Nutt <gnutt@nuttx.org>
@@ -165,6 +165,8 @@ int main(int argc, FAR char *argv[])
   if (handle)
     {
       struct dhcpc_state ds;
+      char inetaddr[INET_ADDRSTRLEN];
+
       dhcpc_request(handle, &ds);
       netlib_set_ipv4addr("eth0", &ds.ipaddr);
 
@@ -184,7 +186,7 @@ int main(int argc, FAR char *argv[])
         }
 
       dhcpc_close(handle);
-      printf("IP: %s\n", inet_ntoa(ds.ipaddr));
+      printf("IP: %s\n", inet_ntoa_r(ds.ipaddr, inetaddr, sizeof(inetaddr)));
     }
 #endif
 #endif /* CONFIG_NSH_NETINIT */

@@ -66,10 +66,6 @@
  * CONFIG_RAMLOG_BUFSIZE - Size of the console RAM log.  Default: 1024
  */
 
-#if defined(CONFIG_RAMLOG_SYSLOG) && !defined(CONFIG_SYSLOG_DEVPATH)
-#  define CONFIG_SYSLOG_DEVPATH "/dev/ramlog"
-#endif
-
 #ifndef CONFIG_RAMLOG_NPOLLWAITERS
 #  define CONFIG_RAMLOG_NPOLLWAITERS 4
 #endif
@@ -138,6 +134,19 @@ void ramlog_syslog_register(void);
 
 #ifdef CONFIG_RAMLOG_SYSLOG
 int ramlog_putc(FAR struct syslog_channel_s *channel, int ch);
+#endif
+
+/****************************************************************************
+ * Name: ramlog_write
+ *
+ * Description:
+ *   This is the low-level system logging interface.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_RAMLOG_SYSLOG
+ssize_t ramlog_write(FAR struct syslog_channel_s *channel,
+                     FAR const char *buffer, size_t buflen);
 #endif
 
 #undef EXTERN

@@ -28,17 +28,20 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <assert.h>
+#include <debug.h>
 #include <errno.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/wdog.h>
 #include <nuttx/clock.h>
 
 #include <arch/board/board.h>
 
 #include "clock/clock.h"
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "cxd56_rtc.h"
 
 #include "hardware/cxd5602_topreg.h"
@@ -92,7 +95,7 @@
 struct alm_cbinfo_s
 {
   volatile alm_callback_t ac_cb; /* Client callback function */
-  volatile FAR void *ac_arg;     /* Argument to pass with the callback function */
+  volatile void *ac_arg;         /* Argument to pass with the callback function */
 };
 #endif
 
@@ -143,9 +146,9 @@ volatile bool g_rtc_enabled = false;
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG_RTC
-static void rtc_dumptime(FAR const struct timespec *tp, FAR const char *msg)
+static void rtc_dumptime(const struct timespec *tp, const char *msg)
 {
-  FAR struct tm tm;
+  struct tm tm;
 
   gmtime_r(&tp->tv_sec, &tm);
 
@@ -175,11 +178,11 @@ static void rtc_dumptime(FAR const struct timespec *tp, FAR const char *msg)
  ****************************************************************************/
 
 #ifdef CONFIG_RTC_ALARM
-static int cxd56_rtc_interrupt(int irq, FAR void *context, FAR void *arg)
+static int cxd56_rtc_interrupt(int irq, void *context, void *arg)
 {
-  FAR struct alm_cbinfo_s *cbinfo;
+  struct alm_cbinfo_s *cbinfo;
   alm_callback_t cb;
-  FAR void *cb_arg;
+  void *cb_arg;
   uint32_t source;
   uint32_t clear;
   int id;
@@ -210,7 +213,7 @@ static int cxd56_rtc_interrupt(int irq, FAR void *context, FAR void *arg)
       /* Alarm callback */
 
       cb = cbinfo->ac_cb;
-      cb_arg = (FAR void *)cbinfo->ac_arg;
+      cb_arg = (void *)cbinfo->ac_arg;
 
       cbinfo->ac_cb  = NULL;
       cbinfo->ac_arg = NULL;
@@ -392,7 +395,7 @@ time_t up_rtc_time(void)
  ****************************************************************************/
 
 #ifdef CONFIG_RTC_HIRES
-int up_rtc_gettime(FAR struct timespec *tp)
+int up_rtc_gettime(struct timespec *tp)
 {
   uint64_t count;
 
@@ -426,7 +429,7 @@ int up_rtc_gettime(FAR struct timespec *tp)
  *
  ****************************************************************************/
 
-int up_rtc_settime(FAR const struct timespec *tp)
+int up_rtc_settime(const struct timespec *tp)
 {
   irqstate_t flags;
   uint64_t count;
@@ -535,13 +538,14 @@ uint64_t cxd56_rtc_almcount(void)
  ****************************************************************************/
 
 #ifdef CONFIG_RTC_ALARM
-int cxd56_rtc_setalarm(FAR struct alm_setalarm_s *alminfo)
+int cxd56_rtc_setalarm(struct alm_setalarm_s *alminfo)
 {
-  FAR struct alm_cbinfo_s *cbinfo;
+  struct alm_cbinfo_s *cbinfo;
   irqstate_t flags;
   int ret = -EBUSY;
   int id;
   uint64_t count;
+  uint32_t mask;
 
   ASSERT(alminfo != NULL);
   DEBUGASSERT(RTC_ALARM_LAST > alminfo->as_id);
@@ -564,6 +568,13 @@ int cxd56_rtc_setalarm(FAR struct alm_setalarm_s *alminfo)
         NSEC_TO_PRECNT(alminfo->as_time.tv_nsec);
 
       count -= g_rtc_save->offset;
+
+      /* clear previsous setting */
+
+      mask = RTCREG_ALM0_ERR_FLAG_MASK | RTCREG_ALM0_FLAG_MASK;
+      mask <<= id;
+
+      putreg32(mask, CXD56_RTC0_ALMCLR);
 
       /* wait until previous alarm request is completed */
 
@@ -606,13 +617,14 @@ int cxd56_rtc_setalarm(FAR struct alm_setalarm_s *alminfo)
 #ifdef CONFIG_RTC_ALARM
 int cxd56_rtc_cancelalarm(enum alm_id_e alarmid)
 {
-  FAR struct alm_cbinfo_s *cbinfo;
+  struct alm_cbinfo_s *cbinfo;
   irqstate_t flags;
   int ret = -ENODATA;
+  uint32_t mask;
 
   DEBUGASSERT(RTC_ALARM_LAST > alarmid);
 
-  /* Set the alarm in hardware and enable interrupts */
+  /* Cancel the alarm in hardware and clear interrupts */
 
   cbinfo = &g_alarmcb[alarmid];
 
@@ -627,6 +639,31 @@ int cxd56_rtc_cancelalarm(enum alm_id_e alarmid)
       while (RTCREG_ALM_BUSY_MASK & getreg32(CXD56_RTC0_ALMOUTEN(alarmid)));
 
       putreg32(0, CXD56_RTC0_ALMOUTEN(alarmid));
+
+      while (RTCREG_ALM_BUSY_MASK & getreg32(CXD56_RTC0_ALMOUTEN(alarmid)));
+
+      /* wait until previous alarm request is completed */
+
+      while (RTCREG_ASET_BUSY_MASK &
+             getreg32(CXD56_RTC0_SETALMPRECNT(alarmid)));
+
+      /* clear the alarm counter */
+
+      putreg32(0, CXD56_RTC0_SETALMPOSTCNT(alarmid));
+      putreg32(0, CXD56_RTC0_SETALMPRECNT(alarmid));
+
+      while (RTCREG_ASET_BUSY_MASK &
+             getreg32(CXD56_RTC0_SETALMPRECNT(alarmid)));
+
+      /* wait until the interrupt flag is clear */
+
+      mask = RTCREG_ALM0_ERR_FLAG_MASK | RTCREG_ALM0_FLAG_MASK;
+      mask <<= alarmid;
+
+      while (mask & getreg32(CXD56_RTC0_ALMFLG))
+        {
+          putreg32(mask, CXD56_RTC0_ALMCLR);
+        }
 
       spin_unlock_irqrestore(NULL, flags);
 

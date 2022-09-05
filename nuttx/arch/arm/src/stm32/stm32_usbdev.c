@@ -34,6 +34,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -45,7 +46,7 @@
 
 #include <nuttx/irq.h>
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "stm32.h"
 #include "stm32_syscfg.h"
 #include "stm32_gpio.h"
@@ -470,8 +471,8 @@ static void   stm32_ep0in(struct stm32_usbdev_s *priv);
 static inline void
               stm32_ep0done(struct stm32_usbdev_s *priv, uint16_t istr);
 static void   stm32_lptransfer(struct stm32_usbdev_s *priv);
-static int    stm32_hpinterrupt(int irq, void *context, FAR void *arg);
-static int    stm32_lpinterrupt(int irq, void *context, FAR void *arg);
+static int    stm32_hpinterrupt(int irq, void *context, void *arg);
+static int    stm32_lpinterrupt(int irq, void *context, void *arg);
 
 /* Endpoint helpers *********************************************************/
 
@@ -2450,7 +2451,7 @@ static void stm32_lptransfer(struct stm32_usbdev_s *priv)
  * Name: stm32_hpinterrupt
  ****************************************************************************/
 
-static int stm32_hpinterrupt(int irq, void *context, FAR void *arg)
+static int stm32_hpinterrupt(int irq, void *context, void *arg)
 {
   /* For now there is only one USB controller, but we will always refer to
    * it using a pointer to make any future ports to multiple USB controllers
@@ -2492,7 +2493,7 @@ static int stm32_hpinterrupt(int irq, void *context, FAR void *arg)
  * Name: stm32_lpinterrupt
  ****************************************************************************/
 
-static int stm32_lpinterrupt(int irq, void *context, FAR void *arg)
+static int stm32_lpinterrupt(int irq, void *context, void *arg)
 {
   /* For now there is only one USB controller, but we will always refer to
    * it using a pointer to make any future ports to multiple USB controllers
@@ -3252,6 +3253,7 @@ static int stm32_epstall(struct usbdev_ep_s *ep, bool resume)
           priv->ep0state = EP0STATE_STALLED;
         }
 
+      leave_critical_section(flags);
       return -ENODEV;
     }
 

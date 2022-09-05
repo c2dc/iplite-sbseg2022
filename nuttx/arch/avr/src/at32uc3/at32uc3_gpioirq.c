@@ -33,7 +33,7 @@
 
 #include <nuttx/irq.h>
 
-#include "up_arch.h"
+#include "up_internal.h"
 #include "irq/irq.h"
 #include "at32uc3.h"
 #include "at32uc3_gpio.h"
@@ -211,7 +211,7 @@ static void gpio_porthandler(uint32_t regbase, int irqbase,
               xcpt_t handler = g_gpiohandler[irq].handler;
               if (handler != NULL)
                 {
-                  handler(irq, contex, g_gpiohandler[irq].arg);
+                  handler(irq, context, g_gpiohandler[irq].arg);
                 }
               else
                 {

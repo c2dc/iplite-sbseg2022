@@ -1,35 +1,20 @@
 /****************************************************************************
- * testing/ostest/prioinherit.c
+ * apps/testing/ostest/prioinherit.c
  *
- *   Copyright (C) 2009, 2011, 2017 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -40,12 +25,15 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <semaphore.h>
+#include <stdlib.h>
 #include <pthread.h>
 #include <errno.h>
 
 #ifdef CONFIG_ARCH_SIM
 #  include <nuttx/arch.h>
 #endif
+
+#include <sys/wait.h>
 
 #include "ostest.h"
 
@@ -83,6 +71,10 @@
 #  define NHIGHPRI_THREADS 1
 #endif
 
+#define NUMBER_OF_COMPETING_THREADS     3
+#define COMPETING_THREAD_START_PRIORITY 200
+#define PRIORIY_SPREED                  10
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -103,9 +95,75 @@ static sem_t g_sem;
 static volatile enum thstate_e g_middlestate;
 static volatile enum thstate_e g_highstate[NHIGHPRI_THREADS];
 static volatile enum thstate_e g_lowstate[NLOWPRI_THREADS];
+static volatile int g_priority_tracking[NUMBER_OF_COMPETING_THREADS];
 static int g_highpri;
 static int g_medpri;
 static int g_lowpri;
+
+/****************************************************************************
+ * Name: sleep_and_display
+ ****************************************************************************/
+
+static void sleep_and_display(int n, int us)
+{
+  struct sched_param sparam;
+
+  us /= 100;
+
+  do
+    {
+      int status = sched_getparam(getpid(), &sparam);
+
+      if (status != 0)
+        {
+          printf("priority_inheritance: sched_getparam failed\n");
+        }
+
+      if (us == 0 || g_priority_tracking[n] != sparam.sched_priority)
+        {
+          if (g_priority_tracking[n] == 0)
+            {
+              printf("priority_inheritance: "
+                     "Task%1d initial priority is:%d\n",
+                     n, sparam.sched_priority);
+            }
+          else
+            {
+              printf("priority_inheritance: "
+                     "Task%1d priority was:%d is:%d\n",
+                     n, g_priority_tracking[n], sparam.sched_priority);
+            }
+
+          g_priority_tracking[n] = sparam.sched_priority;
+          FFLUSH();
+        }
+
+      usleep(100);
+      us--;
+    }
+  while (us > 0);
+}
+
+/****************************************************************************
+ *
+ ****************************************************************************/
+
+static int adversary(int argc, FAR char *argv[])
+{
+  int index        = atoi(argv[1]);
+  int inital_delay = atoi(argv[2]);
+  int hold_delay   = atoi(argv[3]);
+
+  sleep_and_display(index, inital_delay);
+  printf("priority_inheritance: "
+         "%s Started, waiting %d uS to take count\n", argv[0], inital_delay);
+  sem_wait(&g_sem);
+  sleep_and_display(index,  hold_delay);
+  sem_post(&g_sem);
+  printf("priority_inheritance: %s Posted\n", argv[0]);
+  sleep_and_display(index, 0);
+  return 0;
+}
 
 /****************************************************************************
  * Name: nhighpri_waiting
@@ -431,6 +489,12 @@ void priority_inheritance(void)
   int my_pri;
   int status;
   int i;
+  pid_t pids[NUMBER_OF_COMPETING_THREADS];
+  char args[3][32];
+  FAR char *argv[4];
+  char name[32];
+  int priority;
+  int restoration_result;
 
   printf("priority_inheritance: Started\n");
 
@@ -601,6 +665,61 @@ void priority_inheritance(void)
       FFLUSH();
       pthread_join(lowpri[i], &result);
       dump_nfreeholders("priority_inheritance:");
+    }
+
+  /* Perform restoration test */
+
+  printf("priority_inheritance: Restoration Test:\n");
+
+  sem_init(&g_sem, 0, 1);
+  priority = COMPETING_THREAD_START_PRIORITY;
+  argv[0] = args[0];
+  argv[1] = args[1];
+  argv[2] = args[2];
+  argv[3] = NULL;
+
+  for (i = 0; i < NUMBER_OF_COMPETING_THREADS; i++)
+    {
+      g_priority_tracking[i] = 0;
+      snprintf(name, sizeof(name), "Task%1d", i);
+      snprintf(args[0], sizeof(args[0]), "%d", i);
+      snprintf(args[1], sizeof(args[1]), "%d", i * 10000);
+      snprintf(args[2], sizeof(args[2]), "%d", i == 0 ? 100000 : 1000);
+
+      pids[i] = task_create(name, priority, 1024, adversary,
+                            (FAR char * const *)argv);
+      priority += PRIORIY_SPREED;
+    }
+
+  priority = COMPETING_THREAD_START_PRIORITY;
+  restoration_result = 0;
+  for (i = 0; i < NUMBER_OF_COMPETING_THREADS; i++)
+    {
+      printf("priority_inheritance: "
+             "Waiting for Task-%d to complete\n", i);
+
+      waitpid(pids[i], &status, 0);
+      if (priority != g_priority_tracking[i])
+        {
+          printf("priority_inheritance: "
+                 "Task-%d Priority is %d, and was not restored to %d\n",
+                  i, g_priority_tracking[i], priority);
+
+          restoration_result |= 1 << i;
+        }
+
+      priority += PRIORIY_SPREED;
+    }
+
+  if (restoration_result != 0)
+    {
+      printf("priority_inheritance: ERROR: FAIL Priorities were not "
+             "correctly restored.\n");
+    }
+  else
+    {
+      printf("priority_inheritance: PASSED Priority were correctly"
+             " restored.\n");
     }
 
   printf("priority_inheritance: Finished\n");

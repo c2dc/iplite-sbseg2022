@@ -29,10 +29,12 @@
 #include <nuttx/board.h>
 #include <arch/board/board.h>
 
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "rp2040_gpio.h"
+
+#ifdef CONFIG_ARCH_BOARD_COMMON
+#include "rp2040_common_initialize.h"
+#endif /* CONFIG_ARCH_BOARD_COMMON */
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -55,50 +57,17 @@
 
 void rp2040_boardearlyinitialize(void)
 {
-  /* Disable IE on GPIO 26-29 */
+  #ifdef CONFIG_ARCH_BOARD_COMMON
+  rp2040_common_earlyinitialize();
+  #endif 
 
-  clrbits_reg32(RP2040_PADS_BANK0_GPIO_IE, RP2040_PADS_BANK0_GPIO(26));
-  clrbits_reg32(RP2040_PADS_BANK0_GPIO_IE, RP2040_PADS_BANK0_GPIO(27));
-  clrbits_reg32(RP2040_PADS_BANK0_GPIO_IE, RP2040_PADS_BANK0_GPIO(28));
-  clrbits_reg32(RP2040_PADS_BANK0_GPIO_IE, RP2040_PADS_BANK0_GPIO(29));
+  /* --- Place any board specific early initialization here --- */
 
   /* Set board LED pin */
 
   rp2040_gpio_init(BOARD_GPIO_LED_PIN);
   rp2040_gpio_setdir(BOARD_GPIO_LED_PIN, true);
   rp2040_gpio_put(BOARD_GPIO_LED_PIN, true);
-
-  /* Set default UART pin */
-
-#if defined(CONFIG_RP2040_UART0) && CONFIG_RP2040_UART0_GPIO >= 0
-  rp2040_gpio_set_function(CONFIG_RP2040_UART0_GPIO,
-                           RP2040_GPIO_FUNC_UART);      /* TX */
-  rp2040_gpio_set_function(CONFIG_RP2040_UART0_GPIO + 1,
-                           RP2040_GPIO_FUNC_UART);      /* RX */
-#ifdef CONFIG_SERIAL_OFLOWCONTROL
-  rp2040_gpio_set_function(CONFIG_RP2040_UART0_GPIO + 2,
-                           RP2040_GPIO_FUNC_UART);      /* CTS */
-#endif
-#ifdef CONFIG_SERIAL_IFLOWCONTROL
-  rp2040_gpio_set_function(CONFIG_RP2040_UART0_GPIO + 3,
-                           RP2040_GPIO_FUNC_UART);      /* RTS */
-#endif
-#endif
-
-#if defined(CONFIG_RP2040_UART1) && CONFIG_RP2040_UART1_GPIO >= 0
-  rp2040_gpio_set_function(CONFIG_RP2040_UART1_GPIO,
-                           RP2040_GPIO_FUNC_UART);      /* TX */
-  rp2040_gpio_set_function(CONFIG_RP2040_UART1_GPIO + 1,
-                           RP2040_GPIO_FUNC_UART);      /* RX */
-#ifdef CONFIG_SERIAL_OFLOWCONTROL
-  rp2040_gpio_set_function(CONFIG_RP2040_UART1_GPIO + 2,
-                           RP2040_GPIO_FUNC_UART);      /* CTS */
-#endif
-#ifdef CONFIG_SERIAL_IFLOWCONTROL
-  rp2040_gpio_set_function(CONFIG_RP2040_UART1_GPIO + 3,
-                           RP2040_GPIO_FUNC_UART);      /* RTS */
-#endif
-#endif
 }
 
 /****************************************************************************
@@ -110,57 +79,9 @@ void rp2040_boardearlyinitialize(void)
 
 void rp2040_boardinitialize(void)
 {
-  /* Set default I2C pin */
+  #ifdef CONFIG_ARCH_BOARD_COMMON
+  rp2040_common_initialize();
+  #endif 
 
-#if defined(CONFIG_RP2040_I2C0) && CONFIG_RP2040_I2C0_GPIO >= 0
-  rp2040_gpio_set_function(CONFIG_RP2040_I2C0_GPIO,
-                           RP2040_GPIO_FUNC_I2C);       /* SDA */
-  rp2040_gpio_set_function(CONFIG_RP2040_I2C0_GPIO + 1,
-                           RP2040_GPIO_FUNC_I2C);       /* SCL */
-
-  rp2040_gpio_set_pulls(CONFIG_RP2040_I2C0_GPIO, true, false);  /* Pull up */
-  rp2040_gpio_set_pulls(CONFIG_RP2040_I2C0_GPIO + 1, true, false);
-#endif
-
-#if defined(CONFIG_RP2040_I2C1) &&  CONFIG_RP2040_I2C1_GPIO >= 0
-  rp2040_gpio_set_function(CONFIG_RP2040_I2C1_GPIO,
-                           RP2040_GPIO_FUNC_I2C);       /* SDA */
-  rp2040_gpio_set_function(CONFIG_RP2040_I2C1_GPIO + 1,
-                           RP2040_GPIO_FUNC_I2C);       /* SCL */
-
-  rp2040_gpio_set_pulls(CONFIG_RP2040_I2C1_GPIO, true, false);  /* Pull up */
-  rp2040_gpio_set_pulls(CONFIG_RP2040_I2C1_GPIO + 1, true, false);
-#endif
-
-  /* Set default SPI pin */
-
-#if defined(CONFIG_RP2040_SPI0) && CONFIG_RP2040_SPI0_GPIO >= 0
-  rp2040_gpio_set_function(CONFIG_RP2040_SPI0_GPIO,
-                           RP2040_GPIO_FUNC_SPI);       /* RX */
-  rp2040_gpio_set_function(CONFIG_RP2040_SPI0_GPIO + 2,
-                           RP2040_GPIO_FUNC_SPI);       /* SCK */
-  rp2040_gpio_set_function(CONFIG_RP2040_SPI0_GPIO + 3,
-                           RP2040_GPIO_FUNC_SPI);       /* TX */
-
-  /* CSn is controlled by board-specific logic */
-
-  rp2040_gpio_init(CONFIG_RP2040_SPI0_GPIO + 1);        /* CSn */
-  rp2040_gpio_setdir(CONFIG_RP2040_SPI0_GPIO + 1, true);
-  rp2040_gpio_put(CONFIG_RP2040_SPI0_GPIO + 1, true);
-#endif
-
-#if defined(CONFIG_RP2040_SPI1) &&  CONFIG_RP2040_SPI1_GPIO >= 0
-  rp2040_gpio_set_function(CONFIG_RP2040_SPI1_GPIO,
-                           RP2040_GPIO_FUNC_SPI);       /* RX */
-  rp2040_gpio_set_function(CONFIG_RP2040_SPI1_GPIO + 2,
-                           RP2040_GPIO_FUNC_SPI);       /* SCK */
-  rp2040_gpio_set_function(CONFIG_RP2040_SPI1_GPIO + 3,
-                           RP2040_GPIO_FUNC_SPI);       /* TX */
-
-  /* CSn is controlled by board-specific logic */
-
-  rp2040_gpio_init(CONFIG_RP2040_SPI1_GPIO + 1);        /* CSn */
-  rp2040_gpio_setdir(CONFIG_RP2040_SPI1_GPIO + 1, true);
-  rp2040_gpio_put(CONFIG_RP2040_SPI1_GPIO + 1, true);
-#endif
+  /* --- Place any board specific initialization here --- */
 }

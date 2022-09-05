@@ -30,6 +30,7 @@
 
 #include <stdint.h>
 #include <time.h>
+#include <assert.h>
 #include <debug.h>
 
 #include <nuttx/arch.h>
@@ -39,8 +40,6 @@
 
 #include "clock/clock.h"
 #include "up_internal.h"
-#include "up_arch.h"
-
 #include "chip.h"
 #include "qemu.h"
 

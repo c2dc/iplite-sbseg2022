@@ -31,8 +31,7 @@
 #include <nuttx/video/fb.h>
 #include <nuttx/video/ov2640.h>
 
-#include "arm_arch.h"
-
+#include "arm_internal.h"
 #include "sam_periphclks.h"
 #include "sam_lcd.h"
 #include "sam_pck.h"
@@ -64,9 +63,9 @@
  * Name: ov2640_lcd_initialize
  ****************************************************************************/
 
-static inline FAR struct fb_vtable_s *ov2640_lcd_initialize(void)
+static inline struct fb_vtable_s *ov2640_lcd_initialize(void)
 {
-  FAR struct fb_vtable_s *vplane;
+  struct fb_vtable_s *vplane;
   int ret;
 
   /* Initialize the frame buffer device */
@@ -144,7 +143,7 @@ static inline FAR struct fb_vtable_s *ov2640_lcd_initialize(void)
 
 static inline int ov2640_camera_initialize(void)
 {
-  FAR struct i2c_master_s *i2c;
+  struct i2c_master_s *i2c;
   uint32_t actual;
   int ret;
 
@@ -224,7 +223,7 @@ static inline int ov2640_camera_initialize(void)
 
 int ov2640_main(int argc, char *argv[])
 {
-  FAR struct fb_vtable_s *vplane;
+  struct fb_vtable_s *vplane;
   int ret;
 
   /* First, initialize the display */

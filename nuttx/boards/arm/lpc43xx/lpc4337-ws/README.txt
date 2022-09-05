@@ -275,7 +275,7 @@ Code Red IDE/Tools
   from SRAM.
 
     CONFIG_LPC43_BOOT_SRAM=y            : Executing in SRAM
-    CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y : GNU EABI toolchain for Windows
+    CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : GNU EABI toolchain for Windows
 
   To execute from SPIFI, you would need to set:
 
@@ -400,19 +400,6 @@ ports.
    file:
 
      CONFIG_ARCH_FPU=y
-     CONFIG_ARMV7M_LAZYFPU=y
-
-CFLAGS
-------
-
-Only the recent toolchains have built-in support for the Cortex-M4 FPU.  You will see
-the following lines in each Make.defs file:
-
-  ifeq ($(CONFIG_ARCH_FPU),y)
-    ARCHCPUFLAGS = -mcpu=cortex-m4 -mthumb -march=armv7e-m -mfpu=fpv4-sp-d16 -mfloat-abi=hard
-  else
-    ARCHCPUFLAGS = -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
-  endif
 
 LPC4337-ws Configuration Options
 =====================================
@@ -628,7 +615,7 @@ Where <subdir> is one of the following:
        by setting the following configuration options.
 
          CONFIG_LPC43_BOOT_SRAM=y            : Executing in SRAM
-         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABIW=y : GNU EABI toolchain for Windows
+         CONFIG_ARMV7M_TOOLCHAIN_GNU_EABI=y  : GNU EABI toolchain for Windows
 
     3. To execute from SPIFI, you would need to set:
 

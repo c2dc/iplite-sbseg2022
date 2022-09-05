@@ -30,6 +30,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <string.h>
+#include <assert.h>
 #include <debug.h>
 #include <errno.h>
 
@@ -38,6 +39,7 @@
 #include <nuttx/wdog.h>
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/wqueue.h>
 #include <nuttx/signal.h>
 #include <nuttx/net/mii.h>
@@ -49,7 +51,7 @@
 #  include <nuttx/net/pkt.h>
 #endif
 
-#include "arm_arch.h"
+#include "arm_internal.h"
 #include "gic.h"
 #include "chip.h"
 #include "imx_config.h"
@@ -110,36 +112,6 @@
 #  error "Need at least one RX buffer"
 #endif
 
-#define NENET_NBUFFERS \
-  (CONFIG_IMX_ENET_NTXBUFFERS + CONFIG_IMX_ENET_NRXBUFFERS)
-
-/* Normally you would clean the cache after writing new values to the DMA
- * memory so assure that the dirty cache lines are flushed to memory
- * before the DMA occurs.  And you would invalid the cache after a data is
- * received via DMA so that you fetch the actual content of the data from
- * the cache.
- *
- * These conditions are not fully supported here.  If the write-throuch
- * D-Cache is enabled, however, then many of these issues go away:  The
- * cache clean operation does nothing (because there are not dirty cache
- * lines) and the cache invalid operation is innocuous (because there are
- * never dirty cache lines to be lost; valid data will always be reloaded).
- *
- * At present, we simply insist that write through cache be enabled.
- */
-
-#if 0
-#if defined(CONFIG_ARMV7M_DCACHE) && !defined(CONFIG_ARMV7M_DCACHE_WRITETHROUGH)
-#  error Write back D-Cache not yet supported
-#endif
-#endif
-
-/* TX poll delay = 1 seconds. CLK_TCK is the number of clock ticks per
- * second.
- */
-
-#define IMX_WDDELAY     (1 * CLK_TCK)
-
 /* Align assuming that the D-Cache is enabled (probably 32-bytes).
  *
  * REVISIT: The size of descriptors and buffers must also be in even units
@@ -153,6 +125,14 @@
 #define ENET_ALIGN        32 /* TODO */
 #define ENET_ALIGN_MASK   (ENET_ALIGN - 1)
 #define ENET_ALIGN_UP(n)  (((n) + ENET_ALIGN_MASK) & ~ENET_ALIGN_MASK)
+
+#define DESC_SIZE           sizeof(struct enet_desc_s)
+#define DESC_PADSIZE        ENET_ALIGN_UP(DESC_SIZE)
+
+#define ALIGNED_BUFSIZE     ENET_ALIGN_UP(CONFIG_NET_ETH_PKTSIZE + \
+                                      CONFIG_NET_GUARDSIZE)
+#define NENET_NBUFFERS \
+  (CONFIG_IMX_ENET_NTXBUFFERS + CONFIG_IMX_ENET_NRXBUFFERS)
 
 /* TX timeout = 1 minute */
 
@@ -260,8 +240,6 @@
 
 #define BUF ((struct eth_hdr_s *)priv->dev.d_buf)
 
-#define IMX_BUF_SIZE  ENET_ALIGN_UP(CONFIG_NET_ETH_PKTSIZE)
-
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -272,16 +250,17 @@
 
 struct imx_driver_s
 {
-  bool bifup;                  /* true:ifup false:ifdown */
+  uint32_t base;               /* Base address of ENET controller */
+  bool     bifup;              /* true:ifup false:ifdown */
 #if CONFIG_IMX_ENET_NTXBUFFERS == 1
-  bool txbusy;
+  bool     txbusy;
 #endif
-  uint8_t txtail;              /* The oldest busy TX descriptor */
-  uint8_t txhead;              /* The next TX descriptor to use */
-  uint8_t rxtail;              /* The next RX descriptor to use */
-  uint8_t phyaddr;             /* Selected PHY address */
-  struct wdog_s txpoll;        /* TX poll timer */
+  uint8_t  txtail;             /* The oldest busy TX descriptor */
+  uint8_t  txhead;             /* The next TX descriptor to use */
+  uint8_t  rxtail;             /* The next RX descriptor to use */
+  uint8_t  phyaddr;            /* Selected PHY address */
   struct wdog_s txtimeout;     /* TX timeout timer */
+  uint32_t ints;               /* Enabled interrupts */
   struct work_s irqwork;       /* For deferring interrupt work to the work queue */
   struct work_s pollwork;      /* For deferring poll work to the work queue */
   struct enet_desc_s *txdesc;  /* A pointer to the list of TX descriptor */
@@ -292,33 +271,47 @@ struct imx_driver_s
   struct net_driver_s dev;     /* Interface understood by the network */
 };
 
+/* This union type forces the allocated size of TX&RX descriptors to be
+ * padded to a exact multiple of the Cortex-M7 D-Cache line size.
+ */
+
+union enet_desc_u
+{
+  uint8_t             pad[DESC_PADSIZE];
+  struct enet_desc_s  desc;
+};
+
 /****************************************************************************
  * Private Data
  ****************************************************************************/
 
 static struct imx_driver_s g_enet[CONFIG_IMX_ENET_NETHIFS];
 
-/* The DMA descriptors.  A unaligned uint8_t is used to allocate the
- * memory; 16 is added to assure that we can meet the descriptor alignment
- * requirements.
- */
+/* The DMA descriptors */
 
-static uint8_t g_desc_pool[NENET_NBUFFERS * sizeof(struct enet_desc_s)]
-               __attribute__((aligned(ENET_ALIGN)));
+static union enet_desc_u g_desc_pool[NENET_NBUFFERS]
+                                     aligned_data(ENET_ALIGN);
 
-/* The DMA buffers.  Again, A unaligned uint8_t is used to allocate the
- * memory; 16 is added to assure that we can meet the descriptor alignment
- * requirements.
- */
+/* The DMA buffers */
 
-static uint8_t g_buffer_pool[NENET_NBUFFERS * IMX_BUF_SIZE]
-               __attribute__((aligned(ENET_ALIGN)));
+static uint8_t g_buffer_pool[NENET_NBUFFERS][ALIGNED_BUFSIZE]
+                             aligned_data(ENET_ALIGN);
 
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
 
 /* Utility functions */
+
+static inline uint32_t imx_enet_getreg32(struct imx_driver_s *priv,
+                                         uint32_t offset);
+static inline void imx_enet_putreg32(struct imx_driver_s *priv,
+                                     uint32_t value, uint32_t offset);
+
+static inline void imx_enet_modifyreg32(struct imx_driver_s *priv,
+                                        unsigned int offset,
+                                        uint32_t clearbits,
+                                        uint32_t setbits);
 
 #ifndef IMXRT_BUFFERS_SWAP
 #  define imx_swap32(value) (value)
@@ -335,33 +328,30 @@ static inline uint16_t imx_swap16(uint16_t value);
 
 /* Common TX logic */
 
-static bool imx_txringfull(FAR struct imx_driver_s *priv);
-static int  imx_transmit(FAR struct imx_driver_s *priv);
+static bool imx_txringfull(struct imx_driver_s *priv);
+static int  imx_transmit(struct imx_driver_s *priv);
 static int  imx_txpoll(struct net_driver_s *dev);
 
 /* Interrupt handling */
 
-static void imx_dispatch(FAR struct imx_driver_s *priv);
-static void imx_receive(FAR struct imx_driver_s *priv);
-static void imx_txdone(FAR struct imx_driver_s *priv);
+static void imx_dispatch(struct imx_driver_s *priv);
+static void imx_receive(struct imx_driver_s *priv);
+static void imx_txdone(struct imx_driver_s *priv);
 
-static void imx_enet_interrupt_work(FAR void *arg);
-static int  imx_enet_interrupt(int irq, FAR void *context, FAR void *arg);
+static void imx_enet_interrupt_work(void *arg);
+static int  imx_enet_interrupt(int irq, void *context, void *arg);
 
 /* Watchdog timer expirations */
 
-static void imx_txtimeout_work(FAR void *arg);
+static void imx_txtimeout_work(void *arg);
 static void imx_txtimeout_expiry(wdparm_t arg);
-
-static void imx_poll_work(FAR void *arg);
-static void imx_polltimer_expiry(wdparm_t arg);
 
 /* NuttX callback functions */
 
 static int  imx_ifup(struct net_driver_s *dev);
 static int  imx_ifdown(struct net_driver_s *dev);
 
-static void imx_txavail_work(FAR void *arg);
+static void imx_txavail_work(void *arg);
 static int  imx_txavail(struct net_driver_s *dev);
 
 /* Internal ifup function that allows phy reset to be optional */
@@ -370,8 +360,8 @@ static int imx_ifup_action(struct net_driver_s *dev, bool resetphy);
 
 #ifdef CONFIG_NET_MCASTGROUP
 static int  imx_addmac(struct net_driver_s *dev,
-              FAR const uint8_t *mac);
-static int  imx_rmmac(struct net_driver_s *dev, FAR const uint8_t *mac);
+              const uint8_t *mac);
+static int  imx_rmmac(struct net_driver_s *dev, const uint8_t *mac);
 #endif
 
 #ifdef CONFIG_NETDEV_IOCTL
@@ -403,6 +393,74 @@ static void imx_reset(struct imx_driver_s *priv);
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: imx_enet_getreg32
+ *
+ * Description:
+ *   Get the contents of the ENET register at offset
+ *
+ * Input Parameters:
+ *   priv   - private ENET device structure
+ *   offset - offset to the register of interest
+ *
+ * Returned Value:
+ *   The contents of the 32-bit register
+ *
+ ****************************************************************************/
+
+static inline uint32_t imx_enet_getreg32(struct imx_driver_s *priv,
+                                         uint32_t offset)
+{
+  return getreg32(priv->base + offset);
+}
+
+/****************************************************************************
+ * Name: imx_enet_modifyreg32
+ *
+ * Description:
+ *   Atomically modify the specified bits in a memory mapped register
+ *
+ * Input Parameters:
+ *   priv      - private SPI device structure
+ *   offset    - offset to the register of interest
+ *   clearbits - the 32-bit value to be written as 0s
+ *   setbits   - the 32-bit value to be written as 1s
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+static inline void imx_enet_modifyreg32(struct imx_driver_s *priv,
+                                        unsigned int offset,
+                                        uint32_t clearbits,
+                                        uint32_t setbits)
+{
+  modifyreg32(priv->base + offset, clearbits, setbits);
+}
+
+/****************************************************************************
+ * Name: imx_enet_putreg32
+ *
+ * Description:
+ *   Write a 16-bit value to the ENET register at offset
+ *
+ * Input Parameters:
+ *   priv   - private SPI device structure
+ *   value  - the 32-bit value to be written
+ *   offset - offset to the register of interest
+ *
+ * Returned Value:
+ *   The contents of the 32-bit register
+ *
+ ****************************************************************************/
+
+static inline void imx_enet_putreg32(struct imx_driver_s *priv,
+                                     uint32_t value, uint32_t offset)
+{
+  putreg32(value, priv->base + offset);
+}
 
 /****************************************************************************
  * Function: imx_swap16/32
@@ -465,7 +523,7 @@ static inline uint16_t imx_swap16(uint16_t value)
  *
  ****************************************************************************/
 
-static bool imx_txringfull(FAR struct imx_driver_s *priv)
+static bool imx_txringfull(struct imx_driver_s *priv)
 {
 #if CONFIG_IMX_ENET_NTXBUFFERS > 1
   uint8_t txnext;
@@ -507,11 +565,9 @@ static bool imx_txringfull(FAR struct imx_driver_s *priv)
  *
  ****************************************************************************/
 
-static int imx_transmit(FAR struct imx_driver_s *priv)
+static int imx_transmit(struct imx_driver_s *priv)
 {
   struct enet_desc_s *txdesc;
-  irqstate_t flags;
-  uint32_t regval;
   uint8_t *buf;
 
   /* Since this can be called from imx_receive, it is possible that
@@ -570,41 +626,46 @@ static int imx_transmit(FAR struct imx_driver_s *priv)
   txdesc->status1 |= (TXDESC_R | TXDESC_L | TXDESC_TC);
 
   buf = (uint8_t *)imx_swap32((uint32_t)priv->dev.d_buf);
-  if (priv->rxdesc[priv->rxtail].data == buf)
-    {
-      struct enet_desc_s *rxdesc = &priv->rxdesc[priv->rxtail];
 
+  struct enet_desc_s *rxdesc = &priv->rxdesc[priv->rxtail];
+
+  up_invalidate_dcache((uintptr_t)rxdesc,
+                       (uintptr_t)rxdesc + sizeof(struct enet_desc_s));
+
+  if (rxdesc->data == buf)
+    {
       /* Data was written into the RX buffer, so swap the TX and RX buffers */
 
       DEBUGASSERT((rxdesc->status1 & RXDESC_E) == 0);
       rxdesc->data = txdesc->data;
       txdesc->data = buf;
+      up_clean_dcache((uintptr_t)rxdesc,
+                      (uintptr_t)rxdesc + sizeof(struct enet_desc_s));
     }
   else
     {
       DEBUGASSERT(txdesc->data == buf);
     }
 
-  /* Make the following operations atomic */
+  up_clean_dcache((uintptr_t)txdesc,
+                  (uintptr_t)txdesc + sizeof(struct enet_desc_s));
 
-  flags = spin_lock_irqsave(NULL);
+  up_clean_dcache((uintptr_t)priv->dev.d_buf,
+                  (uintptr_t)priv->dev.d_buf + priv->dev.d_len);
+
+  /* Start the TX transfer (if it was not already waiting for buffers) */
+
+  imx_enet_putreg32(priv, ENET_TDAR, IMX_ENET_TDAR_OFFSET);
 
   /* Enable TX interrupts */
 
-  regval  = getreg32(IMX_ENET_EIMR);
-  regval |= TX_INTERRUPTS;
-  putreg32(regval, IMX_ENET_EIMR);
+  priv->ints |= TX_INTERRUPTS;
+  imx_enet_modifyreg32(priv, IMX_ENET_EIMR_OFFSET, 0, TX_INTERRUPTS);
 
   /* Setup the TX timeout watchdog (perhaps restarting the timer) */
 
   wd_start(&priv->txtimeout, IMX_TXTIMEOUT,
            imx_txtimeout_expiry, (wdparm_t)priv);
-
-  /* Start the TX transfer (if it was not already waiting for buffers) */
-
-  putreg32(ENET_TDAR, IMX_ENET_TDAR);
-
-  spin_unlock_irqrestore(NULL, flags);
 
 #if CONFIG_IMX_ENET_NTXBUFFERS == 1
   priv->txbusy = false;
@@ -640,8 +701,8 @@ static int imx_transmit(FAR struct imx_driver_s *priv)
 
 static int imx_txpoll(struct net_driver_s *dev)
 {
-  FAR struct imx_driver_s *priv =
-    (FAR struct imx_driver_s *)dev->d_private;
+  struct imx_driver_s *priv =
+    (struct imx_driver_s *)dev->d_private;
 
   /* If the polling resulted in data that should be sent out on the network,
    * the field d_len is set to a value > 0.
@@ -717,7 +778,7 @@ static int imx_txpoll(struct net_driver_s *dev)
  *
  ****************************************************************************/
 
-static inline void imx_dispatch(FAR struct imx_driver_s *priv)
+static inline void imx_dispatch(struct imx_driver_s *priv)
 {
   /* Update statistics */
 
@@ -815,7 +876,7 @@ static inline void imx_dispatch(FAR struct imx_driver_s *priv)
 #ifdef CONFIG_NET_ARP
   /* Check for an ARP packet */
 
-  if (BUF->type == htons(ETHTYPE_ARP))
+  if (BUF->type == HTONS(ETHTYPE_ARP))
     {
       NETDEV_RXARP(&priv->dev);
       arp_arpin(&priv->dev);
@@ -854,7 +915,7 @@ static inline void imx_dispatch(FAR struct imx_driver_s *priv)
  *
  ****************************************************************************/
 
-static void imx_receive(FAR struct imx_driver_s *priv)
+static void imx_receive(struct imx_driver_s *priv)
 {
   struct enet_desc_s *rxdesc;
   bool received;
@@ -912,6 +973,9 @@ static void imx_receive(FAR struct imx_driver_s *priv)
             imx_swap32((uint32_t)priv->txdesc[priv->txhead].data);
           rxdesc->status1 |= RXDESC_E;
 
+          up_clean_dcache((uintptr_t)rxdesc,
+                          (uintptr_t)rxdesc + sizeof(struct enet_desc_s));
+
           /* Update the index to the next descriptor */
 
           priv->rxtail++;
@@ -922,7 +986,7 @@ static void imx_receive(FAR struct imx_driver_s *priv)
 
           /* Indicate that there have been empty receive buffers produced */
 
-          putreg32(ENET_RDAR, IMX_ENET_RDAR);
+          imx_enet_putreg32(priv, ENET_RDAR, IMX_ENET_RDAR_OFFSET);
         }
     }
   while (received);
@@ -946,10 +1010,9 @@ static void imx_receive(FAR struct imx_driver_s *priv)
  *
  ****************************************************************************/
 
-static void imx_txdone(FAR struct imx_driver_s *priv)
+static void imx_txdone(struct imx_driver_s *priv)
 {
   struct enet_desc_s *txdesc;
-  uint32_t regval;
   bool txdone;
 
   /* We are here because a transmission completed, so the watchdog can be
@@ -1000,9 +1063,9 @@ static void imx_txdone(FAR struct imx_driver_s *priv)
 
       wd_cancel(&priv->txtimeout);
 
-      regval  = getreg32(IMX_ENET_EIMR);
-      regval &= ~TX_INTERRUPTS;
-      putreg32(regval, IMX_ENET_EIMR);
+      priv->ints &= ~TX_INTERRUPTS;
+      imx_enet_modifyreg32(priv, IMX_ENET_EIMR_OFFSET, TX_INTERRUPTS,
+                           priv->ints);
     }
 
   /* There should be space for a new TX in any event.  Poll the network for
@@ -1029,9 +1092,9 @@ static void imx_txdone(FAR struct imx_driver_s *priv)
  *
  ****************************************************************************/
 
-static void imx_enet_interrupt_work(FAR void *arg)
+static void imx_enet_interrupt_work(void *arg)
 {
-  FAR struct imx_driver_s *priv = (FAR struct imx_driver_s *)arg;
+  struct imx_driver_s *priv = (struct imx_driver_s *)arg;
   uint32_t pending;
 #ifdef CONFIG_NET_MCASTGROUP
   uint32_t gaurstore;
@@ -1044,11 +1107,11 @@ static void imx_enet_interrupt_work(FAR void *arg)
 
   /* Get the set of unmasked, pending interrupt. */
 
-  pending = getreg32(IMX_ENET_EIR) & getreg32(IMX_ENET_EIMR);
+  pending = imx_enet_getreg32(priv, IMX_ENET_EIR_OFFSET) & priv->ints;
 
   /* Clear the pending interrupts */
 
-  putreg32(pending, IMX_ENET_EIR);
+  imx_enet_putreg32(priv, pending, IMX_ENET_EIR_OFFSET);
 
   /* Check for errors */
 
@@ -1058,8 +1121,7 @@ static void imx_enet_interrupt_work(FAR void *arg)
 
       NETDEV_ERRORS(&priv->dev);
 
-      nerr("ERROR: Network interface error occurred (0x%08" PRIX32 ")\n",
-           (pending & ERROR_INTERRUPTS));
+      nerr("pending %" PRIx32 " ints %" PRIx32 "\n", pending, priv->ints);
     }
 
   if (pending & CRITICAL_ERROR)
@@ -1075,8 +1137,8 @@ static void imx_enet_interrupt_work(FAR void *arg)
        * multicast hash table.
        */
 
-      gaurstore = getreg32(IMX_ENET_GAUR);
-      galrstore = getreg32(IMX_ENET_GALR);
+      gaurstore = imx_enet_getreg32(priv, IMX_ENET_GAUR_OFFSET);
+      galrstore = imx_enet_getreg32(priv, IMX_ENET_GALR_OFFSET);
 #endif
 
       imx_ifdown(&priv->dev);
@@ -1085,8 +1147,8 @@ static void imx_enet_interrupt_work(FAR void *arg)
 #ifdef CONFIG_NET_MCASTGROUP
       /* Now write the multicast table back */
 
-      putreg32(gaurstore, IMX_ENET_GAUR);
-      putreg32(galrstore, IMX_ENET_GALR);
+      imx_enet_putreg32(priv, gaurstore, IMX_ENET_GAUR_OFFSET);
+      imx_enet_putreg32(priv, galrstore, IMX_ENET_GALR_OFFSET);
 #endif
 
       /* Then poll the network for new XMIT data */
@@ -1123,10 +1185,7 @@ static void imx_enet_interrupt_work(FAR void *arg)
 
   /* Re-enable Ethernet interrupts */
 
-#if 0
-  up_enable_irq(IMX_IRQ_ENET0TMR);
-#endif
-  up_enable_irq(IMX_IRQ_ENET0);
+  imx_enet_putreg32(priv, priv->ints, IMX_ENET_EIMR_OFFSET);
 }
 
 /****************************************************************************
@@ -1149,16 +1208,17 @@ static void imx_enet_interrupt_work(FAR void *arg)
  *
  ****************************************************************************/
 
-static int imx_enet_interrupt(int irq, FAR void *context, FAR void *arg)
+static int imx_enet_interrupt(int irq, void *context, void *arg)
 {
-  register FAR struct imx_driver_s *priv = &g_enet[0];
+  register struct imx_driver_s *priv =
+    (struct imx_driver_s *)arg;
 
   /* Disable further Ethernet interrupts.  Because Ethernet interrupts are
    * also disabled if the TX timeout event occurs, there can be no race
    * condition here.
    */
 
-  up_disable_irq(IMX_IRQ_ENET0);
+  imx_enet_putreg32(priv, 0, IMX_ENET_EIMR_OFFSET);
 
   /* Schedule to perform the interrupt processing on the worker thread. */
 
@@ -1182,9 +1242,9 @@ static int imx_enet_interrupt(int irq, FAR void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static void imx_txtimeout_work(FAR void *arg)
+static void imx_txtimeout_work(void *arg)
 {
-  FAR struct imx_driver_s *priv = (FAR struct imx_driver_s *)arg;
+  struct imx_driver_s *priv = (struct imx_driver_s *)arg;
 
   /* Increment statistics and dump debug info */
 
@@ -1226,90 +1286,21 @@ static void imx_txtimeout_work(FAR void *arg)
 
 static void imx_txtimeout_expiry(wdparm_t arg)
 {
-  FAR struct imx_driver_s *priv = (FAR struct imx_driver_s *)arg;
+  struct imx_driver_s *priv = (struct imx_driver_s *)arg;
 
   /* Disable further Ethernet interrupts.  This will prevent some race
    * conditions with interrupt work.  There is still a potential race
    * condition with interrupt work that is already queued and in progress.
    */
 
-  up_disable_irq(IMX_IRQ_ENET0);
+  imx_enet_putreg32(priv, 0, IMX_ENET_EIMR_OFFSET);
+  priv->ints = 0;
 
   /* Schedule to perform the TX timeout processing on the worker thread,
    * canceling any pending interrupt work.
    */
 
   work_queue(ETHWORK, &priv->irqwork, imx_txtimeout_work, priv, 0);
-}
-
-/****************************************************************************
- * Function: imx_poll_work
- *
- * Description:
- *   Perform periodic polling from the worker thread
- *
- * Input Parameters:
- *   arg - The argument passed when work_queue() as called.
- *
- * Returned Value:
- *   OK on success
- *
- * Assumptions:
- *   The network is locked.
- *
- ****************************************************************************/
-
-static void imx_poll_work(FAR void *arg)
-{
-  FAR struct imx_driver_s *priv = (FAR struct imx_driver_s *)arg;
-
-  /* Check if there is there is a transmission in progress.
-   * We cannot perform the TX poll if he are unable to accept
-   * another packet for transmission.
-   */
-
-  net_lock();
-  if (!imx_txringfull(priv))
-    {
-      /* If so, update TCP timing states and poll the network for new XMIT
-       * data. Hmmm.. might be bug here.  Does this mean if there is a
-       * transmit in progress, we will missing TCP time state updates?
-       */
-
-      devif_timer(&priv->dev, IMX_WDDELAY, imx_txpoll);
-    }
-
-  /* Setup the watchdog poll timer again in any case */
-
-  wd_start(&priv->txpoll, IMX_WDDELAY,
-           imx_polltimer_expiry, (wdparm_t)priv);
-  net_unlock();
-}
-
-/****************************************************************************
- * Function: imx_polltimer_expiry
- *
- * Description:
- *   Periodic timer handler.  Called from the timer interrupt handler.
- *
- * Input Parameters:
- *   arg  - The argument
- *
- * Returned Value:
- *   None
- *
- * Assumptions:
- *   Global interrupts are disabled by the watchdog logic.
- *
- ****************************************************************************/
-
-static void imx_polltimer_expiry(wdparm_t arg)
-{
-  FAR struct imx_driver_s *priv = (FAR struct imx_driver_s *)arg;
-
-  /* Schedule to perform the poll processing on the worker thread. */
-
-  work_queue(ETHWORK, &priv->pollwork, imx_poll_work, priv, 0);
 }
 
 /****************************************************************************
@@ -1335,8 +1326,8 @@ static void imx_polltimer_expiry(wdparm_t arg)
 
 static int imx_ifup_action(struct net_driver_s *dev, bool resetphy)
 {
-  FAR struct imx_driver_s *priv =
-    (FAR struct imx_driver_s *)dev->d_private;
+  struct imx_driver_s *priv =
+    (struct imx_driver_s *)dev->d_private;
   uint8_t *mac = dev->d_mac.ether.ether_addr_octet;
   uint32_t regval;
   int ret;
@@ -1357,9 +1348,10 @@ static int imx_ifup_action(struct net_driver_s *dev, bool resetphy)
 
   /* Set the MAC address */
 
-  putreg32((mac[0] << 24) | (mac[1] << 16) | (mac[2] << 8) | mac[3],
-           IMX_ENET_PALR);
-  putreg32((mac[4] << 24) | (mac[5] << 16), IMX_ENET_PAUR);
+  imx_enet_putreg32(priv, (mac[0] << 24) | (mac[1] << 16) |
+                    (mac[2] << 8) | mac[3], IMX_ENET_PALR_OFFSET);
+  imx_enet_putreg32(priv, (mac[4] << 24) | (mac[5] << 16),
+                    IMX_ENET_PAUR_OFFSET);
 
   /* Configure the PHY */
 
@@ -1373,69 +1365,65 @@ static int imx_ifup_action(struct net_driver_s *dev, bool resetphy)
   /* Handle promiscuous mode */
 
 #ifdef CONFIG_NET_PROMISCUOUS
-  regval = getreg32(IMX_ENET_RCR);
+  regval = imx_enet_getreg32(priv, IMX_ENET_RCR_OFFSET);
   regval |= ENET_RCR_PROM;
-  putreg32(regval, IMX_ENET_RCR);
+  imx_enet_putreg32(priv, regval, IMX_ENET_RCR_OFFSET);
 #endif
 
   /* Select legacy of enhanced buffer descriptor format */
 
 #ifdef CONFIG_IMX_ENETENHANCEDBD
-  putreg32(ENET_ECR_EN1588, IMX_ENET_ECR);
+  imx_enet_putreg32(priv, ENET_ECR_EN1588, IMX_ENET_ECR_OFFSET);
 #else
-  putreg32(0, IMX_ENET_ECR);
+  imx_enet_putreg32(priv, 0, IMX_ENET_ECR_OFFSET);
 #endif
 
   /* Set the RX buffer size */
 
-  putreg32(IMX_BUF_SIZE, IMX_ENET_MRBR);
+  imx_enet_putreg32(priv, ALIGNED_BUFSIZE, IMX_ENET_MRBR_OFFSET);
 
   /* Point to the start of the circular RX buffer descriptor queue */
 
-  putreg32((uint32_t)priv->rxdesc, IMX_ENET_RDSR);
+  imx_enet_putreg32(priv, (uint32_t)priv->rxdesc, IMX_ENET_RDSR_OFFSET);
 
   /* Point to the start of the circular TX buffer descriptor queue */
 
-  putreg32((uint32_t)priv->txdesc, IMX_ENET_TDSR);
+  imx_enet_putreg32(priv, (uint32_t)priv->txdesc, IMX_ENET_TDSR_OFFSET);
 
   /* And enable the MAC itself */
 
-  regval  = getreg32(IMX_ENET_ECR);
+  regval  = imx_enet_getreg32(priv, IMX_ENET_ECR_OFFSET);
   regval |= ENET_ECR_ETHEREN
 #ifdef IMX_USE_DBSWAP
          | ENET_ECR_DBSWP
 #endif
         ;
-  putreg32(regval, IMX_ENET_ECR);
+  imx_enet_putreg32(priv, regval, IMX_ENET_ECR_OFFSET);
 
   /* Indicate that there have been empty receive buffers produced */
 
-  putreg32(ENET_RDAR, IMX_ENET_RDAR);
+  imx_enet_putreg32(priv, ENET_RDAR, IMX_ENET_RDAR_OFFSET);
 
-  /* Set and activate a timer process */
-
-  wd_start(&priv->txpoll, IMX_WDDELAY,
-           imx_polltimer_expiry, (wdparm_t)priv);
+  imx_enet_putreg32(priv, 0, IMX_ENET_EIMR_OFFSET);
 
   /* Clear all pending ENET interrupt */
 
-  putreg32(RX_INTERRUPTS | ERROR_INTERRUPTS | TX_INTERRUPTS, IMX_ENET_EIR);
+  imx_enet_putreg32(priv, 0xffffffff, IMX_ENET_EIR_OFFSET);
+
+  /* Mark the interrupt "up" and enable interrupts at the NVIC */
+
+  up_enable_irq(IMX_IRQ_ENET0);
+
+  priv->bifup = true;
 
   /* Enable RX and error interrupts at the controller (TX interrupts are
    * still disabled).
    */
 
-  putreg32(RX_INTERRUPTS | ERROR_INTERRUPTS,
-           IMX_ENET_EIMR);
+  priv->ints = RX_INTERRUPTS | ERROR_INTERRUPTS;
+  imx_enet_modifyreg32(priv, IMX_ENET_EIMR_OFFSET, TX_INTERRUPTS,
+                       priv->ints);
 
-  /* Mark the interrupt "up" and enable interrupts at the NVIC */
-
-  priv->bifup = true;
-
-#if 0
-  up_enable_irq(IMX_IRQ_ENET0TMR);
-#endif
-  up_enable_irq(IMX_IRQ_ENET0);
   return OK;
 }
 
@@ -1481,8 +1469,8 @@ static int imx_ifup(struct net_driver_s *dev)
 
 static int imx_ifdown(struct net_driver_s *dev)
 {
-  FAR struct imx_driver_s *priv =
-    (FAR struct imx_driver_s *)dev->d_private;
+  struct imx_driver_s *priv =
+    (struct imx_driver_s *)dev->d_private;
   irqstate_t flags;
 
   ninfo("Taking down: %d.%d.%d.%d\n",
@@ -1495,12 +1483,12 @@ static int imx_ifdown(struct net_driver_s *dev)
 
   flags = enter_critical_section();
 
+  priv->ints = 0;
+  imx_enet_putreg32(priv, priv->ints, IMX_ENET_EIMR_OFFSET);
   up_disable_irq(IMX_IRQ_ENET0);
-  putreg32(0, IMX_ENET_EIMR);
 
-  /* Cancel the TX poll timer and TX timeout timers */
+  /* Cancel the TX timeout timers */
 
-  wd_cancel(&priv->txpoll);
   wd_cancel(&priv->txtimeout);
 
   /* Put the EMAC in its reset, non-operational state.  This should be
@@ -1534,9 +1522,9 @@ static int imx_ifdown(struct net_driver_s *dev)
  *
  ****************************************************************************/
 
-static void imx_txavail_work(FAR void *arg)
+static void imx_txavail_work(void *arg)
 {
-  FAR struct imx_driver_s *priv = (FAR struct imx_driver_s *)arg;
+  struct imx_driver_s *priv = (struct imx_driver_s *)arg;
 
   /* Ignore the notification if the interface is not yet up */
 
@@ -1553,7 +1541,7 @@ static void imx_txavail_work(FAR void *arg)
            * new XMIT data.
            */
 
-          devif_timer(&priv->dev, 0, imx_txpoll);
+          devif_poll(&priv->dev, imx_txpoll);
         }
     }
 
@@ -1581,8 +1569,8 @@ static void imx_txavail_work(FAR void *arg)
 
 static int imx_txavail(struct net_driver_s *dev)
 {
-  FAR struct imx_driver_s *priv =
-    (FAR struct imx_driver_s *)dev->d_private;
+  struct imx_driver_s *priv =
+    (struct imx_driver_s *)dev->d_private;
 
   /* Is our single work structure available?  It may not be if there are
    * pending interrupt actions and we will have to ignore the Tx
@@ -1700,11 +1688,12 @@ static uint32_t imx_enet_hash_index(const uint8_t *mac)
  ****************************************************************************/
 
 #ifdef CONFIG_NET_MCASTGROUP
-static int imx_addmac(struct net_driver_s *dev, FAR const uint8_t *mac)
+static int imx_addmac(struct net_driver_s *dev, const uint8_t *mac)
 {
   uint32_t hashindex;
   uint32_t temp;
   uint32_t registeraddress;
+  struct imx_driver_s *priv = (struct imx_driver_s *)dev->d_private;
 
   hashindex = imx_enet_hash_index(mac);
 
@@ -1712,17 +1701,17 @@ static int imx_addmac(struct net_driver_s *dev, FAR const uint8_t *mac)
 
   if (hashindex > 31)
     {
-      registeraddress = IMX_ENET_GAUR;
+      registeraddress = IMX_ENET_GAUR_OFFSET;
       hashindex      -= 32;
     }
   else
     {
-      registeraddress = IMX_ENET_GALR;
+      registeraddress = IMX_ENET_GALR_OFFSET;
     }
 
-  temp  = getreg32(registeraddress);
+  temp  = imx_enet_getreg32(priv, registeraddress);
   temp |= 1 << hashindex;
-  putreg32(temp, registeraddress);
+  imx_rt_enet_putreg32(priv, temp, registeraddress);
 
   return OK;
 }
@@ -1747,11 +1736,12 @@ static int imx_addmac(struct net_driver_s *dev, FAR const uint8_t *mac)
  ****************************************************************************/
 
 #ifdef CONFIG_NET_MCASTGROUP
-static int imx_rmmac(struct net_driver_s *dev, FAR const uint8_t *mac)
+static int imx_rmmac(struct net_driver_s *dev, const uint8_t *mac)
 {
   uint32_t hashindex;
   uint32_t temp;
   uint32_t registeraddress;
+  struct imx_driver_s *priv = (struct imx_driver_s *)dev->d_private;
 
   /* Remove the MAC address from the hardware multicast routing table */
 
@@ -1759,17 +1749,17 @@ static int imx_rmmac(struct net_driver_s *dev, FAR const uint8_t *mac)
 
   if (hashindex > 31)
     {
-      registeraddress = IMX_ENET_GAUR;
+      registeraddress = IMX_ENET_GAUR_OFFSET;
       hashindex      -= 32;
     }
   else
     {
-      registeraddress = IMX_ENET_GALR;
+      registeraddress = IMX_ENET_GALR_OFFSET;
     }
 
-  temp  = getreg32(registeraddress);
+  temp  = imx_enet_getreg32(priv, registeraddress);
   temp &= ~(1 << hashindex);
-  putreg32(temp, registeraddress);
+  imx_enet_putreg32(priv, temp, registeraddress);
 
   return OK;
 }
@@ -1797,8 +1787,8 @@ static int imx_rmmac(struct net_driver_s *dev, FAR const uint8_t *mac)
 static int imx_ioctl(struct net_driver_s *dev, int cmd, unsigned long arg)
 {
 #ifdef CONFIG_NETDEV_PHY_IOCTL
-  FAR struct imx_driver_s *priv =
-    (FAR struct imx_driver_s *)dev->d_private;
+  struct imx_driver_s *priv =
+    (struct imx_driver_s *)dev->d_private;
 #endif
   int ret;
 
@@ -1927,9 +1917,9 @@ static void imx_initmii(struct imx_driver_s *priv)
    * clock.  This hold time value may need to be increased on some platforms
    */
 
-  putreg32(ENET_MSCR_HOLDTIME_2CYCLES |
-           IMX_MII_SPEED << ENET_MSCR_MII_SPEED_SHIFT,
-           IMX_ENET_MSCR);
+  imx_enet_putreg32(priv, ENET_MSCR_HOLDTIME_2CYCLES |
+                    IMX_MII_SPEED << ENET_MSCR_MII_SPEED_SHIFT,
+                    IMX_ENET_MSCR_OFFSET);
 }
 
 /****************************************************************************
@@ -1957,23 +1947,24 @@ static int imx_writemii(struct imx_driver_s *priv, uint8_t phyaddr,
 
   /* Clear the MII interrupt bit */
 
-  putreg32(ENET_INT_MII, IMX_ENET_EIR);
+  imx_enet_putreg32(priv, ENET_INT_MII, IMX_ENET_EIR_OFFSET);
 
   /* Initiate the MII Management write */
 
-  putreg32(data |
-           2 << ENET_MMFR_TA_SHIFT |
-           (uint32_t)regaddr << ENET_MMFR_RA_SHIFT |
-           (uint32_t)phyaddr << ENET_MMFR_PA_SHIFT |
-           ENET_MMFR_OP_WRMII |
-           1 << ENET_MMFR_ST_SHIFT,
-           IMX_ENET_MMFR);
+  imx_enet_putreg32(priv, data |
+                    2 << ENET_MMFR_TA_SHIFT |
+                    (uint32_t)regaddr << ENET_MMFR_RA_SHIFT |
+                    (uint32_t)phyaddr << ENET_MMFR_PA_SHIFT |
+                    ENET_MMFR_OP_WRMII |
+                    1 << ENET_MMFR_ST_SHIFT,
+                    IMX_ENET_MMFR_OFFSET);
 
   /* Wait for the transfer to complete */
 
   for (timeout = 0; timeout < MII_MAXPOLLS; timeout++)
     {
-      if ((getreg32(IMX_ENET_EIR) & ENET_INT_MII) != 0)
+      if ((imx_enet_getreg32(priv, IMX_ENET_EIR_OFFSET) &
+           ENET_INT_MII) != 0)
         {
           break;
         }
@@ -1988,7 +1979,7 @@ static int imx_writemii(struct imx_driver_s *priv, uint8_t phyaddr,
 
   /* Clear the MII interrupt bit */
 
-  putreg32(ENET_INT_MII, IMX_ENET_EIR);
+  imx_enet_putreg32(priv, ENET_INT_MII, IMX_ENET_EIR_OFFSET);
   return OK;
 }
 #endif
@@ -2018,22 +2009,23 @@ static int imx_readmii(struct imx_driver_s *priv, uint8_t phyaddr,
 
   /* Clear the MII interrupt bit */
 
-  putreg32(ENET_INT_MII, IMX_ENET_EIR);
+  imx_enet_putreg32(priv, ENET_INT_MII, IMX_ENET_EIR_OFFSET);
 
   /* Initiate the MII Management read */
 
-  putreg32(2 << ENET_MMFR_TA_SHIFT |
-           (uint32_t)regaddr << ENET_MMFR_RA_SHIFT |
-           (uint32_t)phyaddr << ENET_MMFR_PA_SHIFT |
-           ENET_MMFR_OP_RDMII |
-           1 << ENET_MMFR_ST_SHIFT,
-           IMX_ENET_MMFR);
+  imx_enet_putreg32(priv, 2 << ENET_MMFR_TA_SHIFT |
+                    (uint32_t)regaddr << ENET_MMFR_RA_SHIFT |
+                    (uint32_t)phyaddr << ENET_MMFR_PA_SHIFT |
+                    ENET_MMFR_OP_RDMII |
+                    1 << ENET_MMFR_ST_SHIFT,
+                    IMX_ENET_MMFR_OFFSET);
 
   /* Wait for the transfer to complete */
 
   for (timeout = 0; timeout < MII_MAXPOLLS; timeout++)
     {
-      if ((getreg32(IMX_ENET_EIR) & ENET_INT_MII) != 0)
+      if ((imx_enet_getreg32(priv, IMX_ENET_EIR_OFFSET) &
+           ENET_INT_MII) != 0)
         {
           break;
         }
@@ -2049,11 +2041,12 @@ static int imx_readmii(struct imx_driver_s *priv, uint8_t phyaddr,
 
   /* Clear the MII interrupt bit */
 
-  putreg32(ENET_INT_MII, IMX_ENET_EIR);
+  imx_enet_putreg32(priv, ENET_INT_MII, IMX_ENET_EIR_OFFSET);
 
   /* And return the MII data */
 
-  *data = (uint16_t)(getreg32(IMX_ENET_MMFR) & ENET_MMFR_DATA_MASK);
+  *data = (uint16_t)(imx_enet_getreg32(priv, IMX_ENET_MMFR_OFFSET) &
+                     ENET_MMFR_DATA_MASK);
   return OK;
 }
 #endif
@@ -2328,17 +2321,19 @@ static inline int imx_initphy(struct imx_driver_s *priv, bool renogphy)
 
 #ifdef CONFIG_IMX_ENETUSEMII
   rcr = ENET_RCR_CRCFWD |
-        CONFIG_NET_ETH_PKTSIZE << ENET_RCR_MAX_FL_SHIFT |
+        (CONFIG_NET_ETH_PKTSIZE + CONFIG_NET_GUARDSIZE)
+          << ENET_RCR_MAX_FL_SHIFT |
         ENET_RCR_MII_MODE;
 #else
   rcr = ENET_RCR_RMII_MODE | ENET_RCR_CRCFWD |
-        CONFIG_NET_ETH_PKTSIZE << ENET_RCR_MAX_FL_SHIFT |
+        (CONFIG_NET_ETH_PKTSIZE + CONFIG_NET_GUARDSIZE)
+          << ENET_RCR_MAX_FL_SHIFT |
         ENET_RCR_MII_MODE;
 #endif
   tcr = 0;
 
-  putreg32(rcr, IMX_ENET_RCR);
-  putreg32(tcr, IMX_ENET_TCR);
+  imx_enet_putreg32(priv, rcr, IMX_ENET_RCR_OFFSET);
+  imx_enet_putreg32(priv, tcr, IMX_ENET_TCR_OFFSET);
 
   /* Enable Discard Of Frames With MAC Layer Errors.
    * Enable Discard Of Frames With Wrong Protocol Checksum.
@@ -2346,7 +2341,7 @@ static inline int imx_initphy(struct imx_driver_s *priv, bool renogphy)
    */
 
   racc = ENET_RACC_PRODIS | ENET_RACC_LINEDIS | ENET_RACC_IPDIS;
-  putreg32(racc, IMX_ENET_RACC);
+  imx_enet_putreg32(priv, racc, IMX_ENET_RACC_OFFSET);
 
   /* Setup half or full duplex */
 
@@ -2387,8 +2382,8 @@ static inline int imx_initphy(struct imx_driver_s *priv, bool renogphy)
       return -EIO;
     }
 
-  putreg32(rcr, IMX_ENET_RCR);
-  putreg32(tcr, IMX_ENET_TCR);
+  imx_enet_putreg32(priv, rcr, IMX_ENET_RCR_OFFSET);
+  imx_enet_putreg32(priv, tcr, IMX_ENET_TCR_OFFSET);
 #endif
   return OK;
 }
@@ -2416,13 +2411,11 @@ static void imx_initbuffers(struct imx_driver_s *priv)
 
   /* Get an aligned TX descriptor (array) address */
 
-  addr         = (uintptr_t)g_desc_pool;
-  priv->txdesc = (struct enet_desc_s *)addr;
+  priv->txdesc = &g_desc_pool[0].desc;
 
   /* Get an aligned RX descriptor (array) address */
 
-  addr        +=  CONFIG_IMX_ENET_NTXBUFFERS * sizeof(struct enet_desc_s);
-  priv->rxdesc = (struct enet_desc_s *)addr;
+  priv->rxdesc = &g_desc_pool[CONFIG_IMX_ENET_NTXBUFFERS].desc;
 
   /* Get the beginning of the first aligned buffer */
 
@@ -2438,7 +2431,7 @@ static void imx_initbuffers(struct imx_driver_s *priv)
 #ifdef CONFIG_IMX_ENETENHANCEDBD
       priv->txdesc[i].status2 = TXDESC_IINS | TXDESC_PINS;
 #endif
-      addr                   += IMX_BUF_SIZE;
+      addr                   += ALIGNED_BUFSIZE;
     }
 
   /* Then fill in the RX descriptors */
@@ -2452,13 +2445,16 @@ static void imx_initbuffers(struct imx_driver_s *priv)
       priv->rxdesc[i].bdu     = 0;
       priv->rxdesc[i].status2 = RXDESC_INT;
 #endif
-      addr                   += IMX_BUF_SIZE;
+      addr                   += ALIGNED_BUFSIZE;
     }
 
   /* Set the wrap bit in the last descriptors to form a ring */
 
   priv->txdesc[CONFIG_IMX_ENET_NTXBUFFERS - 1].status1 |= TXDESC_W;
   priv->rxdesc[CONFIG_IMX_ENET_NRXBUFFERS - 1].status1 |= RXDESC_W;
+
+  up_clean_dcache((uintptr_t)g_desc_pool,
+                  (uintptr_t)g_desc_pool + sizeof(g_desc_pool));
 
   /* We start with RX descriptor 0 and with no TX descriptors in use */
 
@@ -2494,7 +2490,7 @@ static void imx_reset(struct imx_driver_s *priv)
 
   /* Set the reset bit and clear the enable bit */
 
-  putreg32(ENET_ECR_RESET, IMX_ENET_ECR);
+  imx_enet_putreg32(priv, ENET_ECR_RESET, IMX_ENET_ECR_OFFSET);
 
   /* Wait at least 8 clock cycles */
 
@@ -2540,13 +2536,32 @@ int imx_netinitialize(int intf)
   DEBUGASSERT(intf < CONFIG_IMX_ENET_NETHIFS);
   priv = &g_enet[intf];
 
+  /* Initialize the driver structure */
+
+  memset(priv, 0, sizeof(struct imx_driver_s));
+
+  priv->base = IMX_ENET_VBASE;        /* Assigne base address */
+
+  priv->dev.d_ifup    = imx_ifup;     /* I/F up (new IP address) callback */
+  priv->dev.d_ifdown  = imx_ifdown;   /* I/F down callback */
+  priv->dev.d_txavail = imx_txavail;  /* New TX data callback */
+#ifdef CONFIG_NET_MCASTGROUP
+  priv->dev.d_addmac  = imx_addmac;   /* Add multicast MAC address */
+  priv->dev.d_rmmac   = imx_rmmac;    /* Remove multicast MAC address */
+#endif
+#ifdef CONFIG_NETDEV_IOCTL
+  priv->dev.d_ioctl   = imx_ioctl;    /* Support PHY ioctl() calls */
+#endif
+  priv->dev.d_private = g_enet;         /* Used to recover private state from dev */
+
 #if 0 /* TODO */
   uint32_t regval;
 
-  /* Enable ENET1_TX_CLK_DIR (Provides 50MHz clk OUT to PHY) */
+  /* Configure ENET1_TX_CLK */
 
   regval = getreg32(IMX_IOMUXC_GPR_GPR1);
-  regval |= GPR_GPR1_ENET1_TX_CLK_OUT_EN;
+  regval &= ~GPR_GPR1_ENET_MASK;
+  regval |= (GPR_GPR1_ENET_TX_DIR | GPR_GPR1_ENET_CLK_SEL);
   putreg32(regval, IMX_IOMUXC_GPR_GPR1);
 
   /* Enable the ENET clock.  Clock is on during all modes,
@@ -2575,7 +2590,7 @@ int imx_netinitialize(int intf)
   /* Attach the Ethernet MAC IEEE 1588 timer interrupt handler */
 
 #if 0
-  if (irq_attach(IMX_IRQ_ENET0TMR, imx_tmrinterrupt, NULL))
+  if (irq_attach(IMX_IRQ_ENET0TMR, imx_tmrinterrupt, priv))
     {
       /* We could not attach the ISR to the interrupt */
 
@@ -2586,7 +2601,7 @@ int imx_netinitialize(int intf)
 
   /* Attach the Ethernet interrupt handler */
 
-  if (irq_attach(IMX_IRQ_ENET0, imx_enet_interrupt, NULL))
+  if (irq_attach(IMX_IRQ_ENET0, imx_enet_interrupt, priv))
     {
       /* We could not attach the ISR to the interrupt */
 
@@ -2597,21 +2612,6 @@ int imx_netinitialize(int intf)
   /* Configure as a (high) level interrupt */
 
   arm_gic_irq_trigger(IMX_IRQ_ENET0, false);
-
-  /* Initialize the driver structure */
-
-  memset(priv, 0, sizeof(struct imx_driver_s));
-  priv->dev.d_ifup    = imx_ifup;     /* I/F up (new IP address) callback */
-  priv->dev.d_ifdown  = imx_ifdown;   /* I/F down callback */
-  priv->dev.d_txavail = imx_txavail;  /* New TX data callback */
-#ifdef CONFIG_NET_MCASTGROUP
-  priv->dev.d_addmac  = imx_addmac;   /* Add multicast MAC address */
-  priv->dev.d_rmmac   = imx_rmmac;    /* Remove multicast MAC address */
-#endif
-#ifdef CONFIG_NETDEV_IOCTL
-  priv->dev.d_ioctl   = imx_ioctl;    /* Support PHY ioctl() calls */
-#endif
-  priv->dev.d_private = g_enet;       /* Used to recover private state from dev */
 
 #ifdef CONFIG_NET_ETHERNET
   /* Determine a semi-unique MAC address from MCU UID
@@ -2666,7 +2666,7 @@ int imx_netinitialize(int intf)
 }
 
 /****************************************************************************
- * Name: up_netinitialize
+ * Name: arm_netinitialize
  *
  * Description:
  *   Initialize the first network interface.  If there are more than one

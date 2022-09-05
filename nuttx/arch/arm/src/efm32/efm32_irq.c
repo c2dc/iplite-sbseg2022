@@ -25,6 +25,7 @@
 #include <nuttx/config.h>
 
 #include <stdint.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -35,10 +36,8 @@
 
 #include "nvic.h"
 #include "ram_vectors.h"
-#include "arm_arch.h"
 #include "sched/sched.h"
 #include "arm_internal.h"
-
 #include "chip.h"
 #include "efm32_gpio.h"
 
@@ -162,7 +161,7 @@ static void efm32_dumpnvic(const char *msg, int irq)
  ****************************************************************************/
 
 #ifdef CONFIG_DEBUG_FEATURES
-static int efm32_nmi(int irq, FAR void *context, FAR void *arg)
+static int efm32_nmi(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! NMI received\n");
@@ -170,7 +169,7 @@ static int efm32_nmi(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int efm32_busfault(int irq, FAR void *context, FAR void *arg)
+static int efm32_busfault(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! Bus fault received: %08x\n", getreg32(NVIC_CFAULTS));
@@ -178,7 +177,7 @@ static int efm32_busfault(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int efm32_usagefault(int irq, FAR void *context, FAR void *arg)
+static int efm32_usagefault(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! Usage fault received: %08x\n", getreg32(NVIC_CFAULTS));
@@ -186,7 +185,7 @@ static int efm32_usagefault(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int efm32_pendsv(int irq, FAR void *context, FAR void *arg)
+static int efm32_pendsv(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! PendSV received\n");
@@ -194,7 +193,7 @@ static int efm32_pendsv(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int efm32_dbgmonitor(int irq, FAR void *context, FAR void *arg)
+static int efm32_dbgmonitor(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! Debug Monitor received\n");
@@ -202,7 +201,7 @@ static int efm32_dbgmonitor(int irq, FAR void *context, FAR void *arg)
   return 0;
 }
 
-static int efm32_reserved(int irq, FAR void *context, FAR void *arg)
+static int efm32_reserved(int irq, void *context, void *arg)
 {
   up_irq_save();
   _err("PANIC!!! Reserved interrupt\n");

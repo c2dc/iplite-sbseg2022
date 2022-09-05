@@ -27,6 +27,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <time.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -51,10 +52,6 @@
  *
  * Input Parameters:
  *   sem     - Semaphore object
- *   start   - The system time that the delay is relative to.  If the
- *             current time is not the same as the start time, then the
- *             delay will be adjust so that the end time will be the same
- *             in any event.
  *   delay   - Ticks to wait from the start time until the semaphore is
  *             posted.  If ticks is zero, then this function is equivalent
  *             to nxsem_trywait().
@@ -67,18 +64,23 @@
  *
  ****************************************************************************/
 
-int nxsem_tickwait(FAR sem_t *sem, clock_t start, uint32_t delay)
+int nxsem_tickwait(FAR sem_t *sem, uint32_t delay)
 {
   FAR struct tcb_s *rtcb = this_task();
-  clock_t elapsed;
+  irqstate_t flags;
   int ret;
 
   DEBUGASSERT(sem != NULL && up_interrupt_context() == false);
 
-  /* NOTE: We do not need a critical section here, because
-   * nxsem_wait() and nxsem_timeout() use a critical section
-   * in the functions.
+  /* We will disable interrupts until we have completed the semaphore
+   * wait.  We need to do this (as opposed to just disabling pre-emption)
+   * because there could be interrupt handlers that are asynchronously
+   * posting semaphores and to prevent race conditions with watchdog
+   * timeout.  This is not too bad because interrupts will be re-
+   * enabled while we are blocked waiting for the semaphore.
    */
+
+  flags = enter_critical_section();
 
   /* Try to take the semaphore without waiting. */
 
@@ -101,17 +103,6 @@ int nxsem_tickwait(FAR sem_t *sem, clock_t start, uint32_t delay)
       goto out;
     }
 
-  /* Adjust the delay for any time since the delay was calculated */
-
-  elapsed = clock_systime_ticks() - start;
-  if (/* elapsed >= (UINT32_MAX / 2) || */ elapsed >= delay)
-    {
-      ret = -ETIMEDOUT;
-      goto out;
-    }
-
-  delay -= elapsed;
-
   /* Start the watchdog with interrupts still disabled */
 
   wd_start(&rtcb->waitdog, delay, nxsem_timeout, getpid());
@@ -124,8 +115,10 @@ int nxsem_tickwait(FAR sem_t *sem, clock_t start, uint32_t delay)
 
   wd_cancel(&rtcb->waitdog);
 
-out:
+  /* We can now restore interrupts */
 
+out:
+  leave_critical_section(flags);
   return ret;
 }
 
@@ -138,10 +131,6 @@ out:
  *
  * Input Parameters:
  *   sem     - Semaphore object
- *   start   - The system time that the delay is relative to.  If the
- *             current time is not the same as the start time, then the
- *             delay will be adjust so that the end time will be the same
- *             in any event.
  *   delay   - Ticks to wait from the start time until the semaphore is
  *             posted.  If ticks is zero, then this function is equivalent
  *             to sem_trywait().
@@ -156,19 +145,27 @@ out:
  *
  ****************************************************************************/
 
-int nxsem_tickwait_uninterruptible(FAR sem_t *sem, clock_t start,
-                                   uint32_t delay)
+int nxsem_tickwait_uninterruptible(FAR sem_t *sem, uint32_t delay)
 {
+  clock_t end = clock_systime_ticks() + delay;
   int ret;
 
-  do
+  for (; ; )
     {
       /* Take the semaphore (perhaps waiting) */
 
-      ret = nxsem_tickwait(sem, start, delay);
+      ret = nxsem_tickwait(sem, delay);
+      if (ret != -EINTR)
+        {
+          break;
+        }
+
+      delay = end - clock_systime_ticks();
+      if ((int32_t)delay < 0)
+        {
+          delay = 0;
+        }
     }
-  while (ret == -EINTR);
 
   return ret;
 }
-

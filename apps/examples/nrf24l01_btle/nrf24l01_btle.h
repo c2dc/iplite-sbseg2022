@@ -1,5 +1,5 @@
 /****************************************************************************
- * examples/nrf24l01_btle/nrf24l01_btle.h
+ * apps/examples/nrf24l01_btle/nrf24l01_btle.h
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -18,8 +18,8 @@
  *
  ****************************************************************************/
 
-#ifndef __EXAMPLES_NRF24L01_BTLE_H
-#define __EXAMPLES_NRF24L01_BTLE_H
+#ifndef __APPS_EXAMPLES_NRF24L01_BTLE_NRF24L01_BTLE_H
+#define __APPS_EXAMPLES_NRF24L01_BTLE_NRF24L01_BTLE_H
 
 /****************************************************************************
  * Included Files
@@ -96,4 +96,4 @@ int nrf24_open(void);
 
 int nrf24_send(int wl_fd, uint8_t * buf, uint8_t len);
 
-#endif /* __EXAMPLES_NRF24L01_BTLE_H  */
+#endif /* __APPS_EXAMPLES_NRF24L01_BTLE_NRF24L01_BTLE_H  */

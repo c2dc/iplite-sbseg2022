@@ -78,7 +78,7 @@ int tcp_setsockopt(FAR struct socket *psock, int option,
    */
 
   FAR struct tcp_conn_s *conn;
-  int ret;
+  int ret = OK;
 
   DEBUGASSERT(psock != NULL && value != NULL && psock->s_conn != NULL);
   conn = (FAR struct tcp_conn_s *)psock->s_conn;
@@ -107,8 +107,8 @@ int tcp_setsockopt(FAR struct socket *psock, int option,
        * all of the clones that may use the underlying connection.
        */
 
-      case SO_KEEPALIVE:  /* Verifies TCP connections active by enabling the
-                           * periodic transmission of probes */
+      case SO_KEEPALIVE: /* Verifies TCP connections active by enabling the
+                          * periodic transmission of probes */
         if (value_len != sizeof(int))
           {
             ret = -EDOM;
@@ -125,95 +125,87 @@ int tcp_setsockopt(FAR struct socket *psock, int option,
               }
             else
               {
-                conn->keepalive = (bool)keepalive;
-                conn->keeptime  = clock_systime_ticks();   /* Reset start time */
-                ret = OK;
+                conn->keepalive = keepalive;
+
+                /* Reset timer */
+
+                tcp_update_keeptimer(conn, keepalive ? conn->keepidle : 0);
+                conn->keepretries = 0;
               }
           }
         break;
 
       case TCP_NODELAY: /* Avoid coalescing of small segments. */
-        nerr("ERROR: TCP_NODELAY not supported\n");
-        ret = -ENOSYS;
+        if (value_len != sizeof(int))
+          {
+            ret = -EDOM;
+          }
+        else
+          {
+            int nodelay = *(FAR int *)value;
+
+            if (!nodelay)
+              {
+                nerr("ERROR: TCP_NODELAY not supported\n");
+                ret = -ENOSYS;
+              }
+          }
         break;
 
       case TCP_KEEPIDLE:  /* Start keepalives after this IDLE period */
-        if (value_len != sizeof(struct timeval))
-          {
-            ret = -EDOM;
-          }
-        else
-          {
-            FAR struct timeval *tv = (FAR struct timeval *)value;
-
-            if (tv == NULL)
-              {
-                ret = -EINVAL;
-              }
-            else
-              {
-                unsigned int dsecs;
-
-               /* Get the IDLE time value.  Any microsecond remainder will
-                * be forced to the next larger, whole decisecond value.
-                */
-
-               dsecs = (socktimeo_t)net_timeval2dsec(tv, TV2DS_CEIL);
-               if (dsecs > UINT16_MAX)
-                  {
-                    nwarn("WARNING: TCP_KEEPIDLE value out of range: %u\n",
-                          dsecs);
-                    ret = -EDOM;
-                  }
-                else
-                  {
-                    conn->keepidle = (uint16_t)dsecs;
-                    conn->keeptime = clock_systime_ticks();   /* Reset start time */
-                    ret = OK;
-                  }
-              }
-          }
-        break;
-
       case TCP_KEEPINTVL: /* Interval between keepalives */
-        if (value_len != sizeof(struct timeval))
-          {
-            ret = -EDOM;
-          }
-        else
-          {
-            FAR struct timeval *tv = (FAR struct timeval *)value;
+        {
+          unsigned int dsecs;
 
-            if (tv == NULL)
-              {
-                ret = -EINVAL;
-              }
-            else
-              {
-                unsigned int dsecs;
+          if (value == NULL)
+            {
+              return -EINVAL;
+            }
+          else if (value_len == sizeof(struct timeval))
+            {
+              FAR struct timeval *tv = (FAR struct timeval *)value;
 
-               /* Get the IDLE time value.  Any microsecond remainder will
-                * be forced to the next larger, whole decisecond value.
-                */
+              /* Get the IDLE time value.  Any microsecond remainder will
+               * be forced to the next larger, whole decisecond value.
+               */
 
-               dsecs = (socktimeo_t)net_timeval2dsec(tv, TV2DS_CEIL);
-               if (dsecs > UINT16_MAX)
-                  {
-                    nwarn("WARNING: TCP_KEEPINTVL value out of range: %u\n",
-                          dsecs);
-                    ret = -EDOM;
-                  }
-                else
-                  {
-                    conn->keepintvl = (uint16_t)dsecs;
-                    conn->keeptime  = clock_systime_ticks();   /* Reset start time */
-                    ret = OK;
-                  }
-              }
-          }
+              dsecs = net_timeval2dsec(tv, TV2DS_CEIL);
+            }
+          else if (value_len == sizeof(int))
+            {
+              dsecs = *(FAR int *)value;
+            }
+          else
+            {
+              return -EDOM;
+            }
+
+          if (dsecs > UINT16_MAX)
+             {
+               nwarn("WARNING: value out of range: %u\n", dsecs);
+               return -EDOM;
+             }
+
+          if (option == TCP_KEEPIDLE)
+            {
+              conn->keepidle = dsecs;
+            }
+          else
+            {
+              conn->keepintvl = dsecs;
+            }
+
+           /* Reset timer */
+
+          if (conn->keepalive)
+            {
+              tcp_update_keeptimer(conn, conn->keepidle);
+              conn->keepretries = 0;
+            }
+        }
         break;
 
-      case TCP_KEEPCNT:   /* Number of keepalives before death */
+      case TCP_KEEPCNT: /* Number of keepalives before death */
         if (value_len != sizeof(int))
           {
             ret = -EDOM;
@@ -229,9 +221,15 @@ int tcp_setsockopt(FAR struct socket *psock, int option,
               }
             else
               {
-                conn->keepcnt  = (uint8_t)keepcnt;
-                conn->keeptime = clock_systime_ticks();   /* Reset start time */
-                ret = OK;
+                conn->keepcnt = keepcnt;
+
+                /* Reset time */
+
+                if (conn->keepalive)
+                  {
+                    tcp_update_keeptimer(conn, conn->keepidle);
+                    conn->keepretries = 0;
+                  }
               }
           }
         break;

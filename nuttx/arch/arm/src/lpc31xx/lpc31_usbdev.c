@@ -1,40 +1,20 @@
 /****************************************************************************
  * arch/arm/src/lpc31xx/lpc31_usbdev.c
  *
- *   Authors: David Hewson
- *            Gregory Nutt <gnutt@nuttx.org>
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.  The
+ * ASF licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the
+ * License.  You may obtain a copy of the License at
  *
- * Part of the NuttX OS and based, in part, on the LPC2148 USB driver:
+ *   http://www.apache.org/licenses/LICENSE-2.0
  *
- *   Copyright (C) 2010-2013 Gregory Nutt. All rights reserved.
- *   Author: Gregory Nutt <gnutt@nuttx.org>
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- * 3. Neither the name NuttX nor the names of its contributors may be
- *    used to endorse or promote products derived from this software
- *    without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
- * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
- * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
- * FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
- * COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS
- * OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
- * AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
- * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.  See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
  *
  ****************************************************************************/
 
@@ -49,6 +29,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <errno.h>
 #include <debug.h>
 
@@ -62,9 +43,7 @@
 #include <arch/board/board.h>
 
 #include "chip.h"
-#include "arm_arch.h"
 #include "arm_internal.h"
-
 #include "lpc31_usbotg.h"
 #include "lpc31_evntrtr.h"
 #include "lpc31_syscreg.h"
@@ -372,10 +351,9 @@ static inline void lpc31_chgbits(uint32_t mask, uint32_t val,
 
 /* Request queue operations *************************************************/
 
-static FAR
-struct lpc31_req_s *lpc31_rqdequeue(FAR struct lpc31_ep_s *privep);
-static bool       lpc31_rqenqueue(FAR struct lpc31_ep_s *privep,
-                    FAR struct lpc31_req_s *req);
+static struct lpc31_req_s *lpc31_rqdequeue(struct lpc31_ep_s *privep);
+static bool       lpc31_rqenqueue(struct lpc31_ep_s *privep,
+                    struct lpc31_req_s *req);
 
 /* Low level data transfers and request operations **************************/
 
@@ -423,36 +401,35 @@ static bool        lpc31_epcomplete(struct lpc31_usbdev_s *priv,
                                     uint8_t epphy);
 
 static int         lpc31_usbinterrupt(int irq,
-                                      FAR void *context, FAR void *arg);
+                                      void *context, void *arg);
 
 /* Endpoint operations ******************************************************/
 
 /* USB device controller operations *****************************************/
 
-static int  lpc31_epconfigure(FAR struct usbdev_ep_s *ep,
+static int  lpc31_epconfigure(struct usbdev_ep_s *ep,
                               const struct usb_epdesc_s *desc,
                               bool last);
-static int  lpc31_epdisable(FAR struct usbdev_ep_s *ep);
-static FAR
-struct usbdev_req_s *lpc31_epallocreq(FAR struct usbdev_ep_s *ep);
-static void lpc31_epfreereq(FAR struct usbdev_ep_s *ep,
-              FAR struct usbdev_req_s *);
+static int  lpc31_epdisable(struct usbdev_ep_s *ep);
+static struct usbdev_req_s *lpc31_epallocreq(struct usbdev_ep_s *ep);
+static void lpc31_epfreereq(struct usbdev_ep_s *ep,
+              struct usbdev_req_s *);
 #ifdef CONFIG_USBDEV_DMA
-static void *lpc31_epallocbuffer(FAR struct usbdev_ep_s *ep,
+static void *lpc31_epallocbuffer(struct usbdev_ep_s *ep,
                                  unsigned bytes);
-static void lpc31_epfreebuffer(FAR struct usbdev_ep_s *ep,
-                               FAR void *buf);
+static void lpc31_epfreebuffer(struct usbdev_ep_s *ep,
+                               void *buf);
 #endif
-static int  lpc31_epsubmit(FAR struct usbdev_ep_s *ep,
+static int  lpc31_epsubmit(struct usbdev_ep_s *ep,
               struct usbdev_req_s *req);
-static int  lpc31_epcancel(FAR struct usbdev_ep_s *ep,
+static int  lpc31_epcancel(struct usbdev_ep_s *ep,
               struct usbdev_req_s *req);
-static int  lpc31_epstall(FAR struct usbdev_ep_s *ep, bool resume);
+static int  lpc31_epstall(struct usbdev_ep_s *ep, bool resume);
 
-static FAR struct usbdev_ep_s *lpc31_allocep(FAR struct usbdev_s *dev,
+static struct usbdev_ep_s *lpc31_allocep(struct usbdev_s *dev,
               uint8_t epno, bool in, uint8_t eptype);
-static void lpc31_freeep(FAR struct usbdev_s *dev,
-                         FAR struct usbdev_ep_s *ep);
+static void lpc31_freeep(struct usbdev_s *dev,
+                         struct usbdev_ep_s *ep);
 static int  lpc31_getframe(struct usbdev_s *dev);
 static int  lpc31_wakeup(struct usbdev_s *dev);
 static int  lpc31_selfpowered(struct usbdev_s *dev, bool selfpowered);
@@ -469,9 +446,9 @@ static int  lpc31_pullup(struct usbdev_s *dev, bool enable);
 static struct lpc31_usbdev_s g_usbdev;
 
 static struct
-lpc31_dqh_s __attribute__((aligned(2048))) g_qh[LPC31_NPHYSENDPOINTS];
+lpc31_dqh_s aligned_data(2048) g_qh[LPC31_NPHYSENDPOINTS];
 static struct
-lpc31_dtd_s __attribute__((aligned(32)))   g_td[LPC31_NPHYSENDPOINTS];
+lpc31_dtd_s aligned_data(32)   g_td[LPC31_NPHYSENDPOINTS];
 
 static const struct usbdev_epops_s g_epops =
 {
@@ -644,10 +621,9 @@ static inline void lpc31_chgbits(uint32_t mask, uint32_t val, uint32_t addr)
  *
  ****************************************************************************/
 
-static FAR
-struct lpc31_req_s *lpc31_rqdequeue(FAR struct lpc31_ep_s *privep)
+static struct lpc31_req_s *lpc31_rqdequeue(struct lpc31_ep_s *privep)
 {
-  FAR struct lpc31_req_s *ret = privep->head;
+  struct lpc31_req_s *ret = privep->head;
 
   if (ret)
     {
@@ -671,8 +647,8 @@ struct lpc31_req_s *lpc31_rqdequeue(FAR struct lpc31_ep_s *privep)
  *
  ****************************************************************************/
 
-static bool lpc31_rqenqueue(FAR struct lpc31_ep_s *privep,
-                              FAR struct lpc31_req_s *req)
+static bool lpc31_rqenqueue(struct lpc31_ep_s *privep,
+                            struct lpc31_req_s *req)
 {
   bool is_empty = !privep->head;
 
@@ -1805,7 +1781,7 @@ bool lpc31_epcomplete(struct lpc31_usbdev_s *priv, uint8_t epphy)
  *
  ****************************************************************************/
 
-static int lpc31_usbinterrupt(int irq, FAR void *context, FAR void *arg)
+static int lpc31_usbinterrupt(int irq, void *context, void *arg)
 {
   struct lpc31_usbdev_s *priv = &g_usbdev;
   uint32_t disr;
@@ -2000,11 +1976,11 @@ static int lpc31_usbinterrupt(int irq, FAR void *context, FAR void *arg)
  *
  ****************************************************************************/
 
-static int lpc31_epconfigure(FAR struct usbdev_ep_s *ep,
-                               FAR const struct usb_epdesc_s *desc,
-                               bool last)
+static int lpc31_epconfigure(struct usbdev_ep_s *ep,
+                             const struct usb_epdesc_s *desc,
+                             bool last)
 {
-  FAR struct lpc31_ep_s *privep = (FAR struct lpc31_ep_s *)ep;
+  struct lpc31_ep_s *privep = (struct lpc31_ep_s *)ep;
 
   usbtrace(TRACE_EPCONFIGURE, privep->epphy);
   DEBUGASSERT(desc->addr == ep->eplog);
@@ -2102,9 +2078,9 @@ static int lpc31_epconfigure(FAR struct usbdev_ep_s *ep,
  *
  ****************************************************************************/
 
-static int lpc31_epdisable(FAR struct usbdev_ep_s *ep)
+static int lpc31_epdisable(struct usbdev_ep_s *ep)
 {
-  FAR struct lpc31_ep_s *privep = (FAR struct lpc31_ep_s *)ep;
+  struct lpc31_ep_s *privep = (struct lpc31_ep_s *)ep;
   irqstate_t flags;
 
 #ifdef CONFIG_DEBUG_FEATURES
@@ -2146,9 +2122,9 @@ static int lpc31_epdisable(FAR struct usbdev_ep_s *ep)
  *
  ****************************************************************************/
 
-static FAR struct usbdev_req_s *lpc31_epallocreq(FAR struct usbdev_ep_s *ep)
+static struct usbdev_req_s *lpc31_epallocreq(struct usbdev_ep_s *ep)
 {
-  FAR struct lpc31_req_s *privreq;
+  struct lpc31_req_s *privreq;
 
 #ifdef CONFIG_DEBUG_FEATURES
   if (!ep)
@@ -2158,9 +2134,9 @@ static FAR struct usbdev_req_s *lpc31_epallocreq(FAR struct usbdev_ep_s *ep)
     }
 #endif
 
-  usbtrace(TRACE_EPALLOCREQ, ((FAR struct lpc31_ep_s *)ep)->epphy);
+  usbtrace(TRACE_EPALLOCREQ, ((struct lpc31_ep_s *)ep)->epphy);
 
-  privreq = (FAR struct lpc31_req_s *)kmm_malloc(sizeof(struct lpc31_req_s));
+  privreq = (struct lpc31_req_s *)kmm_malloc(sizeof(struct lpc31_req_s));
   if (!privreq)
     {
       usbtrace(TRACE_DEVERROR(LPC31_TRACEERR_ALLOCFAIL), 0);
@@ -2179,10 +2155,10 @@ static FAR struct usbdev_req_s *lpc31_epallocreq(FAR struct usbdev_ep_s *ep)
  *
  ****************************************************************************/
 
-static void lpc31_epfreereq(FAR struct usbdev_ep_s *ep,
-                            FAR struct usbdev_req_s *req)
+static void lpc31_epfreereq(struct usbdev_ep_s *ep,
+                            struct usbdev_req_s *req)
 {
-  FAR struct lpc31_req_s *privreq = (FAR struct lpc31_req_s *)req;
+  struct lpc31_req_s *privreq = (struct lpc31_req_s *)req;
 
 #ifdef CONFIG_DEBUG_FEATURES
   if (!ep || !req)
@@ -2192,7 +2168,7 @@ static void lpc31_epfreereq(FAR struct usbdev_ep_s *ep,
     }
 #endif
 
-  usbtrace(TRACE_EPFREEREQ, ((FAR struct lpc31_ep_s *)ep)->epphy);
+  usbtrace(TRACE_EPFREEREQ, ((struct lpc31_ep_s *)ep)->epphy);
   kmm_free(privreq);
 }
 
@@ -2205,7 +2181,7 @@ static void lpc31_epfreereq(FAR struct usbdev_ep_s *ep,
  ****************************************************************************/
 
 #ifdef CONFIG_USBDEV_DMA
-static void *lpc31_epallocbuffer(FAR struct usbdev_ep_s *ep, unsigned bytes)
+static void *lpc31_epallocbuffer(struct usbdev_ep_s *ep, unsigned bytes)
 {
   usbtrace(TRACE_EPALLOCBUFFER, privep->epphy);
 
@@ -2226,8 +2202,8 @@ static void *lpc31_epallocbuffer(FAR struct usbdev_ep_s *ep, unsigned bytes)
  ****************************************************************************/
 
 #ifdef CONFIG_USBDEV_DMA
-static void lpc31_epfreebuffer(FAR struct usbdev_ep_s *ep,
-                               FAR void *buf)
+static void lpc31_epfreebuffer(struct usbdev_ep_s *ep,
+                               void *buf)
 {
   usbtrace(TRACE_EPFREEBUFFER, privep->epphy);
 
@@ -2247,12 +2223,12 @@ static void lpc31_epfreebuffer(FAR struct usbdev_ep_s *ep,
  *
  ****************************************************************************/
 
-static int lpc31_epsubmit(FAR struct usbdev_ep_s *ep,
-                          FAR struct usbdev_req_s *req)
+static int lpc31_epsubmit(struct usbdev_ep_s *ep,
+                          struct usbdev_req_s *req)
 {
-  FAR struct lpc31_req_s *privreq = (FAR struct lpc31_req_s *)req;
-  FAR struct lpc31_ep_s *privep = (FAR struct lpc31_ep_s *)ep;
-  FAR struct lpc31_usbdev_s *priv;
+  struct lpc31_req_s *privreq = (struct lpc31_req_s *)req;
+  struct lpc31_ep_s *privep = (struct lpc31_ep_s *)ep;
+  struct lpc31_usbdev_s *priv;
   irqstate_t flags;
   int ret = OK;
 
@@ -2318,10 +2294,10 @@ static int lpc31_epsubmit(FAR struct usbdev_ep_s *ep,
  *
  ****************************************************************************/
 
-static int lpc31_epcancel(FAR struct usbdev_ep_s *ep,
-                          FAR struct usbdev_req_s *req)
+static int lpc31_epcancel(struct usbdev_ep_s *ep,
+                          struct usbdev_req_s *req)
 {
-  FAR struct lpc31_ep_s *privep = (FAR struct lpc31_ep_s *)ep;
+  struct lpc31_ep_s *privep = (struct lpc31_ep_s *)ep;
   irqstate_t flags;
 
 #ifdef CONFIG_DEBUG_FEATURES
@@ -2355,9 +2331,9 @@ static int lpc31_epcancel(FAR struct usbdev_ep_s *ep,
  *
  ****************************************************************************/
 
-static int lpc31_epstall(FAR struct usbdev_ep_s *ep, bool resume)
+static int lpc31_epstall(struct usbdev_ep_s *ep, bool resume)
 {
-  FAR struct lpc31_ep_s *privep = (FAR struct lpc31_ep_s *)ep;
+  struct lpc31_ep_s *privep = (struct lpc31_ep_s *)ep;
   irqstate_t flags;
 
   /* STALL or RESUME the endpoint */
@@ -2411,11 +2387,11 @@ static int lpc31_epstall(FAR struct usbdev_ep_s *ep, bool resume)
  *
  ****************************************************************************/
 
-static FAR struct usbdev_ep_s *lpc31_allocep(FAR struct usbdev_s *dev,
-                                             uint8_t eplog,
-                                             bool in, uint8_t eptype)
+static struct usbdev_ep_s *lpc31_allocep(struct usbdev_s *dev,
+                                         uint8_t eplog,
+                                         bool in, uint8_t eptype)
 {
-  FAR struct lpc31_usbdev_s *priv = (FAR struct lpc31_usbdev_s *)dev;
+  struct lpc31_usbdev_s *priv = (struct lpc31_usbdev_s *)dev;
   uint32_t epset = LPC31_EPALLSET & ~LPC31_EPCTRLSET;
   irqstate_t flags;
   int epndx = 0;
@@ -2537,11 +2513,11 @@ static FAR struct usbdev_ep_s *lpc31_allocep(FAR struct usbdev_s *dev,
  *
  ****************************************************************************/
 
-static void lpc31_freeep(FAR struct usbdev_s *dev,
-                         FAR struct usbdev_ep_s *ep)
+static void lpc31_freeep(struct usbdev_s *dev,
+                         struct usbdev_ep_s *ep)
 {
-  FAR struct lpc31_usbdev_s *priv = (FAR struct lpc31_usbdev_s *)dev;
-  FAR struct lpc31_ep_s *privep = (FAR struct lpc31_ep_s *)ep;
+  struct lpc31_usbdev_s *priv = (struct lpc31_usbdev_s *)dev;
+  struct lpc31_ep_s *privep = (struct lpc31_ep_s *)ep;
   irqstate_t flags;
 
   usbtrace(TRACE_DEVFREEEP, (uint16_t)privep->epphy);
@@ -2567,7 +2543,7 @@ static void lpc31_freeep(FAR struct usbdev_s *dev,
 static int lpc31_getframe(struct usbdev_s *dev)
 {
 #ifdef CONFIG_LPC31_USBDEV_FRAME_INTERRUPT
-  FAR struct lpc31_usbdev_s *priv = (FAR struct lpc31_usbdev_s *)dev;
+  struct lpc31_usbdev_s *priv = (struct lpc31_usbdev_s *)dev;
 
   /* Return last valid value of SOF read by the interrupt handler */
 
@@ -2614,7 +2590,7 @@ static int lpc31_wakeup(struct usbdev_s *dev)
 
 static int lpc31_selfpowered(struct usbdev_s *dev, bool selfpowered)
 {
-  FAR struct lpc31_usbdev_s *priv = (FAR struct lpc31_usbdev_s *)dev;
+  struct lpc31_usbdev_s *priv = (struct lpc31_usbdev_s *)dev;
 
   usbtrace(TRACE_DEVSELFPOWERED, (uint16_t)selfpowered);
 
