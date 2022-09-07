@@ -82,3 +82,31 @@ nsh > ping -c 1 {ip_linux}
 
 Got any trouble? Check the official NuttX quickstart guide:
 http://nuttx.incubator.apache.org/docs/latest/quickstart/index.html
+
+## NuttX Tips
+
+This section is a bonus in order to summarize the main commands that are most used and show some simple and typical problems that can happen in your journey and how to work around them. <br/><br/>
+
+`make distclean`
+
+It removes the configuration of the previous board and makes it available for the user to select another board or another configuration of the same board.
+
+`./tools/configure.sh boardname:configname`
+
+It selects the board (in this example it was esp32-devkitc) and the configuration to be used (in this example it was nsh config, which includes only the nuttx shell). There are other configurations that include support for certain peripherals and examples.
+
+`make menuconfig`
+
+It opens the configuration screen for the user to customize what he/she wants to add or to remove on the board. For example, it allows you to add drivers for a specific device, add debug messages, examples, etc.
+
+`make clean`
+
+It removes binary files generated from the previous built.
+
+`make apps_distclean`
+
+It cleans only application binaries. Kernel and driver binaries are kept.
+
+`make`
+
+It only builds your application.
