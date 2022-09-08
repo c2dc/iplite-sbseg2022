@@ -4,10 +4,14 @@
 
 https://blog.espressif.com/getting-started-with-esp32-and-nuttx-fd3e1a3d182c
 
+<br />
+
 ## Prerequisites
    1\. Have a ESP32 microcontroller with internet access
 
    2\. Install a series of required tools. They can be found <a href="http://nuttx.incubator.apache.org/docs/latest/quickstart/install.html">here</a>
+
+<br />
 
 ## Espressif ESP32 setup
 ### 1. Toolchain
@@ -130,6 +134,7 @@ nsh> wapi essid wlan0 <ssid> 1
 nsh> wapi psk wlan0 <passwd> 2
 nsh> renew wlan0
 ```
+Where `<ssid>` is the network identifier and `passwd` the password.
 
 <br />
 
