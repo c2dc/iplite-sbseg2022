@@ -1,6 +1,6 @@
 # iptables-lite (ESP-32)
 
-<em>This tutorial was adapted from the blog post above. Credits to the author @saramonteiro.</em>
+<em>This tutorial was adapted from the blog post above. Credits to the author <strong>@saramonteiro</strong>.</em>
 
 https://blog.espressif.com/getting-started-with-esp32-and-nuttx-fd3e1a3d182c
 
@@ -165,6 +165,3 @@ It cleans only application binaries. Kernel and driver binaries are kept.
 `make`
 
 It only builds your application.
-
-This tutorial was adapted from the following article
-https://blog.espressif.com/getting-started-with-esp32-and-nuttx-fd3e1a3d182c
