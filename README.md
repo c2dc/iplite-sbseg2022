@@ -1,8 +1,13 @@
-# iptables-lite
-A lightweight firewall for nuttx
+# iptables-lite (ESP-32)
+
+<em>This tutorial was adapted from the blog post above. Credits to the author @saramonteiro.</em>
+
+https://blog.espressif.com/getting-started-with-esp32-and-nuttx-fd3e1a3d182c
 
 ## Prerequisites
-The first step to get started with NuttX is to install a series of required tools. They can be found <a href="http://nuttx.incubator.apache.org/docs/latest/quickstart/install.html">here</a>.
+   1\. Have a ESP32 microcontroller with internet access
+
+   2\. Install a series of required tools. They can be found <a href="http://nuttx.incubator.apache.org/docs/latest/quickstart/install.html">here</a>
 
 ## Espressif ESP32 setup
 ### 1. Toolchain
@@ -62,11 +67,11 @@ In case you want to generate these binaries yourself, take a look at here and ch
 
 <br />
 
-### 3. Configuration
+### 3. Board configuration
 The first step is to initialize NuttX configuration for a given board, based from a pre-existing configuration<sup>1</sup>.
 ```
 $ cd nuttx
-$ ./tools/configure.sh esp32-devkitc:nsh
+$ ./tools/configure.sh esp32-devkitc:wapi
 ```
    <sup>1</sup>To list all available configurations:
 ```
@@ -117,6 +122,15 @@ $ sudo picocom /dev/ttyUSB0 -b 115200
 ```
 **_NOTE:_** adjust the USB port according to your configuration.
 
+
+In case you want to connect to a WiFi network, a standard network interface will be configured and can be initialized such:
+```
+nsh> ifup wlan0
+nsh> wapi essid wlan0 <ssid> 1
+nsh> wapi psk wlan0 <passwd> 2
+nsh> renew wlan0
+```
+
 <br />
 
 ## NuttX Tips
@@ -146,3 +160,6 @@ It cleans only application binaries. Kernel and driver binaries are kept.
 `make`
 
 It only builds your application.
+
+This tutorial was adapted from the following article
+https://blog.espressif.com/getting-started-with-esp32-and-nuttx-fd3e1a3d182c
