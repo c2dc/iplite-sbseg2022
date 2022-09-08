@@ -4,84 +4,120 @@ A lightweight firewall for nuttx
 ## Prerequisites
 The first step to get started with NuttX is to install a series of required tools. They can be found <a href="http://nuttx.incubator.apache.org/docs/latest/quickstart/install.html">here</a>.
 
-## Initialize Configuration
-The first step is to initialize NuttX configuration for a given board, based from a pre-existing configuration.
+## Espressif ESP32 setup
+### 1. Toolchain
+We are going use the prebuilt toolchain for Xtensa architecture.
+
+Download and decompress the pre built cross compiler for ESP32 in Linux environment. The cross compiler will be used to convert the source code into an executable code.
+```
+$ curl https://dl.espressif.com/dl/xtensa-esp32-elf-gcc8_2_0-esp-2020r2-linux-amd64.tar.gz | tar -xz
+```
+Since the /opt/ directory is a space commonly used to store third party software, create a directory at /opt/ to keep the cross compiler for xtensa architecture:
+```
+$ sudo mkdir /opt/xtensa
+```
+Move the cross compiler to this new directory:
+```
+$ sudo mv xtensa-esp32-elf/ /opt/xtensa/
+```
+Now you have the cross compiler for ESP32 at this path, in order to invoke the cross compiler binaries as commands, you should add its absolute path to PATH, which is a Linux environment variable that informs the shell where to search for executables or programs that are invoked through commands. To do so, use the following command:
+```
+$ export PATH=$PATH:/opt/xtensa/xtensa-esp32-elf/bin
+```
+For flashing firmware, you will need to install `esptool.py` by installing the esptool Python module to perform the download of all binaries to the ESP32 through serial.
+```
+$ pip3 install esptool
+```
+You may have noticed the following warning message at the end of the installation:
+
+`WARNING: The scripts pyserial-miniterm and pyserial-ports are installed in ‘/home/<user>/.local/bin’ which is not on PATH.`
+
+This messages warns us that esptool, as well as other programs that are used by esptool, were installed at a path which is not included on PATH, so these programs are not visible at the current shell. To solve this issue, add this path to PATH and load it using the following command:
+```
+$ export PATH=$PATH:$HOME/.local/bin
+```
+**_NOTE:_**  Once you leave your terminal session, PATH will loose these paths added to it temporarily and you will need to run the “export” commands again in a new session. It may be a little annoying. If you want to keep these paths permanent to shell sessions, open your bash file and add these paths to PATH, through the following command:
+```
+$ sudo nano ~/.bashrc
+```
+Paste it to the end of the file:
+```
+# Add esptool.py and its dependencies directory 
+PATH=$PATH:$HOME/.local/bin
+# Add the cross compiler path for ESP32
+PATH=$PATH:/opt/xtensa/xtensa-esp32-elf/bin
+```
+<br />
+
+### 2. Bootloader and partitions
+
+Besides the Operating System with the application, ESP32 also requires a bootloader and a partition table. Both of them can be customized and built to answer customer’s expectations. However, for the sake of simplicity, these binaries were previously generated for you from the latest ESP-IDF’s master branch and can be easily downloaded from this repository kept by Espressif. To do so, create a dedicated directory aside nuttx directory to keep these binaries and download these pre-configured binaries:
+
+```
+$ mkdir esp-bins
+$ curl -L "https://github.com/espressif/esp-nuttx-bootloader/releases/download/latest/bootloader-esp32.bin" -o esp-bins/bootloader-esp32.bin
+$ curl -L "https://github.com/espressif/esp-nuttx-bootloader/releases/download/latest/partition-table-esp32.bin" -o esp-bins/partition-table-esp32.bin
+```
+In case you want to generate these binaries yourself, take a look at here and check out the step by step.
+
+<br />
+
+### 3. Configuration
+The first step is to initialize NuttX configuration for a given board, based from a pre-existing configuration<sup>1</sup>.
 ```
 $ cd nuttx
-$ ./tools/configure.sh -l sim:nsh
+$ ./tools/configure.sh esp32-devkitc:nsh
 ```
-The `-l` tells use that we’re on Linux (macOS and Windows builds are possible). Use the `-h` argument to see all available options.
-
-## Build NuttX
-We can now build NuttX. To do so, you can simply run:
+   <sup>1</sup>To list all available configurations:
 ```
-$ cd nuttx
-$ make
+$ ./tools/configure.sh -L | less
 ```
 
-## Run the Simulator
+<br />
+
+### 4. Flashing
+You have to add yourself to the dialout group on Linux to have permission to access serial ports. Since in the next step you will use the serial to download the binaries, run the following command to add your user to the dialout group, which has the permission to access the serial driver.
 ```
-$ ./nuttx
-login: admin
-password: Administrator
+$ sudo adduser <user> dialout
+```
+Where `<user>` is your username. 
+
+This addition will only permanently take effect after log out and log in. So, a workaround for it is to temporarily change the current user to the dialout group:
+```
+$ newgrp dialout
 ```
 
-## Run the Network Simulator
+Firmware for ESP32 is flashed via the USB/UART interface using the esptool.py tool. To flash your NuttX firmware simply run:
 ```
-make distclean
-./tools/configure.sh -l sim:tcpblaster
-make
-```
-On recent Linux distributions, you need to give the nuttx program the capabilities (similar to permissions) to access the network:
-
-```
-sudo setcap cap_net_admin+ep ./nuttx
-```
-Bring Up the Network Interfaces
-On Apache NuttX:
-```
-nsh> ifup eth0
-```
-Then, on Linux do this to set up the tap network interface and route that will let the Apache NuttX simulator access the network:
-```
-sudo ./tools/simhostroute.sh enp0s3 on
-```
-If you use ifconfig, you'll se that enp0se is the wireless interface. Note that it has an IP address on the local net. There may be other interfaces listed, you’ll need to pick the one that’s right for your system.
-
-## Run the Netcat
-```
-netcat -l -p 31337
+$ make download ESPTOOL_PORT=/dev/ttyUSB0 ESPTOOL_BAUD=115200 ESPTOOL_BINDIR=../esp-bins
 ```
 
-## Debugging with GDB
-Initiate a nuttx process:
+**_NOTE:_** adjust the USB port according to your configuration. The last two arguments are optional. In case they’re not specified, the command will download only the application and it will use the default baud rate of 921600. Once the bootloader and partition table binaries are downloaded, it’s not necessary to download them next time.
+
+<br />
+
+In case the above command is interrupted because the Pyserial module was not installed, install it by running the following command:
 ```
-./nuttx
-```
-Collect the process PID:
-```
-ps aux | grep nuttx
-```
-Start GDB with this process id:
-```
-sudo gdb -p {pid}
-```
-Set breakpoints and continue to debugging:
-```
-(gdb) break file:lineno
-(gdb) continue
-```
-Up interface eth0:
-```
-nsh > ifup eth0
-```
-Ping to linux:
-```
-nsh > ping -c 1 {ip_linux}
+pip3 install pyserial
 ```
 
-Got any trouble? Check the official NuttX quickstart guide:
-http://nuttx.incubator.apache.org/docs/latest/quickstart/index.html
+And make the download again.
+
+<br />
+
+## NuttX Shell Access
+To access the NuttX shell, you only need a serial terminal. If you not have a serial terminal, try picocom. To install picocom run the following command:
+```
+$ sudo apt-get install -y picocom
+```
+
+And finally, access the nsh (NuttX Shell):
+```
+$ sudo picocom /dev/ttyUSB0 -b 115200
+```
+**_NOTE:_** adjust the USB port according to your configuration.
+
+<br />
 
 ## NuttX Tips
 
