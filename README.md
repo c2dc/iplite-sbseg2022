@@ -1,6 +1,6 @@
 # iptables-lite (ESP-32)
 
-<em>This tutorial was adapted from the blog post above. Credits to the author <strong>@saramonteiro</strong>.</em>
+<em>This tutorial was adapted from the blog post below. Credits to the author <strong>@saramonteiro</strong>.</em>
 
 https://blog.espressif.com/getting-started-with-esp32-and-nuttx-fd3e1a3d182c
 
