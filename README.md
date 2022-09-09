@@ -81,11 +81,26 @@ $ ./tools/configure.sh esp32-devkitc:wapi
 ```
 $ ./tools/configure.sh -L | less
 ```
+In case you want to initialize NuttX already connected to a WiFi network, you need to add the network access credentials to the board config by doing the following steps:
+```
+$ make menuconfig
+```
+A configuration menu will appear:
+<img width="1017" alt="nuttx_menuconfig" src="https://user-images.githubusercontent.com/28744681/189395176-57a40a88-84a7-4916-960f-802338e387b0.png">
+
+Go to
+```
+Application Configuration > Network Utilities > Network initialization > WAPI Configuration
+```
+A menu similar to the following will appear.
+<img width="897" alt="nuttx_wapi_config" src="https://user-images.githubusercontent.com/28744681/189396582-a2f6b879-f37e-4f6c-aaff-e6c573167277.png">
+
+Insert on the `SSID` option the network identifier (network "name") and in the `Passprhase` option the network password. 
 
 <br />
 
 ### 4. Flashing
-You have to add yourself to the dialout group on Linux to have permission to access serial ports. Since in the next step you will use the serial to download the binaries, run the following command to add your user to the dialout group, which has the permission to access the serial driver.
+**You have to add yourself to the dialout group on Linux to have permission to access serial ports**. Since in the next step you will use the serial to download the binaries, run the following command to add your user to the dialout group, which has the permission to access the serial driver.
 ```
 $ sudo adduser <user> dialout
 ```
@@ -131,7 +146,7 @@ In case you want to connect to a WiFi network, a standard network interface will
 ```
 nsh> ifup wlan0
 nsh> wapi essid wlan0 <ssid> 1
-nsh> wapi psk wlan0 <passwd> 2
+nsh> wapi psk wlan0 <passwd> 1
 nsh> renew wlan0
 ```
 Where `<ssid>` is the network identifier and `passwd` the password.
