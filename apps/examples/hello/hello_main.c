@@ -43,15 +43,16 @@ int main(int argc, FAR char *argv[])
   unsigned int srcport, destport;
   bool packet_dropped;
 
-  if (argc != 6) {
-    printf("Not enough arguments!\n");
-    return -1;
-  }
-
   if (strcmp(argv[1], "DROP") == 0)
     rule = 0;
   else if (strcmp(argv[1], "ACCEPT") == 0)
     rule = 1;
+  else if (strcmp(argv[1], "FLUSHALL") == 0) {
+    rule = 2;
+    netfilterlite_flushall();
+
+    return 0;
+  }
   else {
     printf("Invalid rule!\n");
     return -1;

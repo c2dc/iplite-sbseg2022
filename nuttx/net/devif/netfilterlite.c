@@ -9,6 +9,7 @@
 typedef enum rules {
     DROP,
     ACCEPT,
+    FLUSHALL
 } rules;
 
 typedef struct chain chain;
@@ -96,14 +97,25 @@ bool netfilterlite_verify_ipv4(FAR struct net_driver_s *dev) {
 
     chain *current_rule = chain_head->next;
     while(current_rule) {
-        /* Verify incoming packet source and destination IP addresses */
-        if (current_rule->destipaddr == destipaddr || current_rule->srcipaddr == srcipaddr)
-            return false;
-        /* Verify incoming packet source and destination ports */
-        if (current_rule->destport == destport || current_rule->srcport == srcport)
+        /* Verify incoming tuple */
+        if ((current_rule->destipaddr == 0 || current_rule->destipaddr == destipaddr) && (current_rule->srcipaddr == 0 || current_rule->srcipaddr == srcipaddr) && (current_rule->destport == 0 || current_rule->destport == destport) && (current_rule->srcport == 0 || current_rule->srcport == srcport))
             return false;
         current_rule = current_rule->next;
     }
 
     return true;
+}
+
+void netfilterlite_flushall(void) {
+    chain *current_rule = chain_head->next;
+    chain *head = chain_head->next;
+    while (head != NULL){
+        current_rule = head;
+        head = head->next;
+        free(current_rule);
+    }
+
+    chain_head->next = NULL;
+
+    last_rule = chain_head;
 }
