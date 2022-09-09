@@ -48,6 +48,11 @@ int main(int argc, FAR char *argv[])
   else if (strcmp(argv[1], "ACCEPT") == 0)
     rule = 1;
   else if (strcmp(argv[1], "FLUSHALL") == 0) {
+    if (argc != 2) {
+      printf("Too much arguments!\n");
+      return -1;
+    }
+    
     rule = 2;
     netfilterlite_flushall();
 
@@ -55,6 +60,11 @@ int main(int argc, FAR char *argv[])
   }
   else {
     printf("Invalid rule!\n");
+    return -1;
+  }
+
+  if (argc != 6) {
+    printf("Not enough arguments!\n");
     return -1;
   }
 
