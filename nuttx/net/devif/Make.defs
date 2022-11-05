@@ -27,7 +27,6 @@ NET_CSRCS += devif_loopback.c
 
 ifeq ($(CONFIG_NET_IPv4),y)
 NET_CSRCS += ipv4_input.c
-NET_CSRCS += netfilterlite.c
 endif
 
 ifeq ($(CONFIG_NET_IPv6),y)
@@ -54,6 +53,11 @@ endif
 
 ifeq ($(CONFIG_NET_CAN),y)
 NET_CSRCS += devif_cansend.c
+endif
+
+# nflite packet filter support
+ifeq ($(CONFIG_NETUTILS_IPTLITE),y)
+NET_CSRCS += nflite.c
 endif
 
 # Include network device interface build support
