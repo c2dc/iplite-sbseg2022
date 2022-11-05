@@ -1,0 +1,51 @@
+/****************************************************************************
+ * netutils/iptlite/iptlite.c
+ ****************************************************************************/
+
+/****************************************************************************
+ * Included Files
+ ****************************************************************************/
+
+#include "../../../nuttx/net/devif/devif.h"
+#include <nuttx/config.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdbool.h>
+
+/****************************************************************************
+ * iptlite
+ ****************************************************************************/
+
+int main(int argc, FAR char *argv[])
+{
+  int rule;
+  in_addr_t srcipaddr, destipaddr;
+  in_port_t srcport, destport;
+  bool rule_added;
+  
+  if (argc != 6) {
+    printf("Not enough arguments!\n");
+    return -1;
+  }
+
+  if (strcmp(argv[1], "DROP") == 0)
+    rule = 0;
+  else if (strcmp(argv[1], "ACCEPT") == 0)
+    rule = 1;
+  else {
+    printf("Invalid rule!\n");
+    return -1;
+  }
+
+  inet_pton(AF_INET, argv[2], &srcipaddr);
+  inet_pton(AF_INET, argv[3], &destipaddr);
+  srcport = htons(strtoul(argv[4], NULL, 10));
+  destport = htons(strtoul(argv[5], NULL, 10));
+  
+  rule_added = nflite_addrule(
+    rule, srcipaddr, destipaddr, srcport, destport);
+  
+  printf("rule_added? %s\n", rule_added ? "true" : "false");
+    
+  return 0;
+}

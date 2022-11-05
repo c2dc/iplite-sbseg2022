@@ -192,11 +192,11 @@ void net_initialize(void)
   usrsock_initialize();
 #endif
 
-//#ifdef CONFIG_NET_PKTFILTER
-/* Initialize the netfilterlite packet filter */
+#ifdef CONFIG_NETUTILS_IPTLITE
+  /* Initialize the nflite packet filter*/
 
-netfilterlite_initialize();
-//#endif
+  nflite_initialize();
+#endif
 }
 
 #endif /* CONFIG_NET */
