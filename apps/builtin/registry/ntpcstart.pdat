@@ -1,0 +1,1 @@
+int ntpcstart_main(int argc, char *argv[]);
