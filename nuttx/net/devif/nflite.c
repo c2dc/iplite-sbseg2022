@@ -121,21 +121,22 @@ void nflite_flushall(void)
     last_rule = chain_head;
 }
 
-char* get_rule_name(rules rule) 
+char * get_rule_name(rules rule)
 {
-   switch (rule) 
-   {
-      case DROP: return "DROP";
-      case FLUSHALL: return "FLUSHALL";
-      case LISTALL: return "LISTALL";
-   }
+    switch (rule)
+    {
+        case DROP: return "DROP";
+        case FLUSHALL: return "FLUSHALL";
+        case LISTALL: return "LISTALL";
+    }
 
-   return "UNDEFINED";
+    return "UNDEFINED";
 }
 
 void get_rule_info(chain *node, char **table, int idx)
 {
-    char srcipaddr[INET_ADDRSTRLEN], destipaddr[INET_ADDRSTRLEN];
+    char srcipaddr[INET_ADDRSTRLEN];
+    char destipaddr[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &node->srcipaddr, srcipaddr, INET_ADDRSTRLEN);
     inet_ntop(AF_INET, &node->destipaddr, destipaddr, INET_ADDRSTRLEN);
 
@@ -146,7 +147,8 @@ void get_rule_info(chain *node, char **table, int idx)
     strcpy(rule, get_rule_name(node->rule));
 
     char rule_info[RULE_INFO_MAX_SIZE];
-    sprintf(rule_info, "%2d: %10s %16s %16s %9d %9d", idx, rule, srcipaddr, destipaddr, srcport, destport); // TODO: Add error check 
+    sprintf(rule_info, "%2d: %10s %16s %16s %9d %9d", \
+    idx, rule, srcipaddr, destipaddr, srcport, destport);
 
     strcpy(table[idx], rule_info);
 }
@@ -159,10 +161,12 @@ int nflite_get_rules_counter()
 char** nflite_listall(void)
 {
     chain *head = chain_head->next;
-    char **table = (char **)malloc(rules_counter * sizeof(char*));
+    char **table = (char **)malloc(rules_counter * sizeof(char *));
 
-    for(int i = 0; i < rules_counter; i++) 
+    for (int i = 0; i < rules_counter; i++)
+    {
         table[i] = (char *)malloc(RULE_INFO_MAX_SIZE * sizeof(char));
+    }
 
     int idx = 0;
     while (head != NULL)
