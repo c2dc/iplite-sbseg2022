@@ -1,32 +1,45 @@
 /****************************************************************************
- * netutils/iptlite/iptlite_main.c
+ * apps/netutils/iptlite/iptlite_main.c
+ * iptlite networking application
  ****************************************************************************/
 
 /****************************************************************************
  * Included Files
  ****************************************************************************/
 
-#include "../../../nuttx/net/devif/devif.h"
+#include <nuttx/net/devif/devif.h>
 #include <nuttx/config.h>
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
 
 /****************************************************************************
- * iptlite
+ * Private Functions
  ****************************************************************************/
 
-void listall_rules(){
+void listall_rules()
+{
   int rules_counter = nflite_get_rules_counter();
   char** table = nflite_listall();
-  printf("%3s %10s %16s %16s %9s %9s\n", "ID", "RULE", "SRC IPADDR", "DEST IPADDR", "SRC PORT", "DEST PORT");
-  for(int i = 0; i < rules_counter; i++){
-    for(int j = 0; j < RULE_INFO_MAX_SIZE; j++){
-        printf("%c", table[i][j]);
+
+  printf("%3s %10s %16s %16s %9s %9s\n", \
+  "ID", "RULE", "SRC IPADDR", "DEST IPADDR", "SRC PORT", "DEST PORT");
+
+  for (int i = 0; i < rules_counter; i++)
+  {
+    for (int j = 0; j < RULE_INFO_MAX_SIZE; j++)
+    {
+      printf("%c", table[i][j]);
     }
+
     printf("\n");
   }
 }
+
+/****************************************************************************
+ * iptlite_main
+ ****************************************************************************/
 
 int main(int argc, FAR char *argv[])
 {
