@@ -10,6 +10,7 @@
 #include "devif.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 typedef enum rules
 {
@@ -120,22 +121,38 @@ void nflite_flushall(void)
     last_rule = chain_head;
 }
 
-void get_rule_info(chain *node, char **table, int idx){
-    // char rule_info[RULE_MAX_SIZE];
-    char *srcipaddr, *destipaddr;
-    inet_ntop(AF_INET, node->srcipaddr, &srcipaddr, BUF_SIZE);
-    inet_ntop(AF_INET, node->destipaddr, &destipaddr, BUF_SIZE);
+char* get_rule_name(rules rule) 
+{
+   switch (rule) 
+   {
+      case DROP: return "DROP";
+      case FLUSHALL: return "FLUSHALL";
+      case LISTALL: return "LISTALL";
+   }
 
-    // char *srcport = func(node->srcport);
-    // char *destport = func(node->destport);
-    // char *rule = func(node->rule);
+   return "UNDEFINED";
+}
 
-    char *rule_info = "idx=1 DROP 192.168.0.1 0 22 0";
+void get_rule_info(chain *node, char **table, int idx)
+{
+    char srcipaddr[INET_ADDRSTRLEN], destipaddr[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &node->srcipaddr, srcipaddr, INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &node->destipaddr, destipaddr, INET_ADDRSTRLEN);
+
+    int srcport = ntohs(node->srcport);
+    int destport = ntohs(node->destport);
+
+    char rule[RULE_MAX_SIZE];
+    strcpy(rule, get_rule_name(node->rule));
+
+    char rule_info[RULE_INFO_MAX_SIZE];
+    sprintf(rule_info, "%2d: %10s %16s %16s %9d %9d", idx, rule, srcipaddr, destipaddr, srcport, destport); // TODO: Add error check 
 
     strcpy(table[idx], rule_info);
 }
 
-int nflite_get_rules_counter(){
+int nflite_get_rules_counter()
+{
     return rules_counter;
 }
 
@@ -145,7 +162,7 @@ char** nflite_listall(void)
     char **table = (char **)malloc(rules_counter * sizeof(char*));
 
     for(int i = 0; i < rules_counter; i++) 
-        table[i] = (char *)malloc(RULE_MAX_SIZE * sizeof(char));
+        table[i] = (char *)malloc(RULE_INFO_MAX_SIZE * sizeof(char));
 
     int idx = 0;
     while (head != NULL)
