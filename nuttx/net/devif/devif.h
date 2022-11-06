@@ -285,6 +285,7 @@ extern "C"
 
 #ifdef CONFIG_NETUTILS_IPTLITE
 #define RULE_MAX_SIZE 100 // TODO: Check it
+#define BUF_SIZE 15 // TODO: Check it
 void nflite_initialize(void);
 bool nflite_addrule(
 int rule, \

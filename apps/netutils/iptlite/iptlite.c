@@ -42,17 +42,15 @@ int main(int argc, FAR char *argv[])
 
   if (strcmp(argv[1], "DROP") == 0 && argc == 6)
     rule = 0;
-  else if (strcmp(argv[1], "ACCEPT") == 0 && argc == 6)
-    rule = 1;
   else if (strcmp(argv[1], "FLUSHALL") == 0 && argc == 2)
   {
-    rule = 2;
+    rule = 1;
     nflite_flushall();
     return 0;
   }
   else if (strcmp(argv[1], "LISTALL") == 0 && argc == 2)
   {
-    rule = 3;
+    rule = 2;
     listall_rules();
     return 0;
   }

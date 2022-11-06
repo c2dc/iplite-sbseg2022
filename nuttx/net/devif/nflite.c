@@ -14,7 +14,6 @@
 typedef enum rules
 {
     DROP,
-    ACCEPT,
     FLUSHALL,
     LISTALL
 } rules;
@@ -121,8 +120,16 @@ void nflite_flushall(void)
     last_rule = chain_head;
 }
 
-void get_rule_info(chain *head, char **table, int idx){
+void get_rule_info(chain *node, char **table, int idx){
     // char rule_info[RULE_MAX_SIZE];
+    char *srcipaddr, *destipaddr;
+    inet_ntop(AF_INET, node->srcipaddr, &srcipaddr, BUF_SIZE);
+    inet_ntop(AF_INET, node->destipaddr, &destipaddr, BUF_SIZE);
+
+    // char *srcport = func(node->srcport);
+    // char *destport = func(node->destport);
+    // char *rule = func(node->rule);
+
     char *rule_info = "idx=1 DROP 192.168.0.1 0 22 0";
 
     strcpy(table[idx], rule_info);
