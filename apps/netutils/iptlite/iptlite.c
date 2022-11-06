@@ -19,7 +19,7 @@
 void listall_rules(){
   int rules_counter = nflite_get_rules_counter();
   char** table = nflite_listall();
-  printf("%2s %10s %16s %16s %9s %9s\n", "ID", "RULE", "SRC IPADDR", "DEST IPADDR", "SRC PORT", "DEST PORT");
+  printf("%3s %10s %16s %16s %9s %9s\n", "ID", "RULE", "SRC IPADDR", "DEST IPADDR", "SRC PORT", "DEST PORT");
   for(int i = 0; i < rules_counter; i++){
     for(int j = 0; j < RULE_INFO_MAX_SIZE; j++){
         printf("%c", table[i][j]);
