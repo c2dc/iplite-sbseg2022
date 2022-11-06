@@ -9,12 +9,14 @@
 #include <nuttx/net/netdev.h>
 #include "devif.h"
 #include <stdlib.h>
+#include <string.h>
 
 typedef enum rules
 {
     DROP,
     ACCEPT,
-    FLUSHALL
+    FLUSHALL,
+    LISTALL
 } rules;
 
 typedef struct chain chain;
@@ -31,11 +33,13 @@ struct chain
 
 chain *chain_head;
 chain *last_rule;
+int rules_counter;
 
 void nflite_initialize(void)
 {
     chain_head = (chain *) malloc(sizeof(chain));
     chain_head->next = NULL;
+    rules_counter = 0;
 
     last_rule = chain_head;
 }
@@ -56,6 +60,7 @@ bool nflite_addrule(int rule, in_addr_t srcipaddr, in_addr_t destipaddr,
 
     last_rule->next = new_chainrule;
     last_rule = last_rule->next;
+    rules_counter++;
 
     return true;
 }
@@ -111,6 +116,37 @@ void nflite_flushall(void)
     }
 
     chain_head->next = NULL;
+    rules_counter = 0;
 
     last_rule = chain_head;
+}
+
+void get_rule_info(chain *head, char **table, int idx){
+    // char rule_info[RULE_MAX_SIZE];
+    char *rule_info = "idx=1 DROP 192.168.0.1 0 22 0";
+
+    strcpy(table[idx], rule_info);
+}
+
+int nflite_get_rules_counter(){
+    return rules_counter;
+}
+
+char** nflite_listall(void)
+{
+    chain *head = chain_head->next;
+    char **table = (char **)malloc(rules_counter * sizeof(char*));
+
+    for(int i = 0; i < rules_counter; i++) 
+        table[i] = (char *)malloc(RULE_MAX_SIZE * sizeof(char));
+
+    int idx = 0;
+    while (head != NULL)
+    {
+        get_rule_info(head, table, idx);
+        head = head->next;
+        idx++;
+    }
+
+    return table;
 }

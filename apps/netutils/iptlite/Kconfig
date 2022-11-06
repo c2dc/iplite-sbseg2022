@@ -10,11 +10,11 @@
 #
 
 config NETUTILS_IPTLITE
-	tristate "iptlite tool"
+	bool "iptlite packet filter"
 	default y
 	depends on NET_TCP
 	---help---
-		Enable the iptlite tool
+		Enable the iptlite packet filter
 
 if NETUTILS_IPTLITE
 

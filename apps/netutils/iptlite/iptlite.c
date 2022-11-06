@@ -16,6 +16,17 @@
  * iptlite
  ****************************************************************************/
 
+void listall_rules(){
+  int rules_counter = nflite_get_rules_counter();
+  char** table = nflite_listall();
+  for(int i = 0; i < rules_counter; i++){
+    for(int j = 0; j < RULE_MAX_SIZE; j++){
+        printf("%c", table[i][j]);
+    }
+    printf("\n");
+  }
+}
+
 int main(int argc, FAR char *argv[])
 {
   int rule;
@@ -37,6 +48,12 @@ int main(int argc, FAR char *argv[])
   {
     rule = 2;
     nflite_flushall();
+    return 0;
+  }
+  else if (strcmp(argv[1], "LISTALL") == 0 && argc == 2)
+  {
+    rule = 3;
+    listall_rules();
     return 0;
   }
   else

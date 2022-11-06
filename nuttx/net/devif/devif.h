@@ -284,6 +284,7 @@ extern "C"
  ****************************************************************************/
 
 #ifdef CONFIG_NETUTILS_IPTLITE
+#define RULE_MAX_SIZE 100 // TODO: Check it
 void nflite_initialize(void);
 bool nflite_addrule(
 int rule, \
@@ -294,6 +295,8 @@ in_port_t destport
 );
 bool nflite_verify_ipv4(FAR struct net_driver_s *dev);
 void nflite_flushall(void);
+char** nflite_listall(void);
+int nflite_get_rules_counter(void);
 #endif
 
 /****************************************************************************
