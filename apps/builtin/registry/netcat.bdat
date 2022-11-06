@@ -1,0 +1,1 @@
+{ "netcat", 100, 65536, netcat_main },

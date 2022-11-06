@@ -1,0 +1,1 @@
+int ntpcstop_main(int argc, char *argv[]);
