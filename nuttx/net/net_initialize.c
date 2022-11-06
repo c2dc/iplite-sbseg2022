@@ -193,7 +193,7 @@ void net_initialize(void)
 #endif
 
 #ifdef CONFIG_NETUTILS_IPTLITE
-  /* Initialize the nflite packet filter*/
+  /* Initialize the nflite packet filter */
 
   nflite_initialize();
 #endif
