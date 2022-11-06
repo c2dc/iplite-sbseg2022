@@ -217,11 +217,10 @@ int ipv4_input(FAR struct net_driver_s *dev)
   /* Get the destination IP address in a friendlier form */
 
   destipaddr = net_ip4addr_conv32(ipv4->destipaddr);
-  
+
 #ifdef CONFIG_NETUTILS_IPTLITE
-  bool isValidPacket = nflite_verify_ipv4(dev);
-  if (!isValidPacket)
-    goto drop;
+  bool is_valid_packet = nflite_verify_ipv4(dev);
+  if (!is_valid_packet) goto drop;
 #endif
 
 #if defined(CONFIG_NET_BROADCAST) && defined(NET_UDP_HAVE_STACK)

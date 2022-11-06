@@ -1,3 +1,7 @@
+/****************************************************************************
+ * Included Files
+ ****************************************************************************/
+
 #include <netinet/in.h>
 #include <nuttx/net/ip.h>
 #include <nuttx/net/tcp.h>
@@ -6,7 +10,8 @@
 #include "devif.h"
 #include <stdlib.h>
 
-typedef enum rules {
+typedef enum rules
+{
     DROP,
     ACCEPT,
     FLUSHALL
@@ -14,7 +19,8 @@ typedef enum rules {
 
 typedef struct chain chain;
 
-struct chain {
+struct chain
+{
     rules     rule;
     in_addr_t srcipaddr;
     in_addr_t destipaddr;
@@ -26,16 +32,18 @@ struct chain {
 chain *chain_head;
 chain *last_rule;
 
-void nflite_initialize(void) {
-    chain_head = (chain*) malloc(sizeof(chain));
+void nflite_initialize(void)
+{
+    chain_head = (chain *) malloc(sizeof(chain));
     chain_head->next = NULL;
 
     last_rule = chain_head;
 }
 
 bool nflite_addrule(int rule, in_addr_t srcipaddr, in_addr_t destipaddr,
-                            in_port_t srcport, in_port_t destport) {
-    chain *new_chainrule = (chain*) malloc(sizeof(chain));
+                            in_port_t srcport, in_port_t destport)
+                            {
+    chain *new_chainrule = (chain *) malloc(sizeof(chain));
     if (new_chainrule == NULL)
         return false;
 
@@ -48,11 +56,12 @@ bool nflite_addrule(int rule, in_addr_t srcipaddr, in_addr_t destipaddr,
 
     last_rule->next = new_chainrule;
     last_rule = last_rule->next;
-    
+
     return true;
 }
 
-bool nflite_verify_ipv4(FAR struct net_driver_s *dev) {
+bool nflite_verify_ipv4(FAR struct net_driver_s *dev)
+{
     FAR struct ipv4_hdr_s *ipv4;
     FAR struct tcp_hdr_s *tcp;
     in_addr_t destipaddr;
@@ -60,7 +69,6 @@ bool nflite_verify_ipv4(FAR struct net_driver_s *dev) {
     in_port_t srcport;
     in_port_t destport;
     uint16_t iphdrlen;
-
 
     ipv4 = ((FAR struct ipv4_hdr_s *)&dev->d_buf[NET_LL_HDRLEN(dev)]);
     iphdrlen = (ipv4->vhl & IPv4_HLMASK) << 2;
@@ -71,11 +79,19 @@ bool nflite_verify_ipv4(FAR struct net_driver_s *dev) {
     srcport = tcp->srcport;
     destport = tcp->destport;
 
-
     chain *current_rule = chain_head->next;
-    while(current_rule) {
+    while (current_rule)
+    {
         /* Verify incoming tuple */
-        if ((current_rule->destipaddr == 0 || current_rule->destipaddr == destipaddr) && (current_rule->srcipaddr == 0 || current_rule->srcipaddr == srcipaddr) && (current_rule->destport == 0 || current_rule->destport == destport) && (current_rule->srcport == 0 || current_rule->srcport == srcport))
+
+        if ((current_rule->destipaddr == 0 \
+        || current_rule->destipaddr == destipaddr) \
+        && (current_rule->srcipaddr == 0 \
+        || current_rule->srcipaddr == srcipaddr) \
+        && (current_rule->destport == 0 \
+        || current_rule->destport == destport) \
+        && (current_rule->srcport == 0 \
+        || current_rule->srcport == srcport))
             return false;
         current_rule = current_rule->next;
     }
@@ -83,10 +99,12 @@ bool nflite_verify_ipv4(FAR struct net_driver_s *dev) {
     return true;
 }
 
-void nflite_flushall(void) {
+void nflite_flushall(void)
+{
     chain *current_rule = chain_head->next;
     chain *head = chain_head->next;
-    while (head != NULL){
+    while (head != NULL)
+    {
         current_rule = head;
         head = head->next;
         free(current_rule);

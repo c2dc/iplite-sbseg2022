@@ -285,7 +285,13 @@ extern "C"
 
 #ifdef CONFIG_NETUTILS_IPTLITE
 void nflite_initialize(void);
-bool nflite_addrule(int rule, in_addr_t srcipaddr, in_addr_t destipaddr, in_port_t srcport, in_port_t destport);
+bool nflite_addrule(
+int rule, \
+in_addr_t srcipaddr, \
+in_addr_t destipaddr, \
+in_port_t srcport, \
+in_port_t destport
+);
 bool nflite_verify_ipv4(FAR struct net_driver_s *dev);
 void nflite_flushall(void);
 #endif
