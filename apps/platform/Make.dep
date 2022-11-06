@@ -1,2 +1,0 @@
-dummy.home.rtsouza.Documents.TG.nuttxspace.apps.platform.o: board/dummy.c \
- /usr/include/stdc-predef.h
