@@ -7,7 +7,7 @@
  * Included Files
  ****************************************************************************/
 
-#include <nuttx/net/devif/devif.h>
+#include "../../../nuttx/net/devif/devif.h"
 #include <nuttx/config.h>
 
 #include <stdlib.h>
