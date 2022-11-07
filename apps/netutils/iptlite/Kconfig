@@ -11,7 +11,7 @@
 
 config NETUTILS_IPTLITE
 	bool "iptlite packet filter"
-	default y
+	default n
 	depends on NET_TCP
 	---help---
 		Enable the iptlite packet filter

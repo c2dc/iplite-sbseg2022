@@ -41,6 +41,50 @@ chain *last_rule;
 int rules_counter;
 
 /****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+char *get_rule_name(rules rule)
+{
+  switch (rule)
+  {
+  case DROP:
+    return "DROP";
+  case FLUSHALL:
+    return "FLUSHALL";
+  case LISTALL:
+    return "LISTALL";
+  }
+
+  return "UNDEFINED";
+}
+
+void get_rule_info(chain *node, char **table, int idx)
+{
+  char srcipaddr[INET_ADDRSTRLEN];
+  char destipaddr[INET_ADDRSTRLEN];
+  inet_ntop(AF_INET, &node->srcipaddr, srcipaddr, INET_ADDRSTRLEN);
+  inet_ntop(AF_INET, &node->destipaddr, destipaddr, INET_ADDRSTRLEN);
+
+  int srcport = ntohs(node->srcport);
+  int destport = ntohs(node->destport);
+
+  char rule[RULE_MAX_SIZE];
+  strcpy(rule, get_rule_name(node->rule));
+
+  char rule_info[RULE_INFO_MAX_SIZE];
+  sprintf(rule_info, "%2d: %10s %16s %16s %9d %9d",
+          idx, rule, srcipaddr, destipaddr, srcport, destport);
+
+  strcpy(table[idx], rule_info);
+}
+
+int nflite_get_rules_counter(void)
+{
+  return rules_counter;
+}
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -148,48 +192,4 @@ char **nflite_listall(void)
     }
 
   return table;
-}
-
-/****************************************************************************
- * Private Functions
- ****************************************************************************/
-
-char *get_rule_name(rules rule)
-{
-  switch (rule)
-  {
-  case DROP:
-    return "DROP";
-  case FLUSHALL:
-    return "FLUSHALL";
-  case LISTALL:
-    return "LISTALL";
-  }
-
-  return "UNDEFINED";
-}
-
-void get_rule_info(chain *node, char **table, int idx)
-{
-  char srcipaddr[INET_ADDRSTRLEN];
-  char destipaddr[INET_ADDRSTRLEN];
-  inet_ntop(AF_INET, &node->srcipaddr, srcipaddr, INET_ADDRSTRLEN);
-  inet_ntop(AF_INET, &node->destipaddr, destipaddr, INET_ADDRSTRLEN);
-
-  int srcport = ntohs(node->srcport);
-  int destport = ntohs(node->destport);
-
-  char rule[RULE_MAX_SIZE];
-  strcpy(rule, get_rule_name(node->rule));
-
-  char rule_info[RULE_INFO_MAX_SIZE];
-  sprintf(rule_info, "%2d: %10s %16s %16s %9d %9d",
-          idx, rule, srcipaddr, destipaddr, srcport, destport);
-
-  strcpy(table[idx], rule_info);
-}
-
-int nflite_get_rules_counter()
-{
-  return rules_counter;
 }

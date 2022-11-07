@@ -18,7 +18,7 @@
  * Private Functions
  ****************************************************************************/
 
-void listall_rules()
+void listall_rules(void)
 {
   int rules_counter = nflite_get_rules_counter();
   char** table = nflite_listall();
