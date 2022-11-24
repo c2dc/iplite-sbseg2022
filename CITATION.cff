@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Moraes"
+  given-names: "Eduardo"
+  orcid: "https://orcid.org/0000-0002-1409-4103"
+- family-names: "Souza"
+  given-names: "Rodrigo"
+  orcid: "https://orcid.org/0000-0002-4263-8892"
+title: "iplite-sbseg2022"
+version: 1.0.0
+doi: 10.5281/zenodo.1234
+date-released: 2022-11-24
+url: "https://github.com/c2dc/iplite-sbseg2022"
